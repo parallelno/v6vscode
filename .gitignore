@@ -1,0 +1,43 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# TypeScript build output
+out/
+*.tsbuildinfo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+**/*.log
+
+# Generated ROM/binaries
+test.rom
+*.rom
+
+# RAM disk data files
+*.ramdata
+*.ramdisk
+
+# Frames output from run_frames tool
+frames_out/
+
+# Temporary
+.tmp/
+test/core/
+
+# VSCode package vsix
+*.vsix
+
+temp/
+test/**/*.rom
+
+# Ignore build and cache artifacts
+.venv/
+dist/
+node_modules/.cache/
