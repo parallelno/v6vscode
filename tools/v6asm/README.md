@@ -8,7 +8,6 @@
 v6asm -i main                  # scaffold a new project
 v6asm main.asm                 # assemble → main.rom
 v6asm main.asm -l              # + listing file
-v6asm main.asm -s              # + debug symbols
 v6asm main.asm -c z80          # Z80 mnemonic mode
 v6asm -v                       # print build version
 ```
@@ -26,7 +25,7 @@ It assembles `.asm` source files into `.rom` binaries and can build bootable **F
 The assembler supports the Intel 8080 instruction set and an optional Z80 mnemonic
 alternatives. A rich preprocessor handles file includes, macros, conditional
 assembly, loops, optional code blocks,and more. The toolchain can also emit a
-listing file for inspection and a `.symbols.json` for editor/debugger integration.
+listing file for inspection.
 
 | Tool | Purpose |
 |------|---------|
@@ -46,7 +45,6 @@ Full reference is in the [`docs/`](docs/README.md) folder:
 - [Directives](docs/directives.md) — `.org`, `.include`, `.if`, `.loop`, `.optional`, data emission, and more
 - [Macros](docs/macros.md) — `.macro` / `.endmacro`, parameters, scoping
 - [Listing Format](docs/listing.md) — `.lst` column layout and expansion behavior
-- [Debug Symbols](docs/symbols.md) — `.symbols.json` schema, symbol types, and naming conventions
 
 ### Build from source
 
