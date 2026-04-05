@@ -314,61 +314,61 @@ No other runtime dependencies. Keep the dependency tree minimal.
 
 ## 4. Implementation Phases
 
-### Phase 1 — Project Skeleton and Platform
+### Phase 1 — Project Skeleton and Platform ✅
 
 **Goal:** Buildable, testable extension that activates and registers commands. No emulator yet.
 
-- [ ] **1.1 Initialize `package.json`** — `npm init`, add `vscode` engine, extension entry point, activation events, eslint config.
-- [ ] **1.2 Platform layer** — `logger.ts`, `error-codes.ts`, `v6-error.ts`, `path-service.ts`, `workspace-service.ts`, `lifecycle.ts`.
-- [ ] **1.3 `contribution-ids.ts`** — centralized command IDs, setting keys, view IDs.
-- [ ] **1.4 Extension composition root** — `extension.ts` with `activate` / `deactivate`. Construct logger, register stub commands.
-- [ ] **1.5 Build and launch config** — `.vscode/launch.json`, `.vscode/tasks.json`, verify extension loads in Extension Development Host.
-- [ ] **1.6 Unit tests for platform** — `PathService` path resolution, `V6Error` construction.
-- [ ] **1.7 Milestone exit** — regression test baseline (empty suite runs), all tests passing (`npm run test`).
-- [ ] **1.8 Update `docs/`with platform layer overview.
+- [x] **1.1 Initialize `package.json`** — `npm init`, add `vscode` engine, extension entry point, activation events, eslint config.
+- [x] **1.2 Platform layer** — `logger.ts`, `error-codes.ts`, `v6-error.ts`, `path-service.ts`, `workspace-service.ts`, `lifecycle.ts`.
+- [x] **1.3 `contribution-ids.ts`** — centralized command IDs, setting keys, view IDs.
+- [x] **1.4 Extension composition root** — `extension.ts` with `activate` / `deactivate`. Construct logger, register stub commands.
+- [x] **1.5 Build and launch config** — `.vscode/launch.json`, `.vscode/tasks.json`, verify extension loads in Extension Development Host.
+- [x] **1.6 Unit tests for platform** — `PathService` path resolution, `V6Error` construction.
+- [x] **1.7 Milestone exit** — regression test baseline (empty suite runs), all tests passing (`npm run test`).
+- [x] **1.8 Update `docs/`with platform layer overview.
 
-### Phase 2 — Project System
+### Phase 2 — Project System ✅
 
 **Goal:** Extension discovers, parses, validates, and selects `*.project.json` files.
 
-- [ ] **2.1 JSON Schema** — `v6.project.schema.json` with all fields, defaults, enums.
-- [ ] **2.2 Project model and parser** — `v6-project.ts` interfaces, `project-parser.ts`.
-- [ ] **2.3 Project validator** — `project-validator.ts`, validate against schema, return typed errors.
-- [ ] **2.4 Project discovery** — `project-discovery.ts`, glob `*.project.json` at workspace root.
-- [ ] **2.5 Project repository** — `project-repository.ts`, load/save cycle.
-- [ ] **2.6 Active project service** — `active-project-service.ts`, QuickPick if multiple, auto-select if one.
-- [ ] **2.7 Wire into extension.ts** — project discovery runs on activation, active project resolves on demand.
-- [ ] **2.8 Unit tests** — parser round-trip, validator accept/reject cases, discovery with fixture workspace.
-- [ ] **2.9 Milestone exit** — regression tests (invalid project files, missing required fields, multiple projects in workspace root), all tests passing.
-- [ ] **2.10 Update `docs/` with project system overview.
+- [x] **2.1 JSON Schema** — `v6.project.schema.json` with all fields, defaults, enums.
+- [x] **2.2 Project model and parser** — `v6-project.ts` interfaces, `project-parser.ts`.
+- [x] **2.3 Project validator** — `project-validator.ts`, validate against schema, return typed errors.
+- [x] **2.4 Project discovery** — `project-discovery.ts`, glob `*.project.json` at workspace root.
+- [x] **2.5 Project repository** — `project-repository.ts`, load/save cycle.
+- [x] **2.6 Active project service** — `active-project-service.ts`, QuickPick if multiple, auto-select if one.
+- [x] **2.7 Wire into extension.ts** — project discovery runs on activation, active project resolves on demand.
+- [x] **2.8 Unit tests** — parser round-trip, validator accept/reject cases, discovery with fixture workspace.
+- [x] **2.9 Milestone exit** — regression tests (invalid project files, missing required fields, multiple projects in workspace root), all tests passing.
+- [x] **2.10 Update `docs/` with project system overview.
 
-### Phase 3 — Language Support
+### Phase 3 — Language Support ✅
 
 **Goal:** Syntax highlighting works. Include-path Ctrl+click navigation works.
 
-- [ ] **3.1 Grammar registration** — `package.json` contributes grammar for `v6asm` language. Map `.asm`, `.inc` extensions.
-- [ ] **3.2 Language configuration** — verify existing `language-configuration.json` covers comment toggles, brackets, auto-close.
-- [ ] **3.3 Include link provider** — `include-link-provider.ts`, register as `DocumentLinkProvider`. Regex: `.include\s+"([^"]+)"`.
-- [ ] **3.4 Unit tests** — include link regex matching, path resolution from source file dir.
-- [ ] **3.5 Milestone exit** — regression tests (malformed include paths, missing target files), all tests passing.
-- [ ] **3.6 Update `docs/` with language support notes, update `README.md` (syntax highlighting and navigation are user-facing).
+- [x] **3.1 Grammar registration** — `package.json` contributes grammar for `v6asm` language. Map `.asm`, `.inc` extensions.
+- [x] **3.2 Language configuration** — verify existing `language-configuration.json` covers comment toggles, brackets, auto-close.
+- [x] **3.3 Include link provider** — `include-link-provider.ts`, register as `DocumentLinkProvider`. Regex: `.include\s+"([^"]+)"`.
+- [x] **3.4 Unit tests** — include link regex matching, path resolution from source file dir.
+- [x] **3.5 Milestone exit** — regression tests (malformed include paths, missing target files), all tests passing.
+- [x] **3.6 Update `docs/` with language support notes, update `README.md` (syntax highlighting and navigation are user-facing).
 
 
-### Phase 4 — Emulator Launcher and IPC
+### Phase 4 — Emulator Launcher and IPC ✅
 
 **Goal:** Extension can launch `v6emul`, connect via TCP, and exchange commands.
 
-- [ ] **4.1 `process-runner.ts`** — async child process wrapper with kill and exit handling.
-- [ ] **4.2 `v6emul-locator.ts`** — three-tier binary discovery.
-- [ ] **4.3 `v6emul-launcher.ts`** — CLI argument construction, launch via `ProcessRunner`.
-- [ ] **4.4 `ipc-commands.ts`** — command enum, typed request/response interfaces.
-- [ ] **4.5 `ipc-codec.ts`** — MessagePack encode/decode, GET_FRAME_RAW binary decode.
-- [ ] **4.6 `ipc-client.ts`** — TCP connect, send/receive, timeout, reconnect on drop.
-- [ ] **4.7 `emulator-lifecycle.ts`** — launch → connect → ping → load → run / stop → exit flow.
-- [ ] **4.8 Unit tests** — codec encode/decode round-trip, CLI argument construction, locator resolution order.
-- [ ] **4.9 Integration test** — IPC handshake against mock TCP server.
-- [ ] **4.10 Milestone exit** — regression tests (missing v6emul binary, connection refused, IPC timeout, unexpected disconnect), all tests passing.
-- [ ] **4.11 Update `docs/` with IPC protocol and launcher details.
+- [x] **4.1 `process-runner.ts`** — async child process wrapper with kill and exit handling.
+- [x] **4.2 `v6emul-locator.ts`** — three-tier binary discovery.
+- [x] **4.3 `v6emul-launcher.ts`** — CLI argument construction, launch via `ProcessRunner`.
+- [x] **4.4 `ipc-commands.ts`** — command enum, typed request/response interfaces.
+- [x] **4.5 `ipc-codec.ts`** — MessagePack encode/decode, GET_FRAME_RAW binary decode.
+- [x] **4.6 `ipc-client.ts`** — TCP connect, send/receive, timeout, reconnect on drop.
+- [x] **4.7 `emulator-lifecycle.ts`** — launch → connect → ping → load → run / stop → exit flow.
+- [x] **4.8 Unit tests** — codec encode/decode round-trip, CLI argument construction, locator resolution order.
+- [x] **4.9 Integration test** — IPC handshake against mock TCP server.
+- [x] **4.10 Milestone exit** — regression tests (missing v6emul binary, connection refused, IPC timeout, unexpected disconnect), all tests passing.
+- [x] **4.11 Update `docs/` with IPC protocol and launcher details.
 
 ### Phase 5 — Emulator Panel
 

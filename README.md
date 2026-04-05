@@ -1,13 +1,40 @@
-  # v6vscode
+# v6vscode
 
-VS Code extension for **Vector-06c** development — project management, syntax highlighting, and emulator integration.
+> A two-pass Intel 8080 / subset Z80 assembler.
 
-## Features
+## Quick Start
 
-- **Syntax highlighting** for Intel 8080 assembly (`.asm`, `.inc` files)
-- **Include navigation** — Ctrl+click on `.include "..."` directives to jump to the included file
-- **Project system** — `*.project.json` files with schema validation and auto-completion
-- **Commands** — `V6: Create Project`, `V6: Run Project` (emulator integration coming soon)
+```bash
+v6asm -i main                  # scaffold a new project
+v6asm main.asm                 # assemble → main.rom
+v6asm main.asm -l              # + listing file
+v6asm main.asm -c z80          # Z80 mnemonic mode
+v6asm -v                       # print build version
+```
+
+[![CI/CD](https://github.com/parallelno/v6asm/actions/workflows/ci.yml/badge.svg)](https://github.com/parallelno/v6asm/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+---
+
+## Overview
+
+`v6asm` is a command-line toolchain for the **Vector-06c** (Вектор-06Ц).
+It assembles `.asm` source files into `.rom` binaries and can build bootable **FDD disk images** for an emulator.
+
+The assembler supports the Intel 8080 instruction set and an optional Z80 mnemonic
+alternatives. A rich preprocessor handles file includes, macros, conditional
+assembly, loops, optional code blocks,and more. The toolchain can also emit a
+listing file for inspection.
+
+| Tool | Purpose |
+|------|---------|
+| `v6asm` | Assembler — `.asm` → `.rom` binary |
+| `v6fdd` | FDD utility — packs files into a `.fdd` disk image |
+
+## Installation
+
+Download the latest archive from [Releases](https://github.com/parallelno/v6asm/releases), extract it, and add the directory to your `PATH`.
 
 ## Documentation
 
@@ -18,7 +45,6 @@ Full reference is in the [`docs/`](docs/README.md) folder:
 - [Directives](docs/directives.md) — `.org`, `.include`, `.if`, `.loop`, `.optional`, data emission, and more
 - [Macros](docs/macros.md) — `.macro` / `.endmacro`, parameters, scoping
 - [Listing Format](docs/listing.md) — `.lst` column layout and expansion behavior
-- [Debug Symbols](docs/symbols.md) — `.symbols.json` schema, symbol types, and naming conventions
 
 ### Build from source
 

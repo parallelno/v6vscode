@@ -55,6 +55,28 @@ Files named `*.project.json` at the workspace root. Validated by `config/schemas
 - **Language configuration** — `language-configuration.json` provides line comments (`;`), block comments (`/* */`), bracket pairs, auto-closing pairs, and surrounding pairs.
 - **`includes/include-link-provider.ts`** — `DocumentLinkProvider` for Ctrl+click navigation on `.include "..."` directives. Regex: `.include\s+"([^"]+)"`. Resolves paths relative to the source file's directory.
 
+### Emulator Launcher & IPC (`src/emulator/`)
+
+Launches the `v6emul` backend, communicates over TCP using length-prefixed MessagePack.
+
+#### Launcher (`launcher/`)
+
+- **`v6emul-locator.ts`** — Three-tier binary resolution: (1) `v6.emulatorPath` setting, (2) bundled `res/v6emul/v6emul`, (3) PATH lookup. Throws `V6Error(EMULATOR_NOT_FOUND)` if all fail.
+- **`v6emul-launcher.ts`** — Builds CLI arguments from a `LaunchRequest` and spawns the process via `ProcessRunner`. Always passes `--serve` and `--tcp-port`. Supports `--boot-rom`, `--rom`, `--load-addr`, `--fdd`, `--fdd-drive`, `--fdd-autoboot`, `--speed`.
+
+#### Protocol (`protocol/`)
+
+- **`ipc-commands.ts`** — `IpcCommand` enum mapping all v6emul command IDs (PING, RUN, STOP, EXIT, LOAD_ROM, MOUNT_FDD, KEY_HANDLING, etc.). Typed request/response interfaces. `SPEED_VALUES` mapping from user strings to IPC integers.
+- **`ipc-codec.ts`** — `encodeRequest(cmd, data)` produces length-prefixed MessagePack buffers. `decodeResponse(buffer)` parses responses. `decodeFrameRaw(buffer)` handles the binary GET_FRAME_RAW format (width, height, ABGR pixels). `frameLength(buffer)` checks if a complete frame is available.
+
+#### Client (`client/`)
+
+- **`ipc-client.ts`** — TCP client with `connect(port)`, `disconnect()`, `send(cmd, data)`, `sendRaw(cmd, data)`. Sequential request-response (one outstanding request). Connection timeout, request timeout, and automatic error propagation on socket close/error.
+
+#### Lifecycle (`lifecycle/`)
+
+- **`emulator-lifecycle.ts`** — Orchestrates the full launch → connect → health-check → load → run / stop → exit flow. States: `stopped`, `launching`, `connected`, `running`. Retry logic for TCP connection (emulator startup delay). Emits `stateChange`, `exit`, and `error` events.
+
 ## Settings
 
 | Key | Type | Default | Description |
