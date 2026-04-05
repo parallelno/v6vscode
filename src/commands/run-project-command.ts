@@ -9,6 +9,7 @@ import { IpcCommand } from '../emulator/protocol/ipc-commands';
 import { Logger } from '../platform/logging/logger';
 import { V6Error } from '../platform/errors/v6-error';
 import { ErrorCode } from '../platform/errors/error-codes';
+import { showV6Error } from '../platform/errors/error-ux';
 
 export class RunProjectCommand {
     constructor(
@@ -28,9 +29,9 @@ export class RunProjectCommand {
             return;
         }
 
-        this.validateExecutable(project);
-
         try {
+            this.validateExecutable(project);
+
             if (this.lifecycle.running) {
                 // Emulator already running — reload executable without restart
                 await this.reloadExecutable(project);
@@ -39,9 +40,13 @@ export class RunProjectCommand {
             }
             this.panel.reveal();
         } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            this.logger.error(`run-project: ${msg}`);
-            vscode.window.showErrorMessage(`V6: Failed to run project — ${msg}`);
+            if (err instanceof V6Error) {
+                await showV6Error(err, this.logger);
+            } else {
+                const msg = err instanceof Error ? err.message : String(err);
+                this.logger.error(`run-project: ${msg}`);
+                vscode.window.showErrorMessage(`V6: Failed to run project — ${msg}`);
+            }
         }
     }
 

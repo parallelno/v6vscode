@@ -85,7 +85,10 @@
     "test": "npm run test:unit",
     "test:unit": "mocha",
     "test:integration": "node ./node_modules/@vscode/test-electron/out/runTest.js",
-    "test:regression": "mocha --no-config --require ./test/register.js --timeout 5000 'test/regression/**/*.test.ts'"
+    "test:regression": "mocha --no-config --require ./test/register.js --timeout 5000 'test/regression/**/*.test.ts'",
+    "test:all": "npm run test:unit && npm run test:regression",
+    "ci": "npm run compile && npm run lint && npm run test:all",
+    "package": "vsce package"
   },
   "devDependencies": {
     "@types/chai": "^5.2.3",
@@ -95,6 +98,7 @@
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
     "@vscode/test-electron": "^2.3.8",
+    "@vscode/vsce": "^3.7.1",
     "chai": "^4.4.1",
     "eslint": "^8.56.0",
     "mocha": "^10.3.0",

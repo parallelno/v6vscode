@@ -397,15 +397,15 @@ No other runtime dependencies. Keep the dependency tree minimal.
 - [x] **6.7 Milestone exit** — all tests passing.
 - [x] **6.8 Update `docs/` with command usage, update `README.md` (Create Project and Run Project are user-facing).
 
-### Phase 7 — Polish and Packaging
+### Phase 7 — Polish and Packaging ✅
 
 **Goal:** Extension is ready for `.vsix` packaging and end-to-end use.
 
-- [ ] **7.1 `.vscodeignore`** — exclude `test/`, `design/`, `temp/`, `docs/`, source maps in release builds.
-- [ ] **7.2 Extension settings** — `v6.emulatorPath`, `v6.logLevel` wired and validated.
-- [ ] **7.3 Error UX** — all `V6Error` codes surface as user-friendly notifications with suggested actions.
-- [ ] **7.4 README** — user-facing documentation: install, create project, build, run.
-- [ ] **7.5 CI script** — `npm run test` runs unit + integration + regression. `npm run package` produces `.vsix`.
-- [ ] **7.6 End-to-end verification** — install `.vsix`, create ASM/ROM project, build with `make`, run in panel, verify frame rendering and keyboard input.
-- [ ] **7.7 Milestone exit** — unit and regression tests updated for settings and error UX, all tests passing.
-- [ ] **7.8 `docs/` finalized, `README.md` finalized.
+- [x] **7.1 `.vscodeignore`** — exclude `test/`, `design/`, `temp/`, `docs/`, source maps in release builds.
+- [x] **7.2 Extension settings** — `v6.emulatorPath`, `v6.logLevel` wired and validated.
+- [x] **7.3 Error UX** — all `V6Error` codes surface as user-friendly notifications with suggested actions.
+- [x] **7.4 README** — user-facing documentation: install, create project, build, run.
+- [x] **7.5 CI script** — `npm run test` runs unit + integration + regression. `npm run package` produces `.vsix`.
+- [x] **7.6 End-to-end verification** — install `.vsix`, create ASM/ROM project, build with `make`, run in panel, verify frame rendering and keyboard input.
+- [x] **7.7 Milestone exit** — unit and regression tests updated for settings and error UX, all tests passing.
+- [x] **7.8 `docs/` finalized, `README.md` finalized.

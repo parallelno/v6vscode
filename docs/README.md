@@ -137,6 +137,24 @@ When the emulator stops (or the panel closes), if the loaded executable is a `.f
 
 This is wired into `EmulatorLifecycle.stop()` via an `onBeforeStop` hook in `extension.ts`.
 
+### Error UX (`src/platform/errors/error-ux.ts`)
+
+Maps `V6Error` codes to user-friendly VS Code notifications with contextual actions:
+
+| Error Code | Notification | Action |
+|------------|-------------|--------|
+| `EMULATOR_NOT_FOUND` | "Emulator not found. Set v6.emulatorPath or add v6emul to PATH." | Open Settings |
+| `EXECUTABLE_NOT_FOUND` | "Executable not found. Build the project first." | Open Terminal |
+| `CONFIG_INVALID` | "Project configuration is invalid." | — |
+| `EMULATOR_LAUNCH_FAILED` | "Failed to launch the emulator." | Show Output |
+| `IPC_CONNECTION_REFUSED` | "Could not connect to the emulator." | Show Output |
+| `IPC_TIMEOUT` | "Emulator communication timed out." | Show Output |
+| `IPC_DECODE_ERROR` | "Received a malformed response from the emulator." | Show Output |
+
+### Settings Validation
+
+When `v6.emulatorPath` is changed via VS Code settings, the extension validates the path exists and shows a warning if it does not. The emulator will still launch using fallback resolution (bundled binary or PATH).
+
 ## Building
 
 ```bash
@@ -144,10 +162,20 @@ npm install
 npm run compile
 ```
 
+## Packaging
+
+```bash
+npm run package          # produces v6vscode-<version>.vsix
+```
+
+The `.vscodeignore` file excludes `src/`, `test/`, `design/`, `temp/`, `docs/`, source maps, and other dev-only files from the packaged `.vsix`.
+
 ## Testing
 
 ```bash
 npm test              # unit tests
 npm run test:unit     # unit tests only
 npm run test:regression  # regression suite
+npm run test:all      # unit + regression
+npm run ci            # compile + lint + test:all
 ```

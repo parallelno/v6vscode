@@ -1,10 +1,11 @@
+import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { Logger } from './platform/logging/logger';
 import { PathService } from './platform/files/path-service';
 import { WorkspaceService } from './platform/files/workspace-service';
 import { ProcessRunner } from './platform/process/process-runner';
 import { DisposableStore, toDisposable } from './platform/disposable/lifecycle';
-import { CMD_CREATE_PROJECT, CMD_RUN_PROJECT, OUTPUT_CHANNEL_NAME } from './config/contribution-ids';
+import { CMD_CREATE_PROJECT, CMD_RUN_PROJECT, OUTPUT_CHANNEL_NAME, SETTING_EMULATOR_PATH } from './config/contribution-ids';
 import { ProjectDiscovery } from './project/discovery/project-discovery';
 import { ProjectRepository } from './project/persistence/project-repository';
 import { ActiveProjectService } from './project/active/active-project-service';
@@ -94,6 +95,21 @@ export function activate(context: vscode.ExtensionContext): void {
         await onBeforeStop();
         return originalStop();
     };
+
+    // Validate emulator path setting when changed
+    store.add(
+        vscode.workspace.onDidChangeConfiguration((e) => {
+            if (e.affectsConfiguration(SETTING_EMULATOR_PATH)) {
+                const newPath = vscode.workspace.getConfiguration('v6').get<string>('emulatorPath', '');
+                if (newPath && !fs.existsSync(newPath)) {
+                    vscode.window.showWarningMessage(
+                        `V6: Emulator path "${newPath}" does not exist. The extension will fall back to the bundled emulator or PATH.`,
+                    );
+                    logger.warn(`Setting v6.emulatorPath points to non-existent path: "${newPath}"`);
+                }
+            }
+        })
+    );
 
     context.subscriptions.push(store);
 

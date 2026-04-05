@@ -17,11 +17,24 @@
 
 ## Quick Start
 
-1. Open a folder in VS Code.
-2. Run **V6: Create Project** from the Command Palette (`Ctrl+Shift+P`).
-3. Enter a project name, choose a language (ASM or C), and an executable type (ROM or FDD).
-4. Build: `make` in the terminal.
-5. Run **V6: Run Project** — the emulator launches and shows the display panel.
+1. Install the extension from a `.vsix` file: `code --install-extension v6vscode-0.1.0.vsix`
+2. Open a folder in VS Code.
+3. Run **V6: Create Project** from the Command Palette (`Ctrl+Shift+P`).
+4. Enter a project name, choose a language (ASM or C), and an executable type (ROM or FDD).
+5. Build: `make` in the terminal.
+6. Run **V6: Run Project** — the emulator launches and shows the display panel.
+
+## Prerequisites
+
+The extension bundles the `v6emul` emulator backend. The following build tools are **not** bundled and must be installed separately:
+
+| Tool | Purpose | Download |
+|------|---------|----------|
+| `v6asm` | Intel 8080 assembler | [Releases](https://github.com/parallelno/v6asm/releases) |
+| `v6fdd` | FDD image builder | [Releases](https://github.com/parallelno/v6asm/releases) |
+| `v6c` | C compiler (optional) | [Releases](https://github.com/parallelno/v6c/releases) |
+
+Add the tool directory to your `PATH` so that `make` can find them.
 
 ## Commands
 
@@ -59,6 +72,12 @@ See [docs/README.md](docs/README.md) for the full schema and architecture detail
 ```bash
 npm install
 npm run compile
+```
+
+### Packaging
+
+```bash
+npm run package          # produces v6vscode-<version>.vsix
 ```
 
 ## Tests
