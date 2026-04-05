@@ -206,30 +206,21 @@ describe('EmulatorViewModel', () => {
     });
 
     describe('processFrame', () => {
-        it('should crop and convert ABGR to RGBA', () => {
-            // Create a minimal 4x2 frame with known ABGR pixels
-            const w = 4;
-            const h = 2;
-            const abgr = new Uint8Array(w * h * 4);
-            // pixel (0,0): ABGR = [10, 20, 30, 40]
-            abgr.set([10, 20, 30, 40], 0);
-
-            vm.setViewMode('full');
-            // Override the crop rect to match our small frame
-            // Since we can't override DISPLAY_MODES, just test with full frame bounds
-            // by using a frame that matches full dimensions
+        it('should crop RGBA frame (no conversion needed)', () => {
+            // Emulator sends RGBA by default (--frame-format rgba)
             const fullW = FULL_FRAME_WIDTH;
             const fullH = FULL_FRAME_HEIGHT;
             const fullFrame = new Uint8Array(fullW * fullH * 4);
-            // Set pixel at (0,0): ABGR = [0xAA, 0xBB, 0xCC, 0xDD]
-            fullFrame.set([0xAA, 0xBB, 0xCC, 0xDD], 0);
+            // Set pixel at (0,0): RGBA = [0xDD, 0xCC, 0xBB, 0xAA]
+            fullFrame.set([0xDD, 0xCC, 0xBB, 0xAA], 0);
 
+            vm.setViewMode('full');
             const msg = vm.processFrame(fullFrame, fullW, fullH);
             expect(msg.type).to.equal('frame');
             if (msg.type === 'frame') {
                 expect(msg.width).to.equal(DISPLAY_MODES.full.w);
                 expect(msg.height).to.equal(DISPLAY_MODES.full.h);
-                // First pixel should be [R, G, B, A] = [0xDD, 0xCC, 0xBB, 0xAA]
+                // RGBA passthrough — no byte reorder
                 expect(msg.pixels[0]).to.equal(0xDD);
                 expect(msg.pixels[1]).to.equal(0xCC);
                 expect(msg.pixels[2]).to.equal(0xBB);

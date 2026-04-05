@@ -13,6 +13,12 @@ export class IpcClient {
     private receiveBuffer = Buffer.alloc(0);
     private pendingResolve: ((buf: Buffer) => void) | null = null;
     private pendingReject: ((err: Error) => void) | null = null;
+    private readonly requestQueue: Array<{
+        frame: Buffer;
+        timeoutMs: number;
+        resolve: (buf: Buffer) => void;
+        reject: (err: Error) => void;
+    }> = [];
     private readonly logger: Logger;
 
     constructor(logger: Logger) {
@@ -60,7 +66,9 @@ export class IpcClient {
             this.socket.destroy();
             this.socket = null;
         }
-        this.rejectPending(new V6Error(ErrorCode.IPC_CONNECTION_REFUSED, 'Disconnected'));
+        const err = new V6Error(ErrorCode.IPC_CONNECTION_REFUSED, 'Disconnected');
+        this.rejectPending(err);
+        this.drainQueue(err);
         this.receiveBuffer = Buffer.alloc(0);
     }
 
@@ -86,33 +94,37 @@ export class IpcClient {
     private writeAndRead(frame: Buffer, timeoutMs: number): Promise<Buffer> {
         return new Promise<Buffer>((resolve, reject) => {
             if (this.pendingResolve) {
-                reject(new V6Error(ErrorCode.IPC_TIMEOUT, 'Another request is already pending'));
+                this.requestQueue.push({ frame, timeoutMs, resolve, reject });
                 return;
             }
 
-            this.pendingResolve = resolve;
-            this.pendingReject = reject;
+            this.executeWrite(frame, timeoutMs, resolve, reject);
+        });
+    }
 
-            const timer = setTimeout(() => {
-                this.rejectPending(new V6Error(ErrorCode.IPC_TIMEOUT, `IPC request timed out after ${timeoutMs}ms`));
-            }, timeoutMs);
+    private executeWrite(frame: Buffer, timeoutMs: number, resolve: (buf: Buffer) => void, reject: (err: Error) => void): void {
+        this.pendingResolve = resolve;
+        this.pendingReject = reject;
 
-            const origResolve = this.pendingResolve;
-            this.pendingResolve = (buf: Buffer) => {
-                clearTimeout(timer);
-                origResolve(buf);
-            };
-            const origReject = this.pendingReject;
-            this.pendingReject = (err: Error) => {
-                clearTimeout(timer);
-                origReject(err);
-            };
+        const timer = setTimeout(() => {
+            this.rejectPending(new V6Error(ErrorCode.IPC_TIMEOUT, `IPC request timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
 
-            this.socket!.write(frame, (err) => {
-                if (err) {
-                    this.rejectPending(new V6Error(ErrorCode.IPC_CONNECTION_REFUSED, `Write failed: ${err.message}`, err));
-                }
-            });
+        const origResolve = this.pendingResolve;
+        this.pendingResolve = (buf: Buffer) => {
+            clearTimeout(timer);
+            origResolve(buf);
+        };
+        const origReject = this.pendingReject;
+        this.pendingReject = (err: Error) => {
+            clearTimeout(timer);
+            origReject(err);
+        };
+
+        this.socket!.write(frame, (err) => {
+            if (err) {
+                this.rejectPending(new V6Error(ErrorCode.IPC_CONNECTION_REFUSED, `Write failed: ${err.message}`, err));
+            }
         });
     }
 
@@ -149,6 +161,8 @@ export class IpcClient {
         this.pendingResolve = null;
         this.pendingReject = null;
         resolve(frame);
+
+        this.processNextInQueue();
     }
 
     private rejectPending(err: Error): void {
@@ -157,6 +171,22 @@ export class IpcClient {
             this.pendingResolve = null;
             this.pendingReject = null;
             reject(err);
+        }
+
+        this.processNextInQueue();
+    }
+
+    private processNextInQueue(): void {
+        const next = this.requestQueue.shift();
+        if (next) {
+            this.executeWrite(next.frame, next.timeoutMs, next.resolve, next.reject);
+        }
+    }
+
+    private drainQueue(err: Error): void {
+        while (this.requestQueue.length > 0) {
+            const item = this.requestQueue.shift()!;
+            item.reject(err);
         }
     }
 }

@@ -113,19 +113,18 @@ export class EmulatorViewModel {
     }
 
     /**
-     * Process a raw ABGR frame from the emulator.
-     * Crops to the current display mode and converts to RGBA.
+     * Process a raw RGBA frame from the emulator.
+     * Crops to the current display mode.
      * Returns a PanelMessage ready to send to the webview.
      */
-    processFrame(abgrPixels: Uint8Array, srcWidth: number, srcHeight: number): PanelMessage {
+    processFrame(rgbaPixels: Uint8Array, srcWidth: number, srcHeight: number): PanelMessage {
         const crop = this.cropRect;
-        const cropped = cropFrame(abgrPixels, srcWidth, crop);
-        const rgba = abgrToRgba(cropped);
+        const cropped = cropFrame(rgbaPixels, srcWidth, crop);
         return {
             type: 'frame',
             width: crop.w,
             height: crop.h,
-            pixels: Array.from(rgba),
+            pixels: Array.from(cropped),
         };
     }
 

@@ -20,6 +20,7 @@ export class EmulatorPanel implements vscode.Disposable {
     private readonly client: IpcClient;
     private readonly logger: Logger;
     private frameTimer: ReturnType<typeof setInterval> | null = null;
+    private frameInFlight = false;
 
     constructor(
         extensionUri: vscode.Uri,
@@ -176,7 +177,8 @@ export class EmulatorPanel implements vscode.Disposable {
     }
 
     private async requestFrame(): Promise<void> {
-        if (!this.client.connected || !this.panel) { return; }
+        if (!this.client.connected || !this.panel || this.frameInFlight) { return; }
+        this.frameInFlight = true;
         try {
             const rawBuf = await this.client.sendRaw(IpcCommand.GET_FRAME_RAW);
             const frame = decodeFrameRaw(rawBuf);
@@ -188,6 +190,8 @@ export class EmulatorPanel implements vscode.Disposable {
             this.postMessage(panelMsg);
         } catch {
             // Swallow frame errors to avoid flooding — they're transient
+        } finally {
+            this.frameInFlight = false;
         }
     }
 

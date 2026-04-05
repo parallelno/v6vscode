@@ -88,11 +88,11 @@ describe('Emulator panel regression tests', () => {
             const fullFrame = new Uint8Array(FULL_FRAME_WIDTH * FULL_FRAME_HEIGHT * 4);
             const bless = DISPLAY_MODES.borderless;
             const targetOffset = (bless.y * FULL_FRAME_WIDTH + bless.x) * 4;
-            // Set ABGR = [0x11, 0x22, 0x33, 0x44]
-            fullFrame[targetOffset]     = 0x11; // A
-            fullFrame[targetOffset + 1] = 0x22; // B
-            fullFrame[targetOffset + 2] = 0x33; // G
-            fullFrame[targetOffset + 3] = 0x44; // R
+            // Set RGBA = [0x44, 0x33, 0x22, 0x11] (emulator sends RGBA by default)
+            fullFrame[targetOffset]     = 0x44; // R
+            fullFrame[targetOffset + 1] = 0x33; // G
+            fullFrame[targetOffset + 2] = 0x22; // B
+            fullFrame[targetOffset + 3] = 0x11; // A
 
             // Switch to borderless mid-run
             vm.setViewMode('borderless');
@@ -100,7 +100,7 @@ describe('Emulator panel regression tests', () => {
             expect(msg.type).to.equal('frame');
             if (msg.type === 'frame') {
                 // First pixel of borderless should be the pixel at (bless.x, bless.y)
-                // ABGR [0x11, 0x22, 0x33, 0x44] → RGBA [0x44, 0x33, 0x22, 0x11]
+                // RGBA passthrough — no conversion needed
                 expect(msg.pixels[0]).to.equal(0x44); // R
                 expect(msg.pixels[1]).to.equal(0x33); // G
                 expect(msg.pixels[2]).to.equal(0x22); // B
