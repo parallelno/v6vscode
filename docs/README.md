@@ -49,6 +49,12 @@ Files named `*.project.json` at the workspace root. Validated by `config/schemas
 | `run.speed` | string | no | `"100%"` | Emulation speed |
 | `run.viewMode` | string | no | `"borderless"` | Display mode: borderless, bordered, full |
 
+### Language Support (`src/language/`)
+
+- **Syntax highlighting** — Declared in `package.json` via `contributes.languages` and `contributes.grammars`. Language ID `v6asm`, file extensions `.asm` and `.inc`, grammar `source.retroasm_8080` from `res/syntaxes/devector_8080.tmLanguage.json`.
+- **Language configuration** — `language-configuration.json` provides line comments (`;`), block comments (`/* */`), bracket pairs, auto-closing pairs, and surrounding pairs.
+- **`includes/include-link-provider.ts`** — `DocumentLinkProvider` for Ctrl+click navigation on `.include "..."` directives. Regex: `.include\s+"([^"]+)"`. Resolves paths relative to the source file's directory.
+
 ## Settings
 
 | Key | Type | Default | Description |

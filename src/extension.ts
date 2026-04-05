@@ -8,6 +8,7 @@ import { CMD_CREATE_PROJECT, CMD_RUN_PROJECT, OUTPUT_CHANNEL_NAME } from './conf
 import { ProjectDiscovery } from './project/discovery/project-discovery';
 import { ProjectRepository } from './project/persistence/project-repository';
 import { ActiveProjectService } from './project/active/active-project-service';
+import { IncludeLinkProvider } from './language/includes/include-link-provider';
 
 export function activate(context: vscode.ExtensionContext): void {
     const store = new DisposableStore();
@@ -24,6 +25,12 @@ export function activate(context: vscode.ExtensionContext): void {
     );
 
     logger.info('Vector-06c extension activating.');
+
+    // Language support
+    const v6asmSelector: vscode.DocumentSelector = { language: 'v6asm' };
+    store.add(
+        vscode.languages.registerDocumentLinkProvider(v6asmSelector, new IncludeLinkProvider())
+    );
 
     // Stub commands — will be replaced in later phases
     store.add(

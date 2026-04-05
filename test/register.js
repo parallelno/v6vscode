@@ -44,6 +44,18 @@ const mockVscode = {
     commands: {
         registerCommand: (_id, _handler) => ({ dispose: () => {} }),
     },
+    languages: {
+        registerDocumentLinkProvider: (_selector, _provider) => ({ dispose: () => {} }),
+    },
+    Position: class Position {
+        constructor(line, character) { this.line = line; this.character = character; }
+    },
+    Range: class Range {
+        constructor(start, end) { this.start = start; this.end = end; }
+    },
+    DocumentLink: class DocumentLink {
+        constructor(range, target) { this.range = range; this.target = target; }
+    },
 };
 
 const originalResolveFilename = Module._resolveFilename;
