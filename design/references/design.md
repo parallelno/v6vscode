@@ -8,43 +8,25 @@ The extension is responsible for:
 
 1. Assembly syntax highlighting and include-path navigation.
 2. Project orchestration via `*.project.json`.
-3. Build command integration (invoking external toolchain).
-4. Emulator presentation inside a VS Code webview panel.
-
-The extension does **not** implement an assembler, C compiler, floppy image builder, or emulator core. Those are standalone external tools stored under `tools/` and invoked through adapter layers.
+3. Emulator presentation inside a VS Code webview panel.
 
 ## 2. Goals
 
 ### 2.1 Product Goals
 
 1. Provide assembly editing support with syntax highlighting and include navigation.
-2. Make project creation, build, and run available directly inside VS Code.
+2. Make project creation and emulator launch available directly inside VS Code.
 3. Integrate emulator output into a dedicated VS Code webview panel.
-4. Keep the user in control of the toolchain setup. The extension's entry point is the project file and its reference to the executable.
+4. Keep the user in control of the build pipeline. The extension's entry point is the project file and its reference to the executable.
 
 ### 2.2 Engineering Goals
 
 1. Organize extension code by domain, not by feature accretion.
 2. Separate pure logic from VS Code API glue wherever possible.
-3. Define strict interfaces around external tools.
+3. Define a strict interface around the emulator backend.
 4. Make the system testable at unit, integration, and regression levels.
 5. Ensure every milestone ends with updated tests and updated documentation.
 
-## 3. Non-Goals
-
-These are explicitly excluded from the current scope:
-
-1. Reimplement `v6c`, `v6asm`, `v6fdd`, or `v6emul` in TypeScript.
-2. Parse, load, or use `*.symbols.json` for source mapping, symbol navigation, hovers, or any debug metadata purpose.
-3. Control flow toolbar (run/pause/step/restart).
-4. Breakpoint UI (gutter toggles, VS Code breakpoint panel integration).
-5. Watchpoint UI.
-6. `*.debug.json` session state persistence.
-7. VS Code debug register list window integration.
-8. Data line or code highlights based on symbol metadata.
-9. Symbol resolving for hovers, watches, or runtime inspection.
-
-These features are planned for the future and will be designed separately once the core extension is stable. See [Section 15: Future Plans](#15-future-plans).
 
 ## 4. Guiding Principles
 
@@ -54,34 +36,30 @@ Each subsystem must own one concern:
 
 1. Language features own syntax highlighting and include navigation.
 2. Project services own project discovery, validation, and persistence.
-3. Build services own tool invocation and build orchestration.
-4. Emulator services own emulator lifecycle and panel presentation.
+3. Emulator services own emulator lifecycle and panel presentation.
 
 ### 4.2 Artifact-Driven Design
 
 The extension derives behavior from explicit files.
 
 - `*.project.json` stores project configuration and the reference to the executable (`*.rom` or `*.fdd`).
-- `*.rom` and `*.fdd` are the build artifacts consumed by the emulator.
+- `*.rom` and `*.fdd` are the artifacts consumed by the emulator.
 
-The user is in charge of setting up the toolchain. The extension reads the project file, invokes the configured build steps, and loads the resulting executable into the emulator.
+The user is in charge of the build pipeline (Makefile, shell script, VS Code task, etc.). The extension reads the project file, validates the executable path, and loads the result into the emulator.
 
 ### 4.3 Testable by Default
 
-Path resolution, project parsing, tool argument construction, IPC codec logic, and panel message handling must be implemented in testable modules with minimal VS Code dependencies.
+Path resolution, project parsing, IPC codec logic, and panel message handling must be implemented in testable modules with minimal VS Code dependencies.
 
 ## 5. Core Artifacts
 
 ### 5.1 `*.project.json`
 
-The project file is the root of all extension workflows: build, run, and emulate. It stores:
+The project file is the root configuration for the extension. It stores:
 
 1. Project identity.
-2. Entry source file for the build toolchain.
-3. Output executable path (`*.rom` or `*.fdd`).
-4. Build toolchain configuration.
-5. Optional FDD generation settings.
-6. Emulator launch preferences.
+2. Executable path (`*.rom` or `*.fdd`) — the artifact the emulator loads.
+3. Emulator launch preferences.
 
 Proposed shape:
 
@@ -89,24 +67,26 @@ Proposed shape:
 {
   "$schema": "./schemas/v6.project.schema.json",
   "name": "demo",
-  "build": {
-    "entry": "src/main.asm",
-    "rom": "out/demo.rom",
-    "cpu": "i8080",
-    "romAlign": 2,
-    "listing": true
-  },
-  "disk": {
-    "enabled": false,
-    "template": "${extension}/res/fdd/rds308.fdd",
-    "output": "out/demo.fdd",
-    "content": ["out/demo.rom"]
-  },
   "run": {
     "executable": "out/demo.rom",
-    "bootRom": "${extension}/res/boot/boots.bin",
-    "speed": "1x",
-    "viewMode": "fit"
+    "speed": "100%",
+    "viewMode": "borderless"
+  }
+}
+```
+
+Example with a custom boot ROM and FDD executable:
+
+```json
+{
+  "$schema": "./schemas/v6.project.schema.json",
+  "name": "hello_c",
+  "run": {
+    "executable": "out/hello_c.fdd",
+    "bootRom": "roms/custom_boot.bin",
+    "fddReadOnly": true,
+    "speed": "100%",
+    "viewMode": "borderless"
   }
 }
 ```
@@ -115,85 +95,129 @@ Notes:
 
 - Paths are relative to the project file unless absolute.
 - `${extension}` is resolved at runtime for bundled assets.
-- `run.executable` points to the final `*.rom` or `*.fdd` that the emulator loads. This is the critical link.
+- `run.executable` points to the final `*.rom` or `*.fdd` that the emulator loads. This is the critical link between the user's build output and the extension.
+- `run.bootRom` is optional. When omitted, the extension uses its bundled `res/boot/boots.bin`. The user only needs to set this field when a custom boot ROM is required.
+- `run.loadAddr` is optional. Specifies the memory address where the ROM is loaded (passed to `--load-addr`). Default: `0x100`.
+- `run.fddReadOnly` is optional. When `true`, the extension treats the mounted FDD image as read-only — emulator writes still happen in memory but the extension will not persist them back to disk. Default: `false`.
 - The schema should be explicit and versionable.
 
-### 5.2 Toolchains
+#### 5.1.1 Create Project Command
 
-The user configures the build toolchain. The extension supports two paths:
+The **V6: Create Project** command scaffolds a new **Make-based** project with a working build pipeline:
 
+1. Prompt for a **project name**.
+2. Prompt for **language**: ASM or C.
+3. Prompt for **executable type**: ROM or FDD.
+4. Generate the following files in the workspace:
+
+| File | Purpose |
+|------|---------|
+| `<name>.project.json` | Project configuration with default `run` settings. |
+| `src/main.asm` or `src/main.c` | Starter source file (language-dependent). |
+| `Makefile` | Build pipeline invoking the appropriate toolchain. |
+
+5. Show an information message: *"Project created. Build with `make` before running the emulator."*
+6. Open the generated project file in the editor.
+
+**Generated Makefile — ASM / ROM:**
+
+```makefile
+ROM  = out/demo.rom
+SRC  = src/main.asm
+CPU  = i8080
+
+$(ROM): $(SRC)
+	v6asm $(SRC) -o $(ROM) -c $(CPU)
+clean:
+	rm -f $(ROM)
 ```
-When C source:   C (v6c) -> ASM (v6asm) -> ROM -> (if needed, v6fdd) -> FDD
-When ASM source: ASM (v6asm) -> ROM -> (if needed, v6fdd) -> FDD
+
+**Generated Makefile — ASM / FDD:**
+
+```makefile
+ROM      = out/demo.rom
+FDD      = out/demo.fdd
+SRC      = src/main.asm
+CPU      = i8080
+TEMPLATE = res/fdd/rds308.fdd
+
+$(FDD): $(ROM)
+	v6fdd $(TEMPLATE) $(FDD) $(ROM)
+$(ROM): $(SRC)
+	v6asm $(SRC) -o $(ROM) -c $(CPU)
+clean:
+	rm -f $(ROM) $(FDD)
 ```
 
-The extension does not enforce a specific toolchain. It invokes the steps defined in the project file. The entry point is always the project file and its reference to the executable.
+**Generated Makefile — C / ROM:**
 
-### 5.3 `*.rom`
+```makefile
+ROM  = out/demo.rom
+ASM  = out/demo.asm
+SRC  = src/main.c
+CPU  = i8080
 
-The Vector-06C executable binary produced by `v6asm`. Loaded into emulator memory at a configurable address (default `0x0000`).
-
-### 5.4 `*.fdd`
-
-A floppy disk image (820 KB). Built by `v6fdd` from a template and project outputs. When present and configured, the emulator boots from FDD instead of loading ROM directly.
-
-## 6. System Context
-
-```
-Source files in workspace (.asm, .c)
-  -> language services (syntax highlight, include navigation)
-  -> project discovery (*.project.json)
-  -> build orchestration (v6c -> v6asm -> v6fdd)
-  -> .rom / .fdd artifacts
-  -> emulator launch (v6emul --serve)
-  -> IPC client <-> emulator backend
-  -> webview panel (frame rendering, speed control, memory dump)
+$(ROM): $(ASM)
+	v6asm $(ASM) -o $(ROM) -c $(CPU)
+$(ASM): $(SRC)
+	v6c $(SRC) -o $(ASM)
+clean:
+	rm -f $(ASM) $(ROM)
 ```
 
-## 7. External Tools
+**Generated Makefile — C / FDD:**
 
-All tools are external executables stored under `tools/`. The extension wraps each through an adapter so the rest of the codebase depends on stable TypeScript interfaces, not process details.
+```makefile
+ROM      = out/demo.rom
+ASM      = out/demo.asm
+FDD      = out/demo.fdd
+SRC      = src/main.c
+CPU      = i8080
+TEMPLATE = res/fdd/rds308.fdd
 
-### 7.1 `v6c` — C Compiler
+$(FDD): $(ROM)
+	v6fdd $(TEMPLATE) $(FDD) $(ROM)
+$(ROM): $(ASM)
+	v6asm $(ASM) -o $(ROM) -c $(CPU)
+$(ASM): $(SRC)
+	v6c $(SRC) -o $(ASM)
+clean:
+	rm -f $(ASM) $(ROM) $(FDD)
+```
 
-- Location: `tools/v6c/`
-- Purpose: Compiles C source to Intel 8080 assembly.
-- Input: `*.c`
-- Output: `*.asm`
+The generated project file uses sensible defaults (`speed: "100%"`, `viewMode: "borderless"`).
 
-### 7.2 `v6asm` — Assembler
+## 6. External Tools
 
-- Location: `tools/v6asm/`
-- Purpose: Two-pass Intel 8080/Z80 assembler. Compiles `*.asm` to `*.rom`.
-- CLI: `v6asm <source.asm> -o <out.rom> [-c i8080|z80] [-a <align>] [-l]`
-- Output: `*.rom`, optionally `*.lst` (listing file).
+### 6.1 `v6emul` — Emulator Backend (Extension-Managed)
 
-### 7.3 `v6fdd` — FDD Image Builder
+The extension directly manages only the emulator backend.
 
-- Location: `tools/v6fdd/`
-- Purpose: Creates FDD disk images from a template and project artifacts.
-- Input: template `*.fdd` + content files (ROM, bin, etc.)
-- Output: `*.fdd` (819,200 bytes: 2 sides × 82 tracks × 5 sectors × 1024 bytes)
-
-### 7.4 `v6emul` — Emulator Backend
-
-- Location: `tools/v6emul/`
+- Location: `res/v6emul/` (bundled with the extension).
 - Purpose: Headless Vector-06C emulator. Runs as a TCP IPC server.
 - CLI: `v6emul --serve [--rom <path>] [--load-addr <addr>] [--boot-rom <path>] [--speed <speed>] [--tcp-port <port>]`
 - `--boot-rom` loads the boot ROM (e.g. `res/boot/boots.bin`) that the hardware executes before handing off to the user program.
-- Protocol: Length-prefixed MessagePack over TCP loopback. See [Section 11](#11-emulator-ipc-protocol).
+- Protocol: Length-prefixed MessagePack over TCP loopback. See [Section 10](#10-emulator-ipc-protocol).
 
-### 7.5 Tool Discovery
+### 6.2 Emulator Discovery
 
 Resolution order:
 
 1. Explicit path from extension settings (if configured by the user).
-2. Bundled path under `tools/` inside the extension.
+2. Bundled path under `res/v6emul/` inside the extension.
 3. User `PATH` fallback.
 
-The extension should validate tool presence early and produce actionable error messages.
+The extension should validate emulator presence early and produce actionable error messages.
 
-## 8. Proposed Repository Layout
+### 6.3 User-Side Build Tools (Reference)
+
+These tools are part of the Vector-06C toolchain but are **not** bundled with or invoked by the extension. The user downloads them separately and integrates them into their own build pipeline:
+
+- **`v6asm`** — Two-pass Intel 8080/Z80 assembler. Releases: https://github.com/parallelno/v6asm/releases
+- **`v6fdd`** — FDD image builder. Creates it from a template and content files. Releases: https://github.com/parallelno/v6asm/releases
+- **`v6c`** — C compiler. Compiles C source to Intel 8080 assembly. Releases: https://github.com/parallelno/v6c/releases
+
+## 7. Proposed Repository Layout
 
 ```
 v6vscode/
@@ -218,19 +242,12 @@ v6vscode/
       discovery/project-discovery.ts     # Find *.project.json in workspace
       persistence/project-repository.ts  # Load/save project files
       active/active-project-service.ts   # Track selected project
-    tools/
-      common/tool-locator.ts             # Resolve tool binary path
-      v6c/v6c-adapter.ts                 # C compiler adapter
-      v6asm/v6asm-adapter.ts             # Assembler adapter
-      v6fdd/v6fdd-adapter.ts             # FDD builder adapter
-      v6emul/v6emul-launcher.ts          # Emulator process launcher
-    build/
-      pipeline/build-pipeline.ts         # Orchestrate: validate -> compile -> verify -> disk
-      diagnostics/diagnostic-mapper.ts   # Map tool stderr to VS Code diagnostics
     language/
       includes/include-link-provider.ts  # Ctrl+click on .include paths
       syntax/                            # Grammar registration
     emulator/
+      launcher/v6emul-locator.ts        # Resolve v6emul binary path
+      launcher/v6emul-launcher.ts       # Emulator process launcher
       client/ipc-client.ts              # TCP client, request-response
       protocol/ipc-codec.ts             # MessagePack encode/decode
       protocol/ipc-commands.ts          # Typed command enums and interfaces
@@ -240,7 +257,6 @@ v6vscode/
       panel/assets/                     # Webview HTML/CSS/JS
     commands/
       create-project-command.ts
-      build-project-command.ts
       run-project-command.ts
     templates/
       project/                          # Starter *.project.json
@@ -249,8 +265,6 @@ v6vscode/
     unit/
       platform/
       project/
-      tools/
-      build/
       language/
       emulator/
     integration/
@@ -263,23 +277,19 @@ v6vscode/
     fdd/rds308.fdd
     images/icon.png
     syntaxes/devector_8080.tmLanguage.json
-  tools/
-    v6c/
-    v6asm/
-    v6fdd/
-    v6emul/
+    v6emul/                             # Bundled emulator backend
 ```
 
 Layout rules:
 
 1. `extension.ts` is the composition root — construct services, register contributions, dispose. No business logic.
 2. VS Code API usage pushed to the edges. Parsing and model code never depends on webview or panel code.
-3. All external process launching is centralized under `src/tools/`.
+3. All external process launching (emulator) is centralized under `src/emulator/`.
 4. Shared path and workspace utilities live under `src/platform/`, not duplicated per feature.
 
-## 9. Module Architecture
+## 8. Module Architecture
 
-### 9.1 Extension Composition Root
+### 8.1 Extension Composition Root
 
 `src/extension.ts` must only:
 
@@ -289,7 +299,7 @@ Layout rules:
 
 It must not contain project logic, parsing, process invocation, or emulator session management.
 
-### 9.2 Project Domain
+### 8.2 Project Domain
 
 Responsibilities:
 
@@ -316,48 +326,25 @@ interface ActiveProjectService {
 }
 ```
 
-### 9.3 Tool Adapter Domain
+### 8.3 Emulator Launcher Domain
 
-Each external tool gets its own adapter with:
+The emulator launcher manages `v6emul` process discovery and lifecycle:
 
-1. Binary discovery via `tool-locator.ts`.
-2. CLI argument construction.
+1. Binary discovery via `v6emul-locator.ts`.
+2. CLI argument construction from project `run` settings.
 3. Process execution via `process-runner.ts`.
-4. Structured result mapping (parse stdout/stderr into typed objects).
-5. Version probing.
+4. Version probing.
 
 ```ts
-interface AssemblerAdapter {
-  assemble(request: AssembleRequest): Promise<AssembleResult>;
-  getVersion(): Promise<string>;
-}
-
-interface DiskBuilderAdapter {
-  buildDisk(request: BuildDiskRequest): Promise<BuildDiskResult>;
-}
-
 interface EmulatorLauncher {
   launch(request: LaunchRequest): Promise<EmulatorProcess>;
+  getVersion(): Promise<string>;
 }
 ```
 
-These adapters shield the rest of the system from CLI flag changes and process details.
+The launcher shields the rest of the system from v6emul CLI changes and process details.
 
-### 9.4 Build Pipeline Domain
-
-The build pipeline owns the sequence:
-
-1. Resolve active project.
-2. Validate project paths and toolchain configuration.
-3. Run `v6c` (if C source entry).
-4. Run `v6asm`.
-5. Verify `*.rom` existence.
-6. Optionally run `v6fdd` to produce `*.fdd`.
-7. Publish build diagnostics.
-
-Build results are structured objects, never raw terminal text passed around.
-
-### 9.5 Language Domain
+### 8.4 Language Domain
 
 Responsibilities:
 
@@ -369,7 +356,7 @@ Navigation strategy:
 - Include links are resolved directly from source text — no build required.
 - Label and constant navigation is a future feature. Not in current scope.
 
-### 9.6 Emulator Domain
+### 8.5 Emulator Domain
 
 The emulator domain is the center of the runtime experience.
 
@@ -379,45 +366,78 @@ Responsibilities:
 2. Manage TCP IPC connection lifecycle.
 3. Send commands, receive responses.
 4. Present video frames in a webview panel.
-5. Provide panel controls: run/pause, restart, speed, memory dump.
+5. Provide panel controls: run/pause, restart, speed, display mode.
 
 The panel is a **consumer** of emulator state, not a source of truth. It uses a typed message bridge and a view model.
 
-## 10. Emulator Panel Design
+## 9. Emulator Panel Design
 
-### 10.1 Responsibilities
+### 9.1 Responsibilities
 
 The emulator panel provides:
 
 1. Video output — rendered frame from the emulator.
-2. Runtime controls — run, pause, restart, speed selection.
-3. Hardware status summary — frame number, speed percentage, display mode.
-4. Memory dump — 16×16 hex dump with optional PC tracking, address navigation.
-5. Keyboard input forwarding to the emulator.
+2. Runtime controls — run/pause, reset, speed, display mode.
+3. Keyboard input forwarding to the emulator.
 
-### 10.2 Boundaries
+### 9.2 Layout
+
+The panel contains exactly two areas, top to bottom:
+
+1. **Header bar** — a single row of controls:
+   - Run / Pause toggle button.
+   - Restart button.
+   - Speed selector (dropdown or cycle button, values per §9.4).
+   - Display mode selector (`full`, `border`, `borderless`; see §9.4).
+2. **Frame viewport** — fills the remaining panel area. Renders the emulator video output via `GET_FRAME_RAW`.
+
+No other UI elements are present in the panel.
+
+### 9.3 Boundaries
 
 The panel must not:
 
 1. Own emulator process lifecycle decisions independently.
 2. Contain business logic that belongs in services.
 
-### 10.3 View Model
+### 9.4 Display Mode
+
+The display mode controls which portion of the emulator frame is shown in the panel. The emulator always sends a full 768 × 312 ABGR frame via `GET_FRAME_RAW`. The extension crops the frame before rendering.
+
+**Frame geometry (MODE_512 pixel units):**
+
+| Region | Value |
+|--------|-------|
+| Full frame | 768 × 312 |
+| Active area | 512 × 256 |
+| Border left / right | 128 px each |
+| Border top (vsync 24 + vblank 16) | 40 scanlines |
+| Border bottom (vblank) | 16 scanlines |
+| Visible border (reduced) | 16 px per side |
+
+**Display modes:**
+
+| UI Label | Crop rectangle (x, y, w, h) | Description |
+|----------|------------------------------|-------------|
+| `full` | 0, 0, 768, 312 | Original frame, original aspect. |
+| `border` | 112, 24, 544, 288 | Active area + 16 px visible border on each side. 4 x 3 aspect. |
+| `borderless` | 128, 40, 512, 256 | Active area only — no borders. 4 x 3 aspect. |
+
+Notes:
+- The `viewMode` field in `*.project.json` stores the user's preference (`full`, `border`, `borderless`). Default: `borderless`.
+
+### 9.5 View Model
 
 The webview receives typed messages:
 
 ```ts
 type PanelMessage =
   | { type: 'frame'; width: number; height: number; pixels: Uint8Array }
-  | { type: 'status'; running: boolean; speed: string; frameNum: number; speedPercent: number }
-  | { type: 'memory'; start: number; bytes: number[]; pc?: number }
-  | { type: 'hwStats'; cc: number; rasterLine: number; rasterPixel: number;
-      displayMode: number; scrollVert: number; rusLat: boolean;
-      inte: boolean; hlta: boolean; palette: number[] }
+  | { type: 'status'; running: boolean; speed: string }
   | { type: 'error'; message: string };
 ```
 
-### 10.4 Speed Control
+### 9.6 Speed Control
 
 Speed values map to `SET_CPU_SPEED` IPC command:
 
@@ -430,21 +450,12 @@ Speed values map to `SET_CPU_SPEED` IPC command:
 | 200% | 4 | Double speed |
 | Max | 5 | No frame delay |
 
-### 10.5 Memory Dump
+Notes:
+- The `speed` field in `*.project.json` stores the user's preference (`1%`, `20%`, `50%`, `100%`, `200%`, `max`). Default: `100%`.
 
-The memory dump panel streams a 16×16 hex dump. Features:
+## 10. Emulator IPC Protocol
 
-- Follow PC mode — automatically tracks the current program counter.
-- Manual mode — freeze on a specific address.
-- Address input — hex or decimal.
-- Navigation buttons: ±0x10, ±0x100.
-- ASCII column alongside hex bytes.
-
-Uses `GET_BYTE_RAM` (cmd 14) and `GET_MEM_STRING_GLOBAL` (cmd 16) for reads.
-
-## 11. Emulator IPC Protocol
-
-### 11.1 Wire Format
+### 10.1 Wire Format
 
 Length-prefixed MessagePack over TCP loopback (`127.0.0.1`).
 
@@ -455,7 +466,7 @@ Length-prefixed MessagePack over TCP loopback (`127.0.0.1`).
 Request: `{"cmd": <int>, "data": {...}}`
 Response: `{"ok": true, "data": {...}}` or `{"ok": false, "error": "description"}`
 
-### 11.2 Frame Transport
+### 10.2 Frame Transport
 
 For high-throughput frame streaming, `GET_FRAME_RAW` (cmd -4) bypasses MessagePack:
 
@@ -465,7 +476,7 @@ For high-throughput frame streaming, `GET_FRAME_RAW` (cmd -4) bypasses MessagePa
 
 Frame: 768 × 312 × 4 bytes = 958,464 bytes. At 50 fps: ~48 MB/s (TCP loopback headroom: ~700 MB/s).
 
-### 11.3 Commands Used by the Extension
+### 10.3 Commands Used by the Extension
 
 The extension uses the following IPC command subset in the current scope:
 
@@ -528,10 +539,12 @@ The extension uses the following IPC command subset in the current scope:
 
 **FDD persistence workflow** (save/discard modified disks):
 
+When `fddReadOnly` is `true`, the extension skips the entire workflow — in-memory writes are discarded when the emulator exits.
+
+When `fddReadOnly` is `false` (default):
+
 1. Poll `GET_FDD_INFO` — check the `updated` field for unsaved writes.
-2. Export via `GET_FDD_IMAGE` — returns the full 819,200-byte image.
-3. Save to file (client-side).
-4. Clear dirty flag via `RESET_UPDATE_FDD`.
+2. Export via `GET_FDD_IMAGE` → write to file → `RESET_UPDATE_FDD`.
 
 #### Keyboard
 
@@ -539,92 +552,86 @@ The extension uses the following IPC command subset in the current scope:
 |-----|------|---------|
 | 45 | KEY_HANDLING | Send key press/release |
 
-## 12. Configuration Model
+## 11. Configuration Model
 
-### 12.1 Extension Settings
+### 11.1 Extension Settings
 
 Global extension settings cover environment-level configuration only:
 
-1. Optional override paths for tools (`v6c`, `v6asm`, `v6fdd`, `v6emul`).
+1. Optional override path for `v6emul`.
 2. Logging verbosity.
 3. Default emulator preferences that are not project-specific.
 
 Project-specific behavior belongs in `*.project.json`, not global settings.
 
-### 12.2 Schema and Validation
+### 11.2 Schema and Validation
 
 Provide a JSON schema for `*.project.json`.
 
 Validation runs:
 
 1. At file load time.
-2. Before build or run.
+2. Before emulator launch.
 
 Invalid configuration produces structured diagnostics surfaced in VS Code.
 
-## 13. Observability and Diagnostics
+## 12. Observability and Diagnostics
 
-### 13.1 Logging
+### 12.1 Logging
 
 Structured log output to a dedicated VS Code output channel. Log levels: error, warn, info, debug.
 
-### 13.2 Build Diagnostics
+### 12.2 Error Classification
 
-Assembler stderr is parsed and mapped to VS Code diagnostic entries (file, line, severity, message) displayed in the Problems panel.
-
-### 13.3 Error Classification
-
-Tool failures are classified into:
+Failures are classified into:
 
 1. Configuration errors — missing or invalid project settings.
-2. Missing executable — tool binary not found.
-3. Build failures — non-zero exit from assembler or compiler.
-4. Artifact missing — expected output file not produced.
-5. Emulator errors — launch failure, connection refused, IPC timeout.
+2. Missing emulator — `v6emul` binary not found.
+3. Missing executable — `run.executable` artifact does not exist at launch time.
+4. Emulator errors — launch failure, connection refused, IPC timeout.
 
 This classification enables consistent UX and testable error paths.
 
-## 14. Testing Strategy
+## 13. Testing Strategy
 
 The system must have a comprehensive test suite. This is a design requirement.
 
-### 14.1 Unit Tests
+### 13.1 Unit Tests
 
 Cover pure logic modules:
 
 1. Project parsing and validation.
 2. Path resolution and `${extension}` expansion.
-3. Tool CLI argument construction.
-4. Build diagnostic parsing.
-5. IPC codec encode/decode.
-6. Panel view model state transitions.
+3. Emulator CLI argument construction.
+4. IPC codec encode/decode.
+5. Panel view model state transitions.
 
-### 14.2 Integration Tests
+### 13.2 Integration Tests
 
 Cover service boundaries:
 
-1. Build pipeline with mocked process runner.
-2. Emulator IPC handshake against a mock TCP server.
-3. Project discovery across multiple workspace folders.
+1. Emulator IPC handshake against a mock TCP server.
+2. Project discovery across multiple workspace folders.
+3. Emulator launch with mocked process runner.
 
-### 14.3 Regression Tests
+### 13.3 Regression Tests
 
 Capture likely-to-break behavior:
 
 1. Multiple `*.project.json` selection.
-2. Missing tool binary on build.
-3. Missing output artifact after build.
+2. Missing `v6emul` binary at launch.
+3. Missing executable artifact at launch.
 4. Emulator connection failure and recovery.
 5. Panel close and reopen.
 
-### 14.4 Test Infrastructure
+### 13.4 Test Infrastructure
 
 - Framework: Mocha + Chai.
 - Fixtures: `test/fixtures/` with sample project files and ROM stubs.
 - Mocks: helpers for process runner, file system, IPC server.
 - CI: `npm run test` runs all suites.
 
-### 14.5 Milestone Definition of Done
+### 13.5 Milestone Definition of Done
 
 Every milestone must end with:
 
@@ -634,9 +641,11 @@ Every milestone must end with:
 4. Documentation updated in `docs/`.
 5. Root `README.md` updated if user-facing behavior changed.
 
-## 15. Future Plans
+## 14. Future Plans
 
-The following features are explicitly **outside the current scope**. They will be designed and implemented as separate efforts once the core extension is stable:
+The following features are explicitly out of scope for the current phase.
+They will be designed and implemented as separate efforts once the core extension is stable.
+They are listed here to ensure the project architecture is designed to be easily extensible to accommodate these capabilities in the future.
 
 1. **Debug symbols** — `*.symbols.json` parsing, address-to-source mapping, source-to-address mapping.
 2. **Symbol navigation** — Ctrl+click on labels and constants to jump to definitions.
@@ -649,35 +658,19 @@ The following features are explicitly **outside the current scope**. They will b
 9. **Debug register list** — VS Code debug Variables panel showing CPU registers.
 10. **ROM hot-reload** — recompile on save and apply memory diff patch.
 
-## 16. Risks and Countermeasures
+## 15. Risks and Countermeasures
 
-### 16.1 Architecture Drift
+### 15.1 Architecture Drift
 
 **Risk**: Extension grows into a monolith mixing concerns.
 **Countermeasure**: Keep `extension.ts` as composition root only. Review imports across domains. Reject convenience imports that cross boundaries.
 
-### 16.2 Tool Contract Changes
-
-**Risk**: External tool CLI or output format changes break adapters.
-**Countermeasure**: Typed adapter request/response objects. Normalize tool output immediately. Adapter-level tests verify expected behavior.
-
-### 16.3 IPC Performance
+### 15.2 IPC Performance
 
 **Risk**: Frame streaming saturates the event loop.
 **Countermeasure**: Use `GET_FRAME_RAW` for binary transport. Throttle frame requests to match display rate. Measure and tune in hardening.
 
-### 16.4 UI Logic Capturing Core Behavior
+### 15.3 UI Logic Capturing Core Behavior
 
 **Risk**: Emulator panel accumulates business logic.
 **Countermeasure**: Panel is a passive view. Business logic lives in services with tests. Exchange typed messages only.
-
-## 17. Summary
-
-The extension is organized around two stable foundations:
-
-1. **`*.project.json`** — explicit project configuration and executable reference.
-2. **External tools** — `v6c`, `v6asm`, `v6fdd`, `v6emul` wrapped through clean adapter layers.
-
-The user is in charge of their toolchain. The extension's job is to provide a clean project model, invoke the right tools, and render the emulator output. Everything else — syntax highlighting, include navigation, build diagnostics — supports that core loop.
-
-The current scope deliberately excludes debug infrastructure (symbols, breakpoints, watchpoints, control flow, registers). This keeps the initial implementation focused on a solid, testable foundation that can be extended cleanly.
