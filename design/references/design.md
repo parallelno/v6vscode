@@ -219,67 +219,6 @@ These tools are part of the Vector-06C toolchain but are **not** bundled with or
 
 ## 7. Proposed Repository Layout
 
-```
-v6vscode/
-  src/
-    extension.ts                          # Composition root only
-    platform/
-      logging/logger.ts                   # Output channel + structured log levels
-      errors/error-codes.ts               # Typed error codes
-      errors/v6-error.ts                  # Extension error class
-      process/process-runner.ts           # Async child process wrapper
-      files/path-service.ts              # Path resolution, ${extension} expansion
-      files/workspace-service.ts         # Workspace folder access
-      disposable/lifecycle.ts            # Disposable helpers
-    config/
-      contribution-ids.ts                # Command IDs, view IDs, setting keys
-      schemas/
-        v6.project.schema.json
-    project/
-      model/v6-project.ts               # Project config interfaces
-      parsing/project-parser.ts          # Parse *.project.json
-      validation/project-validator.ts    # Schema + semantic validation
-      discovery/project-discovery.ts     # Find *.project.json in workspace
-      persistence/project-repository.ts  # Load/save project files
-      active/active-project-service.ts   # Track selected project
-    language/
-      includes/include-link-provider.ts  # Ctrl+click on .include paths
-      syntax/                            # Grammar registration
-    emulator/
-      launcher/v6emul-locator.ts        # Resolve v6emul binary path
-      launcher/v6emul-launcher.ts       # Emulator process launcher
-      client/ipc-client.ts              # TCP client, request-response
-      protocol/ipc-codec.ts             # MessagePack encode/decode
-      protocol/ipc-commands.ts          # Typed command enums and interfaces
-      lifecycle/emulator-lifecycle.ts   # Launch, stop, restart orchestration
-      panel/emulator-panel.ts           # Webview panel creation and message bridge
-      panel/emulator-viewmodel.ts       # Typed view model for panel state
-      panel/assets/                     # Webview HTML/CSS/JS
-    commands/
-      create-project-command.ts
-      run-project-command.ts
-    templates/
-      project/                          # Starter *.project.json
-      asm/                              # Starter *.asm
-  test/
-    unit/
-      platform/
-      project/
-      language/
-      emulator/
-    integration/
-    regression/
-    fixtures/
-  docs/
-  design/
-  res/
-    boot/boots.bin
-    fdd/rds308.fdd
-    images/icon.png
-    syntaxes/devector_8080.tmLanguage.json
-    v6emul/                             # Bundled emulator backend
-```
-
 Layout rules:
 
 1. `extension.ts` is the composition root — construct services, register contributions, dispose. No business logic.
@@ -303,28 +242,11 @@ It must not contain project logic, parsing, process invocation, or emulator sess
 
 Responsibilities:
 
-1. Discover `*.project.json` files in the workspace.
+1. Discover `*.project.json` files in the workspace root (no recursive search).
 2. Parse and validate project files against the JSON schema.
 3. Resolve relative and `${extension}`-bundled paths.
 4. Expose the active project selection service (prompt user if multiple projects exist).
 5. Persist updates when commands create or edit project files.
-
-Key interfaces:
-
-```ts
-interface ProjectDiscovery {
-  findProjects(): Promise<ProjectFile[]>;
-}
-
-interface ProjectRepository {
-  load(uri: vscode.Uri): Promise<V6Project>;
-  save(project: V6Project): Promise<void>;
-}
-
-interface ActiveProjectService {
-  getActiveProject(): Promise<V6Project | undefined>;
-}
-```
 
 ### 8.3 Emulator Launcher Domain
 
