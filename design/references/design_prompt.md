@@ -9,8 +9,6 @@ This extention is a development evironment for the **Vector-06C** (Вектор-
 - creating a new project
 - compilation
 - emulation in special tab.
-- registers in the VS Code debug register list window.
-- breakpoints in the VS Code breakpoint window.
 - end more.
 
 Use .\old_implementation.md as a reference, BUT keep in mind. the design and architectura of this extension, its code and the project layout must be very well organized, modular, easily maintainnable!
@@ -18,15 +16,16 @@ Also keep in mind. v6asm, v6fdd, v6emul are not built-in functionality, but exte
 Also important point, the system you are designing must have reach test suite. Each development mailstone must ends with regression tests updates, unit tests, running tests and updating documentation .\docs\
 
 
-The Asm tool produces *.rom and *.symbols.info. Those two artifacts are foundation for the project.
-Project settings and compilation artifacts (links to *.rom and *.symbols.info) are stored in *.project.json.
-Also use *.rom and *.symbols.info to get the debug meta info and mapping addresses to source. Reload them, parse on run or project rebuild.
-Store the runtime debug data of the current session (breakpoints, watchpoints, etc) into *.debug.json.
+The build toolchain produces *.rom (and optionally *.fdd). These are the primary build artifacts.
+Project settings and a reference to the executable (*.rom or *.fdd) are stored in *.project.json.
+The user is in charge of setting up the toolchain. The extension's entry point is the project file and its link to the executable.
 ===
-Use .\old_implementation.md as a reference, but do not copy it directly. The new design, architecture, code, and project layout must be clean, modular, well-organized, and easy to maintain.
+Use .\.old_implementation.md as a reference, but do not copy it directly. The new design, architecture, code, and project layout must be clean, modular, well-organized, and easy to maintain.
 Keep in mind:
 - This document can have contradiction to the old design. Stick to this ideas if they contradict the design/implementation.
-- v6asm, v6fdd, and v6emul are external tools, not built-in functionality. They are stored under .\tools\
+- **Ignore all debug metadata and symbols-related features from old_implementation.md.** The extension takes only *.rom or *.fdd files. It does not parse, load, or use *.symbols.json / *.symbols.info for source mapping, symbol navigation, or any other purpose in the current scope.
+- **No control flow bar, breakpoint UI, or watchpoint UI in the current scope.** There is no *.debug.json. These will be added in the future.
+- v6asm, v6fdd, v6emul, and v6c are external tools, not built-in functionality. They are stored under .\tools\
 - The system must include a comprehensive test suite. Every development milestone must:
 -- Update regression tests
 -- Add or update unit tests
@@ -39,28 +38,44 @@ Keep in mind:
 
 
 Artifacts and Project Structure
-* The assembler produces two core artifacts:
-- *.rom
-- *.symbols.info
-These artifacts are foundational to the entire project.
+* The toolchain produces *.rom (and optionally *.fdd) — these are the primary build artifacts.
 
-- Project settings and compilation artifacts (including references to *.rom and *.symbols.info) are stored in *.project.json.
-- Use *.rom and *.symbols.info to:
--- Load and parse debug metadata
--- Map addresses back to source code
--- These files must be reloaded and reparsed on run or project rebuild.
-- Runtime debug state for the current session (breakpoints, watchpoints, etc.) is stored in *.debug.json.
+- Project settings (including reference to the executable *.rom or *.fdd) are stored in *.project.json.
+
+Toolchains:
+- When C source: C (v6c) -> ASM (v6asm) -> ROM -> (if needed, v6fdd) -> FDD
+- When ASM source: ASM (v6asm) -> ROM -> (if needed, v6fdd) -> FDD
+
+The user is in charge of setting up the toolchain. The extension's entry point is the project file with a link to the executable.
 ===
 
 Tools used by the extension:
-1. v6asm - compiles the asm files. tools\v6asm\
-2. v6fdd - makes the fdd image from a Template file, and set of project artifacts (rom, bin, etc.).  tools\v6asm\
-3. v6emul - emulator cli backend. tools\v6emul\. VS code extension sends the requests, the backend sends the rendered image or other responses.
+1. v6c - C compiler for Vector-06C. Compiles C source to ASM. tools\v6c\
+2. v6asm - compiles the asm files to ROM. tools\v6asm\
+3. v6fdd - makes the fdd image from a Template file, and set of project artifacts (rom, bin, etc.). tools\v6fdd\
+4. v6emul - emulator cli backend. tools\v6emul\. VS code extension sends the requests, the backend sends the rendered image or other responses.
 
 VS Code Extension res:
 - Image for the VS Code extention icon: res\images\icon.png
 
 # Boot ROM for emulator
-res\boot
+res\boot\boots.bin
 # Template FDD image
-C:\Work\Programming\v6vscode\res\fdd\rds308.fdd.
+res\fdd\rds308.fdd
+
+===
+# Future Plans (out of current scope)
+
+The following features are planned for the future but are explicitly **outside the scope** of the current design and implementation plan:
+
+- Debug symbols format support (*.symbols.json / parsing and handling)
+- Mapping addresses to source code and back using debug symbols
+- Symbol definition navigation (Ctrl+click on labels/constants)
+- Data line and code highlights based on symbol metadata
+- Symbol resolving for hovers, watches, and runtime inspection
+- Control flow bar (run/pause/step/restart toolbar)
+- Breakpoint UI (VS Code breakpoint panel integration, gutter toggles)
+- Watchpoint UI and *.debug.json session state persistence
+- VS Code debug register list window integration
+
+These features will be designed and added later as a separate effort, once the core extension (project management, build, emulation via ROM/FDD) is stable.

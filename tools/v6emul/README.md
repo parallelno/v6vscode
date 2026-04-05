@@ -8,6 +8,8 @@
 ./build/release/app/v6emul --serve            # start IPC server mode
 ./build/release/app/v6emul --version          # print build version
 ./build/release/app/v6emul --help             # show CLI help
+./build/release/app/v6emul --boot-rom res/boot/boot.bin --serve
+./build/release/app/v6emul --fdd game.fdd --boot-rom res/boot/boot.bin --fdd-autoboot --serve
 ./build/release/app/v6emul --rom test.rom --halt-exit --dump-cpu
 ```
 
