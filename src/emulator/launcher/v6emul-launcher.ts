@@ -76,4 +76,17 @@ export class V6emulLauncher {
 
         return { spawnResult, port: request.tcpPort };
     }
+
+    async getVersion(emulatorPath: string): Promise<string> {
+        const result = this.processRunner.spawn(emulatorPath, ['--version']);
+        let stdout = '';
+        result.process.stdout?.on('data', (chunk: Buffer) => {
+            stdout += chunk.toString();
+        });
+        const code = await result.exitPromise;
+        if (code !== 0) {
+            throw new Error(`v6emul --version exited with code ${code}`);
+        }
+        return stdout.trim();
+    }
 }
