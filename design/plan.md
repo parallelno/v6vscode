@@ -370,19 +370,19 @@ No other runtime dependencies. Keep the dependency tree minimal.
 - [x] **4.10 Milestone exit** — regression tests (missing v6emul binary, connection refused, IPC timeout, unexpected disconnect), all tests passing.
 - [x] **4.11 Update `docs/` with IPC protocol and launcher details.
 
-### Phase 5 — Emulator Panel
+### Phase 5 — Emulator Panel ✅
 
 **Goal:** Webview panel renders frames, controls emulation, forwards keyboard input.
 
-- [ ] **5.1 Webview assets** — `panel.html`, `panel.css`, `panel.js`. Canvas element, header bar with controls.
-- [ ] **5.2 `emulator-panel.ts`** — WebviewPanel creation, message bridge, CSP nonce.
-- [ ] **5.3 `emulator-viewmodel.ts`** — state tracking, frame cropping per display mode, PanelMessage production.
-- [ ] **5.4 Frame rendering** — ABGR → RGBA conversion, crop to display mode rect, post to canvas.
-- [ ] **5.5 Header controls** — Run/Pause, Reset, Speed dropdown, Display Mode dropdown. Wire to IPC commands.
-- [ ] **5.6 Keyboard forwarding** — webview key listeners → `KEY_HANDLING` IPC. Scancode mapping.
-- [ ] **5.7 Unit tests** — viewmodel state transitions, display mode crop rect calculation, ABGR→RGBA conversion.
-- [ ] **5.8 Milestone exit** — regression tests (panel close/reopen without restart, display mode switch mid-run), all tests passing.
-- [ ] **5.9 Update `docs/` with panel architecture.
+- [x] **5.1 Webview assets** — `panel.html`, `panel.css`, `panel.js`. Canvas element, header bar with controls.
+- [x] **5.2 `emulator-panel.ts`** — WebviewPanel creation, message bridge, CSP nonce.
+- [x] **5.3 `emulator-viewmodel.ts`** — state tracking, frame cropping per display mode, PanelMessage production.
+- [x] **5.4 Frame rendering** — ABGR → RGBA conversion, crop to display mode rect, post to canvas.
+- [x] **5.5 Header controls** — Run/Pause, Reset, Speed dropdown, Display Mode dropdown. Wire to IPC commands.
+- [x] **5.6 Keyboard forwarding** — webview key listeners → `KEY_HANDLING` IPC. Scancode mapping.
+- [x] **5.7 Unit tests** — viewmodel state transitions, display mode crop rect calculation, ABGR→RGBA conversion.
+- [x] **5.8 Milestone exit** — regression tests (panel close/reopen without restart, display mode switch mid-run), all tests passing.
+- [x] **5.9 Update `docs/` with panel architecture.
 
 ### Phase 6 — Commands and Create Project
 
