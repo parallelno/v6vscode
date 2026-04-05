@@ -63,7 +63,7 @@ export function cropFrame(
 // --- Panel message types ---
 
 export type PanelMessage =
-    | { type: 'frame'; width: number; height: number; pixels: number[] }
+    | { type: 'frame'; width: number; height: number; pixels: Uint8Array }
     | { type: 'status'; running: boolean; speed: string }
     | { type: 'error'; message: string };
 
@@ -119,12 +119,15 @@ export class EmulatorViewModel {
      */
     processFrame(rgbaPixels: Uint8Array, srcWidth: number, srcHeight: number): PanelMessage {
         const crop = this.cropRect;
-        const cropped = cropFrame(rgbaPixels, srcWidth, crop);
+        // Skip crop when using the full frame
+        const pixels = (crop.x === 0 && crop.y === 0 && crop.w === srcWidth && crop.h === srcHeight)
+            ? rgbaPixels
+            : cropFrame(rgbaPixels, srcWidth, crop);
         return {
             type: 'frame',
             width: crop.w,
             height: crop.h,
-            pixels: Array.from(cropped),
+            pixels,
         };
     }
 

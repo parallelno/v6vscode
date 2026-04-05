@@ -29,3 +29,7 @@ Webview-based display and control surface for the running emulator.
 - **`assets/panel.html`** — Webview shell: header bar (Run/Pause, Reset, Speed dropdown, Display dropdown), canvas viewport, error bar.
 - **`assets/panel.css`** — VS Code themed styles using CSS variables. Pixelated canvas rendering.
 - **`assets/panel.js`** — IIFE webview script. Renders frames to canvas via `putImageData`, forwards keyboard events (keyCode + action) to the extension host, handles control interactions.
+
+## FPS Counter
+
+While the emulator is running, a live **FPS counter** appears in the VS Code **status bar** (bottom-right). It shows the actual number of frames rendered per second (e.g., `⟡ 45 fps`). The counter hides automatically when the emulator is paused or stopped.

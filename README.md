@@ -13,6 +13,7 @@
 - **V6: Create Project** — scaffolds a new project (source, Makefile, project config) with ASM/C and ROM/FDD options
 - **V6: Run Project** — launches or hot-reloads the emulator, opens the display panel
 - **Emulator panel** — webview with canvas display, Run/Pause, Reset, Speed, Display Mode controls, keyboard forwarding
+- **FPS counter** — live frames-per-second display in the status bar (bottom-right) while the emulator is running
 - **FDD persistence** — automatically saves modified floppy disk images back to disk on stop (unless `fddReadOnly` is set)
 
 ## Quick Start

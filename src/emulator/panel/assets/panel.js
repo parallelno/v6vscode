@@ -38,12 +38,9 @@
             canvas.width = width;
             canvas.height = height;
         }
-        const imageData = ctx.createImageData(width, height);
-        const data = imageData.data;
-        // pixels is a flat array of RGBA bytes
-        for (let i = 0; i < data.length; i++) {
-            data[i] = pixels[i];
-        }
+        // pixels arrives as Uint8Array via structured clone — wrap directly as ImageData
+        const clamped = new Uint8ClampedArray(pixels.buffer || pixels);
+        const imageData = new ImageData(clamped, width, height);
         ctx.putImageData(imageData, 0, 0);
         hideError();
     }

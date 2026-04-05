@@ -9,7 +9,7 @@ import { EmulatorViewModel, WebviewMessage, FULL_FRAME_WIDTH } from './emulator-
 import { Logger } from '../../platform/logging/logger';
 import { DisposableStore, toDisposable } from '../../platform/disposable/lifecycle';
 
-const FRAME_INTERVAL_MS = 20; // ~50 fps
+const FPS_UPDATE_INTERVAL_MS = 1000;
 
 export class EmulatorPanel implements vscode.Disposable {
     private panel: vscode.WebviewPanel | null = null;
@@ -19,8 +19,11 @@ export class EmulatorPanel implements vscode.Disposable {
     private readonly lifecycle: EmulatorLifecycle;
     private readonly client: IpcClient;
     private readonly logger: Logger;
-    private frameTimer: ReturnType<typeof setInterval> | null = null;
-    private frameInFlight = false;
+    private frameLoopActive = false;
+    private frameCount = 0;
+    private smoothFps = 0;
+    private fpsTimer: ReturnType<typeof setInterval> | null = null;
+    private readonly fpsStatusBarItem: vscode.StatusBarItem;
 
     constructor(
         extensionUri: vscode.Uri,
@@ -32,6 +35,9 @@ export class EmulatorPanel implements vscode.Disposable {
         this.lifecycle = lifecycle;
         this.client = client;
         this.logger = logger;
+        this.fpsStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+        this.fpsStatusBarItem.name = 'V6 FPS';
+        this.store.add(this.fpsStatusBarItem);
     }
 
     reveal(): void {
@@ -165,20 +171,37 @@ export class EmulatorPanel implements vscode.Disposable {
     }
 
     private startFrameLoop(): void {
-        if (this.frameTimer) { return; }
-        this.frameTimer = setInterval(() => this.requestFrame(), FRAME_INTERVAL_MS);
+        if (this.frameLoopActive) { return; }
+        this.frameLoopActive = true;
+        this.frameCount = 0;
+        this.smoothFps = 0;
+        this.scheduleNextFrame();
+        this.fpsStatusBarItem.text = '$(pulse) 0 fps';
+        this.fpsStatusBarItem.show();
+        this.fpsTimer = setInterval(() => {
+            const raw = this.frameCount;
+            this.frameCount = 0;
+            this.smoothFps = Math.round(this.smoothFps * 0.7 + raw * 0.3);
+            this.fpsStatusBarItem.text = `$(pulse) ${this.smoothFps} fps`;
+        }, FPS_UPDATE_INTERVAL_MS);
     }
 
     private stopFrameLoop(): void {
-        if (this.frameTimer) {
-            clearInterval(this.frameTimer);
-            this.frameTimer = null;
+        this.frameLoopActive = false;
+        if (this.fpsTimer) {
+            clearInterval(this.fpsTimer);
+            this.fpsTimer = null;
         }
+        this.fpsStatusBarItem.hide();
+    }
+
+    private scheduleNextFrame(): void {
+        if (!this.frameLoopActive) { return; }
+        setTimeout(() => this.requestFrame(), 0);
     }
 
     private async requestFrame(): Promise<void> {
-        if (!this.client.connected || !this.panel || this.frameInFlight) { return; }
-        this.frameInFlight = true;
+        if (!this.frameLoopActive || !this.client.connected || !this.panel) { return; }
         try {
             const rawBuf = await this.client.sendRaw(IpcCommand.GET_FRAME_RAW);
             const frame = decodeFrameRaw(rawBuf);
@@ -188,11 +211,11 @@ export class EmulatorPanel implements vscode.Disposable {
                 frame.height,
             );
             this.postMessage(panelMsg);
+            this.frameCount++;
         } catch {
             // Swallow frame errors to avoid flooding — they're transient
-        } finally {
-            this.frameInFlight = false;
         }
+        this.scheduleNextFrame();
     }
 
     private postMessage(msg: unknown): void {
