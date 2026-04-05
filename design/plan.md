@@ -384,18 +384,18 @@ No other runtime dependencies. Keep the dependency tree minimal.
 - [x] **5.8 Milestone exit** — regression tests (panel close/reopen without restart, display mode switch mid-run), all tests passing.
 - [x] **5.9 Update `docs/` with panel architecture.
 
-### Phase 6 — Commands and Create Project
+### Phase 6 — Commands and Create Project ✅
 
 **Goal:** V6: Create Project scaffolds files. V6: Run Project launches the full flow.
 
-- [ ] **6.1 `run-project-command.ts`** — resolve active project → validate executable → launch or reload emulator → open panel.
-- [ ] **6.2 `create-project-command.ts`** — prompts → generate project JSON, source, Makefile from templates.
-- [ ] **6.3 Templates** — project JSON template, 4 Makefile variants, starter ASM source, starter C source.
-- [ ] **6.4 FDD persistence** — on stop/close, check `fddReadOnly`, poll/export/save workflow.
-- [ ] **6.5 Unit tests** — command argument validation, template file generation, FDD persistence with `fddReadOnly` true/false.
-- [ ] **6.6 Regression tests** — missing emulator, missing executable, multiple projects, panel close/reopen, `fddReadOnly` skip.
-- [ ] **6.7 Milestone exit** — all tests passing.
-- [ ] **6.8 Update `docs/` with command usage, update `README.md` (Create Project and Run Project are user-facing).
+- [x] **6.1 `run-project-command.ts`** — resolve active project → validate executable → launch or reload emulator → open panel.
+- [x] **6.2 `create-project-command.ts`** — prompts → generate project JSON, source, Makefile from templates.
+- [x] **6.3 Templates** — project JSON template, 4 Makefile variants, starter ASM source, starter C source.
+- [x] **6.4 FDD persistence** — on stop/close, check `fddReadOnly`, poll/export/save workflow.
+- [x] **6.5 Unit tests** — command argument validation, template file generation, FDD persistence with `fddReadOnly` true/false.
+- [x] **6.6 Regression tests** — missing emulator, missing executable, multiple projects, panel close/reopen, `fddReadOnly` skip.
+- [x] **6.7 Milestone exit** — all tests passing.
+- [x] **6.8 Update `docs/` with command usage, update `README.md` (Create Project and Run Project are user-facing).
 
 ### Phase 7 — Polish and Packaging
 

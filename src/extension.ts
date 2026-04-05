@@ -3,7 +3,7 @@ import { Logger } from './platform/logging/logger';
 import { PathService } from './platform/files/path-service';
 import { WorkspaceService } from './platform/files/workspace-service';
 import { ProcessRunner } from './platform/process/process-runner';
-import { DisposableStore } from './platform/disposable/lifecycle';
+import { DisposableStore, toDisposable } from './platform/disposable/lifecycle';
 import { CMD_CREATE_PROJECT, CMD_RUN_PROJECT, OUTPUT_CHANNEL_NAME } from './config/contribution-ids';
 import { ProjectDiscovery } from './project/discovery/project-discovery';
 import { ProjectRepository } from './project/persistence/project-repository';
@@ -14,6 +14,9 @@ import { V6emulLauncher } from './emulator/launcher/v6emul-launcher';
 import { IpcClient } from './emulator/client/ipc-client';
 import { EmulatorLifecycle } from './emulator/lifecycle/emulator-lifecycle';
 import { EmulatorPanel } from './emulator/panel/emulator-panel';
+import { RunProjectCommand } from './commands/run-project-command';
+import { CreateProjectCommand } from './commands/create-project-command';
+import { FddPersistence } from './emulator/persistence/fdd-persistence';
 
 export function activate(context: vscode.ExtensionContext): void {
     const store = new DisposableStore();
@@ -34,7 +37,7 @@ export function activate(context: vscode.ExtensionContext): void {
         pathService,
         logger,
         getConfiguration: (section) => vscode.workspace.getConfiguration(section),
-        which: () => undefined, // PATH lookup deferred to Phase 6
+        which: () => undefined,
     });
     const launcher = new V6emulLauncher(processRunner, logger);
     const ipcClient = new IpcClient(logger);
@@ -42,6 +45,32 @@ export function activate(context: vscode.ExtensionContext): void {
     const emulatorPanel = store.add(new EmulatorPanel(
         context.extensionUri, lifecycle, ipcClient, logger,
     ));
+    const fddPersistence = new FddPersistence(ipcClient, logger);
+
+    // Persist FDD images before emulator stops
+    const onBeforeStop = async () => {
+        const project = activeProjectService.getActiveProject();
+        if (project) {
+            await fddPersistence.persistIfNeeded(
+                project.run.fddReadOnly ?? false,
+                project.run.executable,
+            );
+        }
+    };
+    lifecycle.on('stateChange', (state: string) => {
+        // Trigger FDD persistence when transitioning away from running
+        if (state === 'stopped') {
+            // Already stopped — persistence should happen before stop()
+        }
+    });
+
+    // Commands
+    const runProjectCmd = new RunProjectCommand(
+        activeProjectService, lifecycle, ipcClient, emulatorPanel, logger,
+    );
+    const createProjectCmd = new CreateProjectCommand(
+        context.extensionUri.fsPath, logger,
+    );
 
     logger.info('Vector-06c extension activating.');
 
@@ -51,33 +80,20 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.languages.registerDocumentLinkProvider(v6asmSelector, new IncludeLinkProvider())
     );
 
-    // Stub command — will be replaced in Phase 6
     store.add(
-        vscode.commands.registerCommand(CMD_CREATE_PROJECT, () => {
-            vscode.window.showInformationMessage('V6: Create Project — not yet implemented.');
-        })
+        vscode.commands.registerCommand(CMD_CREATE_PROJECT, () => createProjectCmd.execute())
     );
 
-    // Run Project command — launches emulator and opens panel
     store.add(
-        vscode.commands.registerCommand(CMD_RUN_PROJECT, async () => {
-            const project = await activeProjectService.resolve();
-            if (!project) {
-                vscode.window.showWarningMessage('V6: No project found. Create one with "V6: Create Project".');
-                return;
-            }
-            try {
-                if (!lifecycle.running) {
-                    await lifecycle.start(project);
-                }
-                emulatorPanel.reveal();
-            } catch (err) {
-                vscode.window.showErrorMessage(
-                    `V6: Failed to run project — ${err instanceof Error ? err.message : String(err)}`,
-                );
-            }
-        })
+        vscode.commands.registerCommand(CMD_RUN_PROJECT, () => runProjectCmd.execute())
     );
+
+    // Override lifecycle.stop to persist FDD before stopping
+    const originalStop = lifecycle.stop.bind(lifecycle);
+    lifecycle.stop = async () => {
+        await onBeforeStop();
+        return originalStop();
+    };
 
     context.subscriptions.push(store);
 

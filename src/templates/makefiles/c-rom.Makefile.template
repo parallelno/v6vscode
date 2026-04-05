@@ -1,0 +1,11 @@
+ROM  = out/{{name}}.rom
+ASM  = out/{{name}}.asm
+SRC  = src/main.c
+CPU  = i8080
+
+$(ROM): $(ASM)
+	v6asm $(ASM) -o $(ROM) -c $(CPU)
+$(ASM): $(SRC)
+	v6c $(SRC) -o $(ASM)
+clean:
+	rm -f $(ASM) $(ROM)

@@ -1,66 +1,77 @@
 # v6vscode
 
-> A two-pass Intel 8080 / subset Z80 assembler.
+> VS Code extension for the **Vector-06c** (Вектор-06Ц) retro computer. Assemble, build, and run programs directly from the editor.
 
-## Quick Start
-
-```bash
-v6asm -i main                  # scaffold a new project
-v6asm main.asm                 # assemble → main.rom
-v6asm main.asm -l              # + listing file
-v6asm main.asm -c z80          # Z80 mnemonic mode
-v6asm -v                       # print build version
-```
-
-[![CI/CD](https://github.com/parallelno/v6asm/actions/workflows/ci.yml/badge.svg)](https://github.com/parallelno/v6asm/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ---
 
-## Overview
+## Features
 
-`v6asm` is a command-line toolchain for the **Vector-06c** (Вектор-06Ц).
-It assembles `.asm` source files into `.rom` binaries and can build bootable **FDD disk images** for an emulator.
+- **Syntax highlighting** for Intel 8080 assembly (`.asm`, `.inc` files)
+- **Include navigation** — Ctrl+click on `.include "..."` directives
+- **V6: Create Project** — scaffolds a new project (source, Makefile, project config) with ASM/C and ROM/FDD options
+- **V6: Run Project** — launches or hot-reloads the emulator, opens the display panel
+- **Emulator panel** — webview with canvas display, Run/Pause, Reset, Speed, Display Mode controls, keyboard forwarding
+- **FDD persistence** — automatically saves modified floppy disk images back to disk on stop (unless `fddReadOnly` is set)
 
-The assembler supports the Intel 8080 instruction set and an optional Z80 mnemonic
-alternatives. A rich preprocessor handles file includes, macros, conditional
-assembly, loops, optional code blocks,and more. The toolchain can also emit a
-listing file for inspection.
+## Quick Start
 
-| Tool | Purpose |
-|------|---------|
-| `v6asm` | Assembler — `.asm` → `.rom` binary |
-| `v6fdd` | FDD utility — packs files into a `.fdd` disk image |
+1. Open a folder in VS Code.
+2. Run **V6: Create Project** from the Command Palette (`Ctrl+Shift+P`).
+3. Enter a project name, choose a language (ASM or C), and an executable type (ROM or FDD).
+4. Build: `make` in the terminal.
+5. Run **V6: Run Project** — the emulator launches and shows the display panel.
 
-## Installation
+## Commands
 
-Download the latest archive from [Releases](https://github.com/parallelno/v6asm/releases), extract it, and add the directory to your `PATH`.
+| Command | Description |
+|---------|-------------|
+| `V6: Create Project` | Scaffold a new Vector-06c project |
+| `V6: Run Project` | Build → launch → display emulator |
 
-## Documentation
+## Settings
 
-Full reference is in the [`docs/`](docs/README.md) folder:
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `v6.emulatorPath` | string | `""` | Override path to `v6emul` binary |
+| `v6.logLevel` | enum | `"info"` | Logging level: error, warn, info, debug |
 
-- [CLI Usage](docs/cli.md) — arguments, options, output artifacts
-- [Assembler Syntax](docs/syntax.md) — expressions, operators, literals, symbols
-- [Directives](docs/directives.md) — `.org`, `.include`, `.if`, `.loop`, `.optional`, data emission, and more
-- [Macros](docs/macros.md) — `.macro` / `.endmacro`, parameters, scoping
-- [Listing Format](docs/listing.md) — `.lst` column layout and expansion behavior
+## Project File
 
-### Build from source
+Each project is defined by a `*.project.json` file at the workspace root:
 
-Requires the [Rust toolchain](https://rustup.rs/) (stable).
+```json
+{
+  "name": "demo",
+  "run": {
+    "executable": "out/demo.rom",
+    "speed": "100%",
+    "viewMode": "borderless"
+  }
+}
+```
+
+See [docs/README.md](docs/README.md) for the full schema and architecture details.
+
+## Building from Source
 
 ```bash
-git clone https://github.com/parallelno/v6asm.git
-cd v6asm
-cargo build --release
+npm install
+npm run compile
 ```
 
 ## Tests
 
 ```bash
-cargo test --workspace
+npm test                 # unit tests
+npm run test:unit        # unit tests only
+npm run test:regression  # regression suite
 ```
+
+## Documentation
+
+Full developer documentation is in [`docs/`](docs/README.md).
 
 ## License
 

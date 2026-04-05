@@ -1,0 +1,15 @@
+; {{name}} — Vector-06C assembly project
+;
+; Build:  make
+; Run:    V6: Run Project (Ctrl+Shift+P)
+
+    .cpu    i8080
+    .org    0x100
+
+start:
+    mvi     a, 0xFF
+    out     0xC0        ; set border color
+
+    ; --- main loop ---
+loop:
+    jmp     loop

@@ -1,0 +1,8 @@
+{
+  "name": "{{name}}",
+  "run": {
+    "executable": "{{executable}}",
+    "speed": "100%",
+    "viewMode": "borderless"
+  }
+}

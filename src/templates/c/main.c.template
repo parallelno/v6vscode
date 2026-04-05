@@ -1,0 +1,14 @@
+// {{name}} — Vector-06C C project
+//
+// Build:  make
+// Run:    V6: Run Project (Ctrl+Shift+P)
+
+void main(void) {
+    // Write 0xFF to port 0xC0 to set border color
+    __asm__("mvi a, 0xFF");
+    __asm__("out 0xC0");
+
+    // Main loop
+    for (;;) {
+    }
+}

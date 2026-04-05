@@ -1,0 +1,12 @@
+ROM      = out/{{name}}.rom
+FDD      = out/{{name}}.fdd
+SRC      = src/main.asm
+CPU      = i8080
+TEMPLATE = res/fdd/rds308.fdd
+
+$(FDD): $(ROM)
+	v6fdd $(TEMPLATE) $(FDD) $(ROM)
+$(ROM): $(SRC)
+	v6asm $(SRC) -o $(ROM) -c $(CPU)
+clean:
+	rm -f $(ROM) $(FDD)
