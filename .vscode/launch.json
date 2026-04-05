@@ -7,14 +7,27 @@
       "request": "launch",
       "runtimeExecutable": "${execPath}",
       "preLaunchTask": "npm: compile",
-      "env": {
-        "VECTOR_PROFILE": "0",
-        "VECTOR_PROFILE_RATE": "250"
-      },
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}",
         "${workspaceFolder}/temp/project"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/out/**/*.js"
       ]
+    },
+    {
+      "name": "Extension Tests",
+      "type": "extensionHost",
+      "request": "launch",
+      "runtimeExecutable": "${execPath}",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "--extensionTestsPath=${workspaceFolder}/out/test/integration/index"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/out/**/*.js"
+      ],
+      "preLaunchTask": "npm: compile"
     }
   ]
 }

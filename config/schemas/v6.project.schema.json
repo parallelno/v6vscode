@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "V6 Project",
+  "description": "Vector-06c project configuration file.",
+  "type": "object",
+  "required": ["name", "run"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Project display name."
+    },
+    "run": {
+      "type": "object",
+      "required": ["executable"],
+      "properties": {
+        "executable": {
+          "type": "string",
+          "description": "Path to the ROM or FDD image to load."
+        },
+        "bootRom": {
+          "type": "string",
+          "description": "Path to the boot ROM image. Defaults to bundled boots.bin."
+        },
+        "loadAddr": {
+          "type": "string",
+          "default": "0x100",
+          "description": "Load address for ROM images (hex string)."
+        },
+        "fddReadOnly": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, discard FDD writes on stop."
+        },
+        "speed": {
+          "type": "string",
+          "default": "100%",
+          "description": "Emulation speed."
+        },
+        "viewMode": {
+          "type": "string",
+          "enum": ["borderless", "bordered", "full"],
+          "default": "borderless",
+          "description": "Display mode for the emulator panel."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

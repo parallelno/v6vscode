@@ -1,0 +1,107 @@
+{
+  "name": "v6vscode",
+  "displayName": "Vector-06c Development",
+  "description": "Vector-06c development environment — project management, syntax highlighting, and emulator integration.",
+  "version": "0.1.0",
+  "publisher": "parallelno",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "workspaceContains:**/*.project.json"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "v6.createProject",
+        "title": "Create Project",
+        "category": "V6"
+      },
+      {
+        "command": "v6.runProject",
+        "title": "Run Project",
+        "category": "V6"
+      }
+    ],
+    "languages": [
+      {
+        "id": "v6asm",
+        "aliases": [
+          "Vector-06c Assembly",
+          "v6asm"
+        ],
+        "extensions": [
+          ".asm",
+          ".inc"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "v6asm",
+        "scopeName": "source.retroasm_8080",
+        "path": "./res/syntaxes/devector_8080.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Vector-06c",
+      "properties": {
+        "v6.emulatorPath": {
+          "type": "string",
+          "default": "",
+          "description": "Override path to the v6emul binary. Leave empty to use the bundled emulator or PATH lookup."
+        },
+        "v6.logLevel": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warn",
+            "info",
+            "debug"
+          ],
+          "default": "info",
+          "description": "Logging verbosity for the V6 output channel."
+        }
+      }
+    },
+    "jsonValidation": [
+      {
+        "fileMatch": "*.project.json",
+        "url": "./config/schemas/v6.project.schema.json"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "test": "npm run test:unit",
+    "test:unit": "mocha",
+    "test:integration": "node ./node_modules/@vscode/test-electron/out/runTest.js",
+    "test:regression": "mocha --no-config --require ./test/register.js --timeout 5000 'test/regression/**/*.test.ts'"
+  },
+  "devDependencies": {
+    "@types/chai": "^5.2.3",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^18.19.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "@vscode/test-electron": "^2.3.8",
+    "chai": "^4.4.1",
+    "eslint": "^8.56.0",
+    "mocha": "^10.3.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@msgpack/msgpack": "^3.0.0-beta2"
+  }
+}

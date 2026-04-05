@@ -1,0 +1,4 @@
+require:
+  - ./test/register.js
+spec: test/unit/**/*.test.ts
+timeout: 5000
