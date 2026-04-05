@@ -1,0 +1,6 @@
+{
+  "name": "minimal",
+  "run": {
+    "executable": "build/out.rom"
+  }
+}

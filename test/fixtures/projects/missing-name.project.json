@@ -1,0 +1,5 @@
+{
+  "run": {
+    "executable": "build/out.rom"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "full-project",
+  "run": {
+    "executable": "build/game.rom",
+    "bootRom": "res/boot.bin",
+    "loadAddr": "0x200",
+    "fddReadOnly": true,
+    "speed": "200%",
+    "viewMode": "bordered"
+  }
+}

@@ -13,12 +13,22 @@ const mockUri = {
 
 const mockVscode = {
     Uri: mockUri,
+    RelativePattern: class RelativePattern {
+        constructor(base, pattern) {
+            this.base = base;
+            this.pattern = pattern;
+        }
+    },
     workspace: {
         workspaceFolders: undefined,
         getConfiguration: (_section) => ({
             get: (_key, defaultValue) => defaultValue,
         }),
         findFiles: async () => [],
+        fs: {
+            readFile: async () => Buffer.from(''),
+            writeFile: async () => {},
+        },
     },
     window: {
         createOutputChannel: (_name) => ({
@@ -27,6 +37,7 @@ const mockVscode = {
         }),
         showInformationMessage: async () => undefined,
         showErrorMessage: async () => undefined,
+        showWarningMessage: async () => undefined,
         showQuickPick: async () => undefined,
         showInputBox: async () => undefined,
     },
