@@ -4,7 +4,7 @@ Syntax highlighting, language configuration, and navigation for Intel 8080 assem
 
 ## Syntax Highlighting
 
-Declared in `package.json` via `contributes.languages` and `contributes.grammars`. Language ID `v6asm`, file extensions `.asm` and `.inc`, grammar `source.retroasm_8080` from `res/syntaxes/devector_8080.tmLanguage.json`.
+Declared in `package.json` via `contributes.languages` and `contributes.grammars`. Language ID `asm`, file extensions `.asm`, `.s`, and `.inc`, grammar `source.v6vscode_8080` from `res/syntaxes/v6vscode_8080.tmLanguage.json`. The extension enables source breakpoints for this language.
 
 ## Language Configuration
 

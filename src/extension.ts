@@ -93,9 +93,9 @@ export function activate(context: vscode.ExtensionContext): void {
     logger.info('Vector-06c extension activating.');
 
     // Language support
-    const v6asmSelector: vscode.DocumentSelector = { language: 'v6asm' };
+    const asmSelector: vscode.DocumentSelector = { language: 'asm' };
     store.add(
-        vscode.languages.registerDocumentLinkProvider(v6asmSelector, new IncludeLinkProvider())
+        vscode.languages.registerDocumentLinkProvider(asmSelector, new IncludeLinkProvider())
     );
 
     store.add(

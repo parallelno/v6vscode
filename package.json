@@ -31,13 +31,14 @@
     ],
     "languages": [
       {
-        "id": "v6asm",
+        "id": "asm",
         "aliases": [
-          "Vector-06c Assembly",
-          "v6asm"
+          "v6 asm 8080",
+          "asm"
         ],
         "extensions": [
           ".asm",
+          ".s",
           ".inc"
         ],
         "configuration": "./language-configuration.json"
@@ -45,11 +46,75 @@
     ],
     "grammars": [
       {
-        "language": "v6asm",
-        "scopeName": "source.retroasm_8080",
-        "path": "./res/syntaxes/devector_8080.tmLanguage.json"
+        "language": "asm",
+        "scopeName": "source.v6vscode_8080",
+        "path": "./res/syntaxes/v6vscode_8080.tmLanguage.json"
       }
     ],
+    "breakpoints": [
+      {
+        "language": "asm"
+      }
+    ],
+    "configurationDefaults": {
+      "editor.tokenColorCustomizations": {
+        "textMateRules": [
+          {
+            "scope": "comment.block.v6vscode_8080",
+            "settings": {
+              "foreground": "#6A9955"
+            }
+          },
+          {
+            "scope": "keyword.globallabel.v6vscode_8080",
+            "settings": {
+              "foreground": "#e1e157"
+            }
+          },
+          {
+            "scope": "keyword.constantslabel.v6vscode_8080",
+            "settings": {
+              "foreground": "#8be0e9"
+            }
+          },
+          {
+            "scope": "keyword.locallabel.v6vscode_8080",
+            "settings": {
+              "foreground": "#9d741c"
+            }
+          },
+          {
+            "scope": "keyword.instruction.v6vscode_8080",
+            "settings": {
+              "foreground": "#569cd6"
+            }
+          },
+          {
+            "scope": "keyword.control.flow.v6vscode_8080",
+            "settings": {
+              "foreground": "#20df8f"
+            }
+          },
+          {
+            "scope": "keyword.register.v6vscode_8080",
+            "settings": {
+              "foreground": "#59c979"
+            }
+          },
+          {
+            "scope": [
+              "constant.numeric.binary.v6vscode_8080",
+              "constant.numeric.hexadecimal.v6vscode_8080",
+              "constant.numeric.octal.v6vscode_8080",
+              "constant.numeric.decimal.v6vscode_8080"
+            ],
+            "settings": {
+              "foreground": "#b5cea8"
+            }
+          }
+        ]
+      }
+    },
     "configuration": {
       "title": "Vector-06c",
       "properties": {
