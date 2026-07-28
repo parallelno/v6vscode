@@ -2,19 +2,8 @@ import { expect } from 'chai';
 import {
     EmulatorViewModel,
     abgrToRgba,
-    cropFrame,
-    DISPLAY_MODES,
-    FULL_FRAME_WIDTH,
-    FULL_FRAME_HEIGHT,
     DisplayMode,
-    PanelMessage,
 } from '../../src/emulator/panel/emulator-viewmodel';
-
-function makeFullFrame(fillValue: number = 0): Uint8Array {
-    const buf = new Uint8Array(FULL_FRAME_WIDTH * FULL_FRAME_HEIGHT * 4);
-    buf.fill(fillValue);
-    return buf;
-}
 
 describe('Emulator panel regression tests', () => {
 
@@ -37,6 +26,7 @@ describe('Emulator panel regression tests', () => {
                 type: 'status',
                 running: true,
                 speed: '200%',
+                viewMode: 'border',
             });
         });
 
@@ -45,80 +35,40 @@ describe('Emulator panel regression tests', () => {
             vm.setRunning(true);
             vm.setViewMode('borderless');
 
-            // Process a frame before "close"
-            const frame1 = vm.processFrame(makeFullFrame(0xAA), FULL_FRAME_WIDTH, FULL_FRAME_HEIGHT);
+            // Process a native-cropped frame before "close"
+            const frame1 = vm.processFrame(new Uint8Array(512 * 256 * 4), 512, 256);
             expect(frame1.type).to.equal('frame');
 
             // After "reopen" the viewmodel is still intact and can process frames
-            const frame2 = vm.processFrame(makeFullFrame(0xBB), FULL_FRAME_WIDTH, FULL_FRAME_HEIGHT);
+            const frame2 = vm.processFrame(new Uint8Array(512 * 256 * 4), 512, 256);
             expect(frame2.type).to.equal('frame');
             if (frame2.type === 'frame') {
-                expect(frame2.width).to.equal(DISPLAY_MODES.borderless.w);
-                expect(frame2.height).to.equal(DISPLAY_MODES.borderless.h);
+                expect(frame2.width).to.equal(512);
+                expect(frame2.height).to.equal(256);
             }
         });
     });
 
     describe('Display mode switch mid-run', () => {
-        it('should produce correctly sized frames when switching modes while running', () => {
+        it('should preserve dimensions supplied by the native emulator', () => {
             const vm = new EmulatorViewModel();
             vm.setRunning(true);
-            const fullFrame = makeFullFrame(0x55);
+            const nativeFrames: Array<{ mode: DisplayMode; width: number; height: number }> = [
+                { mode: 'borderless', width: 512, height: 256 },
+                { mode: 'border', width: 544, height: 288 },
+                { mode: 'full', width: 768, height: 312 },
+            ];
 
-            const modes: DisplayMode[] = ['borderless', 'border', 'full'];
-            for (const mode of modes) {
-                vm.setViewMode(mode);
-                const msg = vm.processFrame(fullFrame, FULL_FRAME_WIDTH, FULL_FRAME_HEIGHT);
+            for (const nativeFrame of nativeFrames) {
+                vm.setViewMode(nativeFrame.mode);
+                const pixels = new Uint8Array(nativeFrame.width * nativeFrame.height * 4);
+                const msg = vm.processFrame(pixels, nativeFrame.width, nativeFrame.height);
                 expect(msg.type).to.equal('frame');
                 if (msg.type === 'frame') {
-                    const expected = DISPLAY_MODES[mode];
-                    expect(msg.width, `${mode} width`).to.equal(expected.w);
-                    expect(msg.height, `${mode} height`).to.equal(expected.h);
-                    expect(msg.pixels.length, `${mode} pixel count`).to.equal(expected.w * expected.h * 4);
+                    expect(msg.width).to.equal(nativeFrame.width);
+                    expect(msg.height).to.equal(nativeFrame.height);
+                    expect(msg.pixels).to.equal(pixels);
                 }
-            }
-        });
-
-        it('should switch from full to borderless and crop correctly', () => {
-            const vm = new EmulatorViewModel();
-            vm.setRunning(true);
-            vm.setViewMode('full');
-
-            // Create a frame with a known pixel at the borderless origin
-            const fullFrame = new Uint8Array(FULL_FRAME_WIDTH * FULL_FRAME_HEIGHT * 4);
-            const bless = DISPLAY_MODES.borderless;
-            const targetOffset = (bless.y * FULL_FRAME_WIDTH + bless.x) * 4;
-            // Set RGBA = [0x44, 0x33, 0x22, 0x11] (emulator sends RGBA by default)
-            fullFrame[targetOffset]     = 0x44; // R
-            fullFrame[targetOffset + 1] = 0x33; // G
-            fullFrame[targetOffset + 2] = 0x22; // B
-            fullFrame[targetOffset + 3] = 0x11; // A
-
-            // Switch to borderless mid-run
-            vm.setViewMode('borderless');
-            const msg = vm.processFrame(fullFrame, FULL_FRAME_WIDTH, FULL_FRAME_HEIGHT);
-            expect(msg.type).to.equal('frame');
-            if (msg.type === 'frame') {
-                // First pixel of borderless should be the pixel at (bless.x, bless.y)
-                // RGBA passthrough — no conversion needed
-                expect(msg.pixels[0]).to.equal(0x44); // R
-                expect(msg.pixels[1]).to.equal(0x33); // G
-                expect(msg.pixels[2]).to.equal(0x22); // B
-                expect(msg.pixels[3]).to.equal(0x11); // A
-            }
-        });
-
-        it('should handle rapid mode switching without error', () => {
-            const vm = new EmulatorViewModel();
-            vm.setRunning(true);
-            const fullFrame = makeFullFrame(0);
-
-            // Rapidly switch modes and process frames
-            const modes: DisplayMode[] = ['borderless', 'full', 'border', 'borderless', 'full', 'border'];
-            for (const mode of modes) {
-                vm.setViewMode(mode);
-                const msg = vm.processFrame(fullFrame, FULL_FRAME_WIDTH, FULL_FRAME_HEIGHT);
-                expect(msg.type).to.equal('frame');
             }
         });
 
@@ -128,7 +78,6 @@ describe('Emulator panel regression tests', () => {
             const ok = vm.setViewMode('nonexistent');
             expect(ok).to.be.false;
             expect(vm.viewMode).to.equal('border');
-            expect(vm.cropRect).to.deep.equal(DISPLAY_MODES.border);
         });
     });
 
@@ -153,41 +102,4 @@ describe('Emulator panel regression tests', () => {
         });
     });
 
-    describe('Crop frame boundary conditions', () => {
-        it('should handle 1x1 crop', () => {
-            const src = new Uint8Array(16); // 2x2 frame
-            src.set([1, 2, 3, 4], 0);       // (0,0)
-            src.set([5, 6, 7, 8], 4);       // (1,0)
-            src.set([9, 10, 11, 12], 8);    // (0,1)
-            src.set([13, 14, 15, 16], 12);  // (1,1)
-
-            const cropped = cropFrame(src, 2, { x: 1, y: 1, w: 1, h: 1 });
-            expect(Array.from(cropped)).to.deep.equal([13, 14, 15, 16]);
-        });
-
-        it('should handle single-row crop', () => {
-            const src = new Uint8Array(4 * 4 * 4); // 4x4
-            for (let i = 0; i < src.length; i++) { src[i] = i; }
-
-            const cropped = cropFrame(src, 4, { x: 0, y: 2, w: 4, h: 1 });
-            expect(cropped.length).to.equal(4 * 1 * 4);
-            // First byte should be first byte of row 2 (offset 2 * 4 * 4 = 32)
-            expect(cropped[0]).to.equal(32);
-        });
-
-        it('should handle single-column crop', () => {
-            const src = new Uint8Array(4 * 3 * 4); // 4x3
-            for (let i = 0; i < src.length; i += 4) {
-                const px = i / 4;
-                src[i] = px;
-            }
-
-            const cropped = cropFrame(src, 4, { x: 2, y: 0, w: 1, h: 3 });
-            expect(cropped.length).to.equal(1 * 3 * 4);
-            // Pixel at (2,0) has index 2, (2,1) has index 6, (2,2) has index 10
-            expect(cropped[0]).to.equal(2);
-            expect(cropped[4]).to.equal(6);
-            expect(cropped[8]).to.equal(10);
-        });
-    });
 });

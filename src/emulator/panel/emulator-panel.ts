@@ -1,15 +1,21 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import * as path from 'path';
+import { V6Project } from '../../project/model/v6-project';
 import { EmulatorLifecycle } from '../lifecycle/emulator-lifecycle';
 import { IpcClient } from '../client/ipc-client';
 import { IpcCommand, SPEED_VALUES } from '../protocol/ipc-commands';
 import { decodeFrameRaw } from '../protocol/ipc-codec';
-import { EmulatorViewModel, WebviewMessage, FULL_FRAME_WIDTH } from './emulator-viewmodel';
+import { DisplayMode, EmulatorViewModel, WebviewMessage } from './emulator-viewmodel';
 import { Logger } from '../../platform/logging/logger';
 import { DisposableStore, toDisposable } from '../../platform/disposable/lifecycle';
 
 const FPS_UPDATE_INTERVAL_MS = 1000;
+
+export interface EmulatorPanelSettings {
+    speed?: string;
+    viewMode?: DisplayMode;
+}
 
 export class EmulatorPanel implements vscode.Disposable {
     private panel: vscode.WebviewPanel | null = null;
@@ -19,6 +25,8 @@ export class EmulatorPanel implements vscode.Disposable {
     private readonly lifecycle: EmulatorLifecycle;
     private readonly client: IpcClient;
     private readonly logger: Logger;
+    private readonly persistSettings: (settings: EmulatorPanelSettings) => Promise<void>;
+    private readonly loadProjectSettings: () => Promise<V6Project | undefined>;
     private frameLoopActive = false;
     private frameCount = 0;
     private smoothFps = 0;
@@ -30,11 +38,15 @@ export class EmulatorPanel implements vscode.Disposable {
         lifecycle: EmulatorLifecycle,
         client: IpcClient,
         logger: Logger,
+        persistSettings: (settings: EmulatorPanelSettings) => Promise<void> = async () => {},
+        loadProjectSettings: () => Promise<V6Project | undefined> = async () => undefined,
     ) {
         this.extensionUri = extensionUri;
         this.lifecycle = lifecycle;
         this.client = client;
         this.logger = logger;
+        this.persistSettings = persistSettings;
+        this.loadProjectSettings = loadProjectSettings;
         this.fpsStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
         this.fpsStatusBarItem.name = 'V6 FPS';
         this.store.add(this.fpsStatusBarItem);
@@ -50,6 +62,27 @@ export class EmulatorPanel implements vscode.Disposable {
 
     isOpen(): boolean {
         return this.panel !== null;
+    }
+
+    async applyProjectSettings(project: V6Project): Promise<void> {
+        const viewMode = project.run.viewMode === 'full'
+            ? 'full'
+            : project.run.viewMode === 'bordered'
+                ? 'border'
+                : 'borderless';
+
+        this.viewModel.setSpeed(project.run.speed ?? '100%');
+        this.viewModel.setViewMode(viewMode);
+
+        if (this.client.connected) {
+            const speed = SPEED_VALUES[project.run.speed ?? '100%'];
+            if (speed !== undefined) {
+                await this.client.send(IpcCommand.SET_CPU_SPEED, { speed });
+            }
+            await this.lifecycle.setFrameMode(viewMode);
+        }
+
+        this.postMessage(this.viewModel.makeStatusMessage());
     }
 
     dispose(): void {
@@ -77,6 +110,13 @@ export class EmulatorPanel implements vscode.Disposable {
         );
 
         this.panel.webview.html = this.getHtml(this.panel.webview, assetsUri);
+        this.viewModel.setViewMode(this.lifecycle.frameMode);
+
+        this.store.add(this.panel.onDidChangeViewState((event) => {
+            if (event.webviewPanel.active) {
+                void this.reloadProjectSettings();
+            }
+        }));
 
         // Handle messages from the webview
         this.store.add(
@@ -89,7 +129,8 @@ export class EmulatorPanel implements vscode.Disposable {
         this.panel.onDidDispose(() => {
             this.stopFrameLoop();
             this.panel = null;
-            this.logger.debug('emulator-panel: panel disposed');
+            this.logger.info('emulator-panel: panel disposed; stopping emulator');
+            void this.stopEmulatorAfterPanelClose();
         });
 
         // Listen for lifecycle state changes
@@ -104,6 +145,13 @@ export class EmulatorPanel implements vscode.Disposable {
         };
         this.lifecycle.on('stateChange', onStateChange);
         this.store.add(toDisposable(() => this.lifecycle.removeListener('stateChange', onStateChange)));
+
+        const onFrameModeChange = (frameMode: DisplayMode) => {
+            this.viewModel.setViewMode(frameMode);
+            this.postMessage(this.viewModel.makeStatusMessage());
+        };
+        this.lifecycle.on('frameModeChange', onFrameModeChange);
+        this.store.add(toDisposable(() => this.lifecycle.removeListener('frameModeChange', onFrameModeChange)));
 
         const onError = (err: Error) => {
             this.postMessage(this.viewModel.makeErrorMessage(err.message));
@@ -141,12 +189,19 @@ export class EmulatorPanel implements vscode.Disposable {
                     if (ipcSpeed !== undefined && this.client.connected) {
                         await this.client.send(IpcCommand.SET_CPU_SPEED, { speed: ipcSpeed });
                         this.viewModel.setSpeed(msg.value);
+                        await this.persistSettings({ speed: msg.value });
                     }
                     break;
                 }
-                case 'setViewMode':
-                    this.viewModel.setViewMode(msg.value);
+                case 'setViewMode': {
+                    if (this.client.connected && this.isDisplayMode(msg.value)) {
+                        await this.lifecycle.setFrameMode(msg.value);
+                        this.viewModel.setViewMode(msg.value);
+                        await this.persistSettings({ viewMode: msg.value });
+                        this.postMessage(this.viewModel.makeStatusMessage());
+                    }
                     break;
+                }
                 case 'key':
                     if (this.client.connected) {
                         await this.client.send(IpcCommand.KEY_HANDLING, {
@@ -221,6 +276,33 @@ export class EmulatorPanel implements vscode.Disposable {
     private postMessage(msg: unknown): void {
         if (this.panel) {
             this.panel.webview.postMessage(msg);
+        }
+    }
+
+    private isDisplayMode(mode: string): mode is DisplayMode {
+        return mode === 'full' || mode === 'border' || mode === 'borderless';
+    }
+
+    private async stopEmulatorAfterPanelClose(): Promise<void> {
+        try {
+            await this.lifecycle.stop();
+        } catch (err) {
+            this.logger.error(`emulator-panel: failed to stop emulator after panel close: ${
+                err instanceof Error ? err.message : String(err)
+            }`);
+        }
+    }
+
+    private async reloadProjectSettings(): Promise<void> {
+        try {
+            const project = await this.loadProjectSettings();
+            if (project) {
+                await this.applyProjectSettings(project);
+            }
+        } catch (err) {
+            this.logger.error(`emulator-panel: failed to reload project settings: ${
+                err instanceof Error ? err.message : String(err)
+            }`);
         }
     }
 

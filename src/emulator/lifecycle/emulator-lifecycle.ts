@@ -15,6 +15,7 @@ const CONNECT_RETRY_DELAY_MS = 300;
 const CONNECT_MAX_RETRIES = 10;
 
 export type EmulatorState = 'stopped' | 'launching' | 'connected' | 'running';
+export type EmulatorFrameMode = 'full' | 'border' | 'borderless';
 
 export class EmulatorLifecycle extends EventEmitter {
     private readonly locator: V6emulLocator;
@@ -25,6 +26,7 @@ export class EmulatorLifecycle extends EventEmitter {
 
     private emulatorProcess: EmulatorProcess | null = null;
     private _state: EmulatorState = 'stopped';
+    private _frameMode: EmulatorFrameMode = 'borderless';
 
     constructor(
         locator: V6emulLocator,
@@ -43,6 +45,10 @@ export class EmulatorLifecycle extends EventEmitter {
 
     get state(): EmulatorState {
         return this._state;
+    }
+
+    get frameMode(): EmulatorFrameMode {
+        return this._frameMode;
     }
 
     get running(): boolean {
@@ -66,7 +72,7 @@ export class EmulatorLifecycle extends EventEmitter {
 
             const bootRomPath = project.run.bootRom
                 ? project.run.bootRom
-                : this.pathService.resolveExtensionPath('res/boot/boots.txt');
+                : this.pathService.resolveExtensionPath('res/boot/boots.bin');
 
             const isRom = !project.run.executable.endsWith('.fdd');
             const romPath = isRom ? project.run.executable : undefined;
@@ -106,6 +112,10 @@ export class EmulatorLifecycle extends EventEmitter {
                 throw new V6Error(ErrorCode.EMULATOR_LAUNCH_FAILED, 'PING health check failed');
             }
             this.logger.info('v6emul: PING OK');
+
+            const frameMode = this.resolveFrameMode(project.run.viewMode);
+            await this.setFrameMode(frameMode.panelMode);
+            await this.client.send(IpcCommand.SET_COLOR_FORMAT, { colorFormat: 0 });
 
             // Load ROM or mount FDD via IPC
             if (romPath) {
@@ -185,6 +195,12 @@ export class EmulatorLifecycle extends EventEmitter {
         await this.start(project);
     }
 
+    async setFrameMode(frameMode: EmulatorFrameMode): Promise<void> {
+        const frameModeValue = frameMode === 'full' ? 0 : frameMode === 'border' ? 1 : 2;
+        await this.client.send(IpcCommand.SET_FRAME_MODE, { frameMode: frameModeValue });
+        this.updateFrameMode(frameMode);
+    }
+
     private async connectWithRetries(port: number): Promise<void> {
         for (let attempt = 1; attempt <= CONNECT_MAX_RETRIES; attempt++) {
             try {
@@ -220,6 +236,24 @@ export class EmulatorLifecycle extends EventEmitter {
         if (this._state !== state) {
             this._state = state;
             this.emit('stateChange', state);
+        }
+    }
+
+    private updateFrameMode(frameMode: EmulatorFrameMode): void {
+        if (this._frameMode !== frameMode) {
+            this._frameMode = frameMode;
+            this.emit('frameModeChange', frameMode);
+        }
+    }
+
+    private resolveFrameMode(viewMode: string | undefined): { value: number; panelMode: EmulatorFrameMode } {
+        switch (viewMode) {
+            case 'full':
+                return { value: 0, panelMode: 'full' };
+            case 'bordered':
+                return { value: 1, panelMode: 'border' };
+            default:
+                return { value: 2, panelMode: 'borderless' };
         }
     }
 

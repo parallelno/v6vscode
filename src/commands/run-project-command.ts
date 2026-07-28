@@ -38,6 +38,7 @@ export class RunProjectCommand {
             } else {
                 await this.lifecycle.start(project);
             }
+            await this.panel.applyProjectSettings(project);
             this.panel.reveal();
         } catch (err) {
             if (err instanceof V6Error) {

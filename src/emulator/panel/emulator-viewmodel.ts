@@ -4,22 +4,6 @@ import { SPEED_VALUES } from '../protocol/ipc-commands';
 
 export type DisplayMode = 'full' | 'border' | 'borderless';
 
-export interface CropRect {
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-}
-
-export const DISPLAY_MODES: Record<DisplayMode, CropRect> = {
-    full:       { x: 0,   y: 0,  w: 768, h: 312 },
-    border:     { x: 112, y: 24, w: 544, h: 288 },
-    borderless: { x: 128, y: 40, w: 512, h: 256 },
-};
-
-export const FULL_FRAME_WIDTH = 768;
-export const FULL_FRAME_HEIGHT = 312;
-
 // --- ABGR → RGBA conversion ---
 
 /**
@@ -37,34 +21,11 @@ export function abgrToRgba(abgr: Uint8Array): Uint8Array {
     return rgba;
 }
 
-/**
- * Crop a frame buffer to the given rectangle.
- * Input: full frame (srcWidth × srcHeight × 4 bytes per pixel).
- * Output: cropped region (crop.w × crop.h × 4 bytes per pixel).
- */
-export function cropFrame(
-    src: Uint8Array,
-    srcWidth: number,
-    crop: CropRect,
-): Uint8Array {
-    const dst = new Uint8Array(crop.w * crop.h * 4);
-    const srcRowBytes = srcWidth * 4;
-    const dstRowBytes = crop.w * 4;
-
-    for (let row = 0; row < crop.h; row++) {
-        const srcOffset = (crop.y + row) * srcRowBytes + crop.x * 4;
-        const dstOffset = row * dstRowBytes;
-        dst.set(src.subarray(srcOffset, srcOffset + dstRowBytes), dstOffset);
-    }
-
-    return dst;
-}
-
 // --- Panel message types ---
 
 export type PanelMessage =
     | { type: 'frame'; width: number; height: number; pixels: Uint8Array }
-    | { type: 'status'; running: boolean; speed: string }
+    | { type: 'status'; running: boolean; speed: string; viewMode: DisplayMode }
     | { type: 'error'; message: string };
 
 export type WebviewMessage =
@@ -87,13 +48,9 @@ export class EmulatorViewModel {
     get speed(): string { return this._speed; }
     get viewMode(): DisplayMode { return this._viewMode; }
 
-    get cropRect(): CropRect {
-        return DISPLAY_MODES[this._viewMode];
-    }
-
     setRunning(running: boolean): PanelMessage {
         this._running = running;
-        return { type: 'status', running: this._running, speed: this._speed };
+        return this.makeStatusMessage();
     }
 
     setSpeed(speed: string): PanelMessage | null {
@@ -101,7 +58,7 @@ export class EmulatorViewModel {
             return null;
         }
         this._speed = speed;
-        return { type: 'status', running: this._running, speed: this._speed };
+        return this.makeStatusMessage();
     }
 
     setViewMode(mode: string): boolean {
@@ -112,27 +69,18 @@ export class EmulatorViewModel {
         return true;
     }
 
-    /**
-     * Process a raw RGBA frame from the emulator.
-     * Crops to the current display mode.
-     * Returns a PanelMessage ready to send to the webview.
-     */
+    /** Returns the RGBA frame already cropped by the emulator. */
     processFrame(rgbaPixels: Uint8Array, srcWidth: number, srcHeight: number): PanelMessage {
-        const crop = this.cropRect;
-        // Skip crop when using the full frame
-        const pixels = (crop.x === 0 && crop.y === 0 && crop.w === srcWidth && crop.h === srcHeight)
-            ? rgbaPixels
-            : cropFrame(rgbaPixels, srcWidth, crop);
         return {
             type: 'frame',
-            width: crop.w,
-            height: crop.h,
-            pixels,
+            width: srcWidth,
+            height: srcHeight,
+            pixels: rgbaPixels,
         };
     }
 
     makeStatusMessage(): PanelMessage {
-        return { type: 'status', running: this._running, speed: this._speed };
+        return { type: 'status', running: this._running, speed: this._speed, viewMode: this._viewMode };
     }
 
     makeErrorMessage(message: string): PanelMessage {

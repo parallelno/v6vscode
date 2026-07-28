@@ -8,6 +8,7 @@
 
     const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById('screen'));
     const ctx = canvas.getContext('2d');
+    const viewport = /** @type {HTMLDivElement} */ (document.getElementById('viewport'));
     const btnRunPause = /** @type {HTMLButtonElement} */ (document.getElementById('btn-run-pause'));
     const btnReset = /** @type {HTMLButtonElement} */ (document.getElementById('btn-reset'));
     const selSpeed = /** @type {HTMLSelectElement} */ (document.getElementById('sel-speed'));
@@ -15,6 +16,19 @@
     const errorBar = /** @type {HTMLDivElement} */ (document.getElementById('error-bar'));
 
     let isRunning = false;
+
+    function resizeScreen() {
+        const aspectRatio = 4 / 3;
+        const viewportWidth = viewport.clientWidth;
+        const viewportHeight = viewport.clientHeight;
+        const width = Math.min(viewportWidth, viewportHeight * aspectRatio);
+        const height = width / aspectRatio;
+
+        canvas.style.width = `${Math.floor(width)}px`;
+        canvas.style.height = `${Math.floor(height)}px`;
+    }
+
+    new ResizeObserver(resizeScreen).observe(viewport);
 
     // --- Message handling from extension host ---
     window.addEventListener('message', (event) => {
@@ -24,7 +38,7 @@
                 renderFrame(msg.width, msg.height, msg.pixels);
                 break;
             case 'status':
-                updateStatus(msg.running, msg.speed);
+                updateStatus(msg.running, msg.speed, msg.viewMode);
                 break;
             case 'error':
                 showError(msg.message);
@@ -38,6 +52,7 @@
             canvas.width = width;
             canvas.height = height;
         }
+        resizeScreen();
         // pixels arrives as Uint8Array via structured clone — wrap directly as ImageData
         const clamped = new Uint8ClampedArray(pixels.buffer || pixels);
         const imageData = new ImageData(clamped, width, height);
@@ -46,11 +61,12 @@
     }
 
     // --- Status update ---
-    function updateStatus(running, speed) {
+    function updateStatus(running, speed, viewMode) {
         isRunning = running;
         btnRunPause.textContent = running ? '\u23F8' : '\u25B6';
         btnRunPause.title = running ? 'Pause' : 'Run';
         selSpeed.value = speed;
+        selDisplay.value = viewMode;
     }
 
     // --- Error display ---

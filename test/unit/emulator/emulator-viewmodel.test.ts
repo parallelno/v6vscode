@@ -2,10 +2,6 @@ import { expect } from 'chai';
 import {
     EmulatorViewModel,
     abgrToRgba,
-    cropFrame,
-    DISPLAY_MODES,
-    FULL_FRAME_WIDTH,
-    FULL_FRAME_HEIGHT,
     DisplayMode,
 } from '../../../src/emulator/panel/emulator-viewmodel';
 
@@ -41,95 +37,6 @@ describe('abgrToRgba', () => {
     });
 });
 
-describe('cropFrame', () => {
-    function makeTestFrame(width: number, height: number): Uint8Array {
-        const buf = new Uint8Array(width * height * 4);
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                const offset = (y * width + x) * 4;
-                buf[offset] = x & 0xFF;     // channel 0 = x
-                buf[offset + 1] = y & 0xFF; // channel 1 = y
-                buf[offset + 2] = 0;
-                buf[offset + 3] = 0xFF;
-            }
-        }
-        return buf;
-    }
-
-    it('should crop a region from the frame', () => {
-        const src = makeTestFrame(8, 8);
-        const cropped = cropFrame(src, 8, { x: 2, y: 3, w: 3, h: 2 });
-        expect(cropped.length).to.equal(3 * 2 * 4);
-
-        // First pixel should be at (2, 3)
-        expect(cropped[0]).to.equal(2);  // x=2
-        expect(cropped[1]).to.equal(3);  // y=3
-
-        // Second pixel in first row should be at (3, 3)
-        expect(cropped[4]).to.equal(3);  // x=3
-        expect(cropped[5]).to.equal(3);  // y=3
-
-        // First pixel of second row should be at (2, 4)
-        const row2offset = 3 * 4;
-        expect(cropped[row2offset]).to.equal(2);     // x=2
-        expect(cropped[row2offset + 1]).to.equal(4); // y=4
-    });
-
-    it('should produce correct output dimensions for each display mode', () => {
-        const src = new Uint8Array(FULL_FRAME_WIDTH * FULL_FRAME_HEIGHT * 4);
-        for (const [mode, rect] of Object.entries(DISPLAY_MODES)) {
-            const cropped = cropFrame(src, FULL_FRAME_WIDTH, rect);
-            expect(cropped.length, `${mode} pixel count`).to.equal(rect.w * rect.h * 4);
-        }
-    });
-
-    it('should handle full-frame crop (no-op)', () => {
-        const src = new Uint8Array(4 * 4 * 4); // 4x4
-        src.fill(42);
-        const cropped = cropFrame(src, 4, { x: 0, y: 0, w: 4, h: 4 });
-        expect(Array.from(cropped)).to.deep.equal(Array.from(src));
-    });
-});
-
-describe('DISPLAY_MODES', () => {
-    it('should define three modes', () => {
-        expect(Object.keys(DISPLAY_MODES)).to.have.length(3);
-    });
-
-    it('full mode should cover entire frame', () => {
-        const full = DISPLAY_MODES.full;
-        expect(full.x).to.equal(0);
-        expect(full.y).to.equal(0);
-        expect(full.w).to.equal(768);
-        expect(full.h).to.equal(312);
-    });
-
-    it('border mode should be smaller than full', () => {
-        const border = DISPLAY_MODES.border;
-        expect(border.w).to.be.lessThan(DISPLAY_MODES.full.w);
-        expect(border.h).to.be.lessThan(DISPLAY_MODES.full.h);
-        expect(border.x + border.w).to.be.at.most(FULL_FRAME_WIDTH);
-        expect(border.y + border.h).to.be.at.most(FULL_FRAME_HEIGHT);
-    });
-
-    it('borderless mode should be the smallest', () => {
-        const borderless = DISPLAY_MODES.borderless;
-        expect(borderless.w).to.be.lessThan(DISPLAY_MODES.border.w);
-        expect(borderless.h).to.be.lessThan(DISPLAY_MODES.border.h);
-        expect(borderless.x + borderless.w).to.be.at.most(FULL_FRAME_WIDTH);
-        expect(borderless.y + borderless.h).to.be.at.most(FULL_FRAME_HEIGHT);
-    });
-
-    it('all crop rects should stay within full frame bounds', () => {
-        for (const [mode, rect] of Object.entries(DISPLAY_MODES)) {
-            expect(rect.x >= 0, `${mode} x >= 0`).to.be.true;
-            expect(rect.y >= 0, `${mode} y >= 0`).to.be.true;
-            expect(rect.x + rect.w <= FULL_FRAME_WIDTH, `${mode} x+w <= width`).to.be.true;
-            expect(rect.y + rect.h <= FULL_FRAME_HEIGHT, `${mode} y+h <= height`).to.be.true;
-        }
-    });
-});
-
 describe('EmulatorViewModel', () => {
     let vm: EmulatorViewModel;
 
@@ -150,22 +57,19 @@ describe('EmulatorViewModel', () => {
             expect(vm.viewMode).to.equal('borderless');
         });
 
-        it('should have borderless crop rect by default', () => {
-            expect(vm.cropRect).to.deep.equal(DISPLAY_MODES.borderless);
-        });
     });
 
     describe('setRunning', () => {
         it('should return status message with running=true', () => {
             const msg = vm.setRunning(true);
-            expect(msg).to.deep.equal({ type: 'status', running: true, speed: '100%' });
+            expect(msg).to.deep.equal({ type: 'status', running: true, speed: '100%', viewMode: 'borderless' });
             expect(vm.running).to.be.true;
         });
 
         it('should return status message with running=false', () => {
             vm.setRunning(true);
             const msg = vm.setRunning(false);
-            expect(msg).to.deep.equal({ type: 'status', running: false, speed: '100%' });
+            expect(msg).to.deep.equal({ type: 'status', running: false, speed: '100%', viewMode: 'borderless' });
             expect(vm.running).to.be.false;
         });
     });
@@ -194,7 +98,6 @@ describe('EmulatorViewModel', () => {
                 const ok = vm.setViewMode(mode);
                 expect(ok, `mode ${mode}`).to.be.true;
                 expect(vm.viewMode).to.equal(mode);
-                expect(vm.cropRect).to.deep.equal(DISPLAY_MODES[mode]);
             }
         });
 
@@ -206,35 +109,17 @@ describe('EmulatorViewModel', () => {
     });
 
     describe('processFrame', () => {
-        it('should crop RGBA frame (no conversion needed)', () => {
-            // Emulator sends RGBA by default (--frame-format rgba)
-            const fullW = FULL_FRAME_WIDTH;
-            const fullH = FULL_FRAME_HEIGHT;
-            const fullFrame = new Uint8Array(fullW * fullH * 4);
-            // Set pixel at (0,0): RGBA = [0xDD, 0xCC, 0xBB, 0xAA]
-            fullFrame.set([0xDD, 0xCC, 0xBB, 0xAA], 0);
-
-            vm.setViewMode('full');
-            const msg = vm.processFrame(fullFrame, fullW, fullH);
+        it('should forward the native-cropped RGBA frame unchanged', () => {
+            const nativeFrame = new Uint8Array([0xDD, 0xCC, 0xBB, 0xAA]);
+            const msg = vm.processFrame(nativeFrame, 512, 256);
             expect(msg.type).to.equal('frame');
             if (msg.type === 'frame') {
-                expect(msg.width).to.equal(DISPLAY_MODES.full.w);
-                expect(msg.height).to.equal(DISPLAY_MODES.full.h);
-                // RGBA passthrough — no byte reorder
+                expect(msg.width).to.equal(512);
+                expect(msg.height).to.equal(256);
                 expect(msg.pixels[0]).to.equal(0xDD);
                 expect(msg.pixels[1]).to.equal(0xCC);
                 expect(msg.pixels[2]).to.equal(0xBB);
                 expect(msg.pixels[3]).to.equal(0xAA);
-            }
-        });
-
-        it('should use current view mode crop rect', () => {
-            vm.setViewMode('borderless');
-            const fullFrame = new Uint8Array(FULL_FRAME_WIDTH * FULL_FRAME_HEIGHT * 4);
-            const msg = vm.processFrame(fullFrame, FULL_FRAME_WIDTH, FULL_FRAME_HEIGHT);
-            if (msg.type === 'frame') {
-                expect(msg.width).to.equal(512);
-                expect(msg.height).to.equal(256);
             }
         });
     });
@@ -244,7 +129,7 @@ describe('EmulatorViewModel', () => {
             vm.setRunning(true);
             vm.setSpeed('50%');
             const msg = vm.makeStatusMessage();
-            expect(msg).to.deep.equal({ type: 'status', running: true, speed: '50%' });
+            expect(msg).to.deep.equal({ type: 'status', running: true, speed: '50%', viewMode: 'borderless' });
         });
     });
 

@@ -6,6 +6,21 @@ import { ErrorCode } from '../../../src/platform/errors/error-codes';
 import { V6Error } from '../../../src/platform/errors/v6-error';
 
 describe('ipc-codec', () => {
+    describe('IpcCommand compatibility', () => {
+        it('should match the native v6emul command IDs after frame controls', () => {
+            expect(IpcCommand.SET_FRAME_MODE).to.equal(40);
+            expect(IpcCommand.SET_COLOR_FORMAT).to.equal(41);
+            expect(IpcCommand.SET_MEM).to.equal(42);
+            expect(IpcCommand.SET_BYTE_GLOBAL).to.equal(43);
+            expect(IpcCommand.SET_CPU_SPEED).to.equal(44);
+            expect(IpcCommand.KEY_HANDLING).to.equal(47);
+            expect(IpcCommand.LOAD_FDD).to.equal(48);
+            expect(IpcCommand.RESET_UPDATE_FDD).to.equal(49);
+            expect(IpcCommand.LOAD_ROM).to.equal(91);
+            expect(IpcCommand.MOUNT_FDD).to.equal(92);
+        });
+    });
+
     describe('encodeRequest', () => {
         it('should encode a PING request', () => {
             const buf = encodeRequest(IpcCommand.PING);

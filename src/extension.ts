@@ -44,7 +44,24 @@ export function activate(context: vscode.ExtensionContext): void {
     const ipcClient = new IpcClient(logger);
     const lifecycle = new EmulatorLifecycle(locator, launcher, ipcClient, logger, pathService);
     const emulatorPanel = store.add(new EmulatorPanel(
-        context.extensionUri, lifecycle, ipcClient, logger,
+        context.extensionUri, lifecycle, ipcClient, logger, async (settings) => {
+            const project = activeProjectService.getActiveProject();
+            if (!project) {
+                return;
+            }
+
+            if (settings.speed) {
+                project.run.speed = settings.speed;
+            }
+            if (settings.viewMode) {
+                project.run.viewMode = settings.viewMode === 'border' ? 'bordered' : settings.viewMode;
+            }
+            await projectRepository.save(project);
+        },
+        async () => {
+            const project = activeProjectService.getActiveProject();
+            return project ? projectRepository.load(project.uri) : undefined;
+        },
     ));
     const fddPersistence = new FddPersistence(ipcClient, logger);
 
