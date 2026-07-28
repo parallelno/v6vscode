@@ -78,6 +78,12 @@
             }
           },
           {
+            "scope": "entity.name.function.macro.v6vscode_8080",
+            "settings": {
+              "foreground": "#c67dc0"
+            }
+          },
+          {
             "scope": "keyword.locallabel.v6vscode_8080",
             "settings": {
               "foreground": "#9d741c"
