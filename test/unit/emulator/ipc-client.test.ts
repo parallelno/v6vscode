@@ -65,6 +65,27 @@ describe('IpcClient + MockTcpServer', () => {
         expect(resp.ok).to.equal(true);
     });
 
+    it('should send keyboard press and release requests', async () => {
+        client.disconnect();
+        await server.stop();
+
+        const requests: Array<{ cmd: number; data: unknown }> = [];
+        server = new MockTcpServer((cmd, data) => {
+            requests.push({ cmd, data });
+            return { ok: true };
+        });
+        await server.start();
+
+        await client.connect(server.port);
+        await client.send(IpcCommand.KEY_HANDLING, { scancode: 65, action: 1 });
+        await client.send(IpcCommand.KEY_HANDLING, { scancode: 65, action: 0 });
+
+        expect(requests).to.deep.equal([
+            { cmd: IpcCommand.KEY_HANDLING, data: { scancode: 65, action: 1 } },
+            { cmd: IpcCommand.KEY_HANDLING, data: { scancode: 65, action: 0 } },
+        ]);
+    });
+
     it('should handle custom server handler', async () => {
         await server.stop();
 

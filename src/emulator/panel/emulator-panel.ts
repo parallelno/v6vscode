@@ -100,7 +100,7 @@ export class EmulatorPanel implements vscode.Disposable {
 
         this.panel = vscode.window.createWebviewPanel(
             'v6emulPanel',
-            'Vector-06C',
+            'v6emul: Vector-06C',
             vscode.ViewColumn.Beside,
             {
                 enableScripts: true,
