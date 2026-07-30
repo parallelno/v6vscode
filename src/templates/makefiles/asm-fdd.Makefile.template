@@ -4,9 +4,12 @@ SRC      = src/main.asm
 CPU      = i8080
 TEMPLATE = res/fdd/rds308.fdd
 
+V6ASM ?= v6asm
+V6FDD ?= v6fdd
+
 $(FDD): $(ROM)
-	v6fdd $(TEMPLATE) $(FDD) $(ROM)
+	$(V6FDD) $(TEMPLATE) $(FDD) $(ROM)
 $(ROM): $(SRC)
-	v6asm $(SRC) -o $(ROM) -c $(CPU)
+	$(V6ASM) $(SRC) -o $(ROM) -c $(CPU)
 clean:
 	rm -f $(ROM) $(FDD)

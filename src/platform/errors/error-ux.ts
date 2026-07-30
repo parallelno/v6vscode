@@ -19,6 +19,15 @@ function getActions(code: ErrorCode): ErrorAction[] {
                     ),
                 },
             ];
+        case ErrorCode.ASSEMBLER_NOT_FOUND:
+            return [
+                {
+                    label: 'Open Settings',
+                    action: () => vscode.commands.executeCommand(
+                        'workbench.action.openSettings', 'v6.assemblerPath',
+                    ),
+                },
+            ];
         case ErrorCode.EXECUTABLE_NOT_FOUND:
             return [
                 {
@@ -49,7 +58,8 @@ function getActions(code: ErrorCode): ErrorAction[] {
 
 const USER_MESSAGES: Record<string, string> = {
     [ErrorCode.CONFIG_INVALID]: 'Project configuration is invalid.',
-    [ErrorCode.EMULATOR_NOT_FOUND]: 'Emulator not found. Set v6.emulatorPath or add v6emul to PATH.',
+    [ErrorCode.EMULATOR_NOT_FOUND]: 'Emulator not found. Set v6.emulatorPath, set the V6EMUL environment variable, or add v6emul to PATH.',
+    [ErrorCode.ASSEMBLER_NOT_FOUND]: 'Assembler not found. Set v6.assemblerPath, set the V6ASM environment variable, or add v6asm to PATH.',
     [ErrorCode.EXECUTABLE_NOT_FOUND]: 'Executable not found. Build the project first (e.g. `make`).',
     [ErrorCode.EMULATOR_LAUNCH_FAILED]: 'Failed to launch the emulator.',
     [ErrorCode.IPC_CONNECTION_REFUSED]: 'Could not connect to the emulator.',

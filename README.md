@@ -27,15 +27,20 @@
 
 ## Prerequisites
 
-The extension bundles the `v6emul` emulator backend. The following build tools are **not** bundled and must be installed separately:
+The extension no longer bundles any binary. The following tools must be installed separately:
 
 | Tool | Purpose | Download |
 |------|---------|----------|
+| `v6emul` | Vector-06c emulator | [Releases](https://github.com/parallelno/v6emul/releases) |
 | `v6asm` | Intel 8080 assembler | [Releases](https://github.com/parallelno/v6asm/releases) |
 | `v6fdd` | FDD image builder | [Releases](https://github.com/parallelno/v6asm/releases) |
 | `v6c` | C compiler (optional) | [Releases](https://github.com/parallelno/v6c/releases) |
 
-Add the tool directory to your `PATH` so that `make` can find them.
+After downloading, tell the extension where to find them using **one** of these methods (checked in order):
+
+1. **VS Code setting** — set `v6.emulatorPath`, `v6.assemblerPath`, and `v6.fddToolPath` in workspace or user settings.
+2. **Environment variable** — set `V6EMUL`, `V6ASM`, and `V6FDD`. `V6ASM`/`V6FDD` also control `make` because generated Makefiles use `V6ASM ?= v6asm`.
+3. **PATH** — add the tools to your system `PATH` so they can be found automatically.
 
 ## Commands
 
@@ -48,7 +53,9 @@ Add the tool directory to your `PATH` so that `make` can find them.
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `v6.emulatorPath` | string | `""` | Override path to `v6emul` binary |
+| `v6.emulatorPath` | string | `""` | Path to `v6emul` (overrides `V6EMUL` env var and PATH) |
+| `v6.assemblerPath` | string | `""` | Path to `v6asm` (overrides `V6ASM` env var and PATH) |
+| `v6.fddToolPath` | string | `""` | Path to `v6fdd` (overrides `V6FDD` env var and PATH) |
 | `v6.logLevel` | enum | `"info"` | Logging level: error, warn, info, debug |
 
 ## Project File

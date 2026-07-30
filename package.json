@@ -127,7 +127,17 @@
         "v6.emulatorPath": {
           "type": "string",
           "default": "",
-          "description": "Override path to the v6emul binary. Leave empty to use the bundled emulator or PATH lookup."
+          "description": "Path to the v6emul binary. Checked before the V6EMUL environment variable and PATH."
+        },
+        "v6.assemblerPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the v6asm executable. Checked before the V6ASM environment variable and PATH. Download from https://github.com/parallelno/v6asm/releases."
+        },
+        "v6.fddToolPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the v6fdd executable. Checked before the V6FDD environment variable and PATH. Download from https://github.com/parallelno/v6asm/releases."
         },
         "v6.logLevel": {
           "type": "string",

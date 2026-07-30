@@ -2,7 +2,9 @@ ROM  = out/{{name}}.rom
 SRC  = src/main.asm
 CPU  = i8080
 
+V6ASM ?= v6asm
+
 $(ROM): $(SRC)
-	v6asm $(SRC) -o $(ROM) -c $(CPU)
+	$(V6ASM) $(SRC) -o $(ROM) -c $(CPU)
 clean:
 	rm -f $(ROM)

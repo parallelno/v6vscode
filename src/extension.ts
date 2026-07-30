@@ -35,9 +35,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
     // Emulator services
     const locator = new V6emulLocator({
-        pathService,
         logger,
         getConfiguration: (section) => vscode.workspace.getConfiguration(section),
+        getEnv: (name) => process.env[name],
         which: () => undefined,
     });
     const launcher = new V6emulLauncher(processRunner, logger);
