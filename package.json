@@ -14,7 +14,8 @@
   ],
   "main": "./out/extension.js",
   "activationEvents": [
-    "workspaceContains:**/*.project.json"
+    "workspaceContains:**/*.project.json",
+    "onDebugResolve:v6"
   ],
   "contributes": {
     "commands": [
@@ -54,6 +55,111 @@
     "breakpoints": [
       {
         "language": "asm"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "v6",
+        "label": "Vector-06C",
+        "languages": ["asm", "c"],
+        "configurationAttributes": {
+          "launch": {
+            "required": ["program"],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "Absolute path to the ROM (.rom) or FDD (.fdd) executable to launch.",
+                "default": "out/${workspaceFolderBasename}.rom"
+              },
+              "debugArtifact": {
+                "type": "string",
+                "description": "Path to the ELF companion file produced by v6asm -g or the V6C linker. Required for source breakpoints.",
+                "default": ""
+              },
+              "bootRom": {
+                "type": "string",
+                "description": "Override path to the boot ROM mapped at address 0 on startup. Leave empty to use the default.",
+                "default": ""
+              },
+              "loadAddress": {
+                "type": "string",
+                "description": "ROM load address in hex (e.g. '0x100'). Default: '0x0'.",
+                "default": ""
+              },
+              "speed": {
+                "type": "string",
+                "enum": ["1%", "20%", "50%", "100%", "200%", "max"],
+                "default": "100%",
+                "description": "Emulation speed."
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "default": false,
+                "description": "Pause execution immediately after launch."
+              },
+              "trace": {
+                "type": "boolean",
+                "default": false,
+                "description": "Enable verbose DAP protocol tracing in the output channel."
+              }
+            }
+          },
+          "attach": {
+            "required": ["port"],
+            "properties": {
+              "port": {
+                "type": "number",
+                "default": 9876,
+                "description": "TCP port of a running v6emul --serve process."
+              },
+              "host": {
+                "type": "string",
+                "default": "127.0.0.1",
+                "description": "Host of the running v6emul server."
+              },
+              "debugArtifact": {
+                "type": "string",
+                "description": "Path to the ELF companion file for source breakpoints.",
+                "default": ""
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "v6",
+            "request": "launch",
+            "name": "Launch V6 ROM",
+            "program": "out/${workspaceFolderBasename}.rom",
+            "debugArtifact": "",
+            "stopOnEntry": false
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "V6: Launch ROM",
+            "description": "Launch a ROM file and start debugging.",
+            "body": {
+              "type": "v6",
+              "request": "launch",
+              "name": "Launch ${1:project}.rom",
+              "program": "out/${1:project}.rom",
+              "debugArtifact": "out/${1:project}.elf",
+              "stopOnEntry": false
+            }
+          },
+          {
+            "label": "V6: Attach to running emulator",
+            "description": "Attach to a v6emul --serve process.",
+            "body": {
+              "type": "v6",
+              "request": "attach",
+              "name": "Attach to v6emul",
+              "port": 9876,
+              "host": "127.0.0.1"
+            }
+          }
+        ]
       }
     ],
     "configurationDefaults": {

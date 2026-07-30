@@ -4,11 +4,12 @@ import * as path from 'path';
 import { V6Project } from '../../project/model/v6-project';
 import { EmulatorLifecycle } from '../lifecycle/emulator-lifecycle';
 import { IpcClient } from '../client/ipc-client';
-import { IpcCommand, SPEED_VALUES } from '../protocol/ipc-commands';
+import { GetHardwareMainStatsResponse, GetRegsResponse, IpcCommand, SPEED_VALUES } from '../protocol/ipc-commands';
 import { decodeFrameRaw } from '../protocol/ipc-codec';
 import { DisplayMode, EmulatorViewModel, WebviewMessage } from './emulator-viewmodel';
 import { Logger } from '../../platform/logging/logger';
 import { DisposableStore, toDisposable } from '../../platform/disposable/lifecycle';
+import { CpuStatisticsPanel } from './cpu-statistics-panel';
 
 const FPS_UPDATE_INTERVAL_MS = 1000;
 
@@ -32,6 +33,7 @@ export class EmulatorPanel implements vscode.Disposable {
     private smoothFps = 0;
     private fpsTimer: ReturnType<typeof setInterval> | null = null;
     private readonly fpsStatusBarItem: vscode.StatusBarItem;
+    private readonly cpuStatisticsPanel = new CpuStatisticsPanel();
 
     constructor(
         extensionUri: vscode.Uri,
@@ -87,6 +89,7 @@ export class EmulatorPanel implements vscode.Disposable {
 
     dispose(): void {
         this.stopFrameLoop();
+        this.cpuStatisticsPanel.dispose();
         this.store.dispose();
         if (this.panel) {
             this.panel.dispose();
@@ -141,6 +144,7 @@ export class EmulatorPanel implements vscode.Disposable {
             } else {
                 this.postMessage(this.viewModel.setRunning(false));
                 this.stopFrameLoop();
+                void this.showCpuStatistics();
             }
         };
         this.lifecycle.on('stateChange', onStateChange);
@@ -177,6 +181,7 @@ export class EmulatorPanel implements vscode.Disposable {
                         await this.client.send(IpcCommand.STOP);
                         this.postMessage(this.viewModel.setRunning(false));
                         this.stopFrameLoop();
+                        await this.showCpuStatistics();
                     }
                     break;
                 case 'reset':
@@ -271,6 +276,28 @@ export class EmulatorPanel implements vscode.Disposable {
             // Swallow frame errors to avoid flooding — they're transient
         }
         this.scheduleNextFrame();
+    }
+
+    private async showCpuStatistics(): Promise<void> {
+        if (!this.client.connected) { return; }
+
+        try {
+            const [registersResponse, hardwareResponse] = await Promise.all([
+                this.client.send<GetRegsResponse>(IpcCommand.GET_REGS),
+                this.client.send<GetHardwareMainStatsResponse>(IpcCommand.GET_HW_MAIN_STATS),
+            ]);
+            if (!registersResponse.ok || !registersResponse.data || !hardwareResponse.ok || !hardwareResponse.data) {
+                throw new Error(registersResponse.error ?? hardwareResponse.error ?? 'Failed to retrieve CPU statistics');
+            }
+            this.cpuStatisticsPanel.show({
+                registers: registersResponse.data,
+                hardware: hardwareResponse.data,
+            });
+        } catch (err) {
+            this.logger.error(`emulator-panel: failed to retrieve CPU statistics: ${
+                err instanceof Error ? err.message : String(err)
+            }`);
+        }
     }
 
     private postMessage(msg: unknown): void {

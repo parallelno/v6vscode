@@ -8,5 +8,8 @@ export const SETTING_ASSEMBLER_PATH = 'v6.assemblerPath';
 export const SETTING_FDD_TOOL_PATH = 'v6.fddToolPath';
 export const SETTING_LOG_LEVEL = 'v6.logLevel';
 
+// Debug
+export const DEBUG_TYPE = 'v6';
+
 // Output channel
 export const OUTPUT_CHANNEL_NAME = 'Vector-06c';

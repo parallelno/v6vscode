@@ -18,6 +18,8 @@ import { EmulatorPanel } from './emulator/panel/emulator-panel';
 import { RunProjectCommand } from './commands/run-project-command';
 import { CreateProjectCommand } from './commands/create-project-command';
 import { FddPersistence } from './emulator/persistence/fdd-persistence';
+import { V6DebugConfigurationProvider } from './debug/configuration/debug-configuration-provider';
+import { registerDebugAdapter } from './debug/adapter/v6-debug-adapter-factory';
 
 export function activate(context: vscode.ExtensionContext): void {
     const store = new DisposableStore();
@@ -129,6 +131,18 @@ export function activate(context: vscode.ExtensionContext): void {
     );
 
     context.subscriptions.push(store);
+
+    // Debug adapter (Steps 3.5 / 3.8)
+    const debugConfigProvider = new V6DebugConfigurationProvider(activeProjectService, logger);
+    registerDebugAdapter(
+        context,
+        locator,
+        launcher,
+        logger,
+        pathService,
+        (section) => vscode.workspace.getConfiguration(section),
+        debugConfigProvider,
+    );
 
     logger.info('Vector-06c extension activated.');
 }

@@ -202,6 +202,21 @@ export interface GetRegsResponse {
     m: number;
 }
 
+export interface GetHardwareMainStatsResponse {
+    cc: number;
+    rasterLine: number;
+    rasterPixel: number;
+    frameCc: number;
+    frameNum: number;
+    displayMode: number;
+    scrollVert: number;
+    rusLat: boolean;
+    inte: boolean;
+    iff: boolean;
+    hlta: boolean;
+    speedPercent: number;
+}
+
 export interface FrameRawResponse {
     width: number;
     height: number;
