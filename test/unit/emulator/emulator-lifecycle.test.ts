@@ -12,7 +12,7 @@ describe('EmulatorLifecycle session ownership', () => {
         );
     }
 
-    it('does not stop a debug-owned session when the display closes', async () => {
+    it('stops a debug-owned session when the display closes', async () => {
         const lifecycle = makeLifecycle();
         (lifecycle as any)._owner = 'debug';
         let stopped = false;
@@ -20,7 +20,7 @@ describe('EmulatorLifecycle session ownership', () => {
 
         await lifecycle.stopFromDisplay();
 
-        expect(stopped).to.equal(false);
+        expect(stopped).to.equal(true);
         expect(lifecycle.owner).to.equal('debug');
     });
 

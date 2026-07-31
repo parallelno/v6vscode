@@ -138,6 +138,10 @@ export class EmulatorPanel implements vscode.Disposable {
             if (this.lifecycle.running) {
                 this.postMessage(this.viewModel.setRunning(true));
                 this.startFrameLoop();
+            } else if (this.lifecycle.state === 'stopped') {
+                this.postMessage(this.viewModel.setRunning(false));
+                this.stopFrameLoop();
+                this.panel?.dispose();
             } else {
                 this.postMessage(this.viewModel.setRunning(false));
                 this.stopFrameLoop();

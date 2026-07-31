@@ -27,7 +27,7 @@ Choose a `Vector-06C` launch configuration and press F5. A debug launch:
 4. Opens the emulator display panel on that shared session.
 5. Configures source and instruction breakpoints before running.
 
-Closing the display panel does not terminate an active debug session. Ending a launch session terminates its emulator process.
+Closing the display panel terminates the active debug launch and closes the Run and Debug session. Ending a launch session terminates its emulator process and closes the display panel.
 
 ## Supported Debug Surfaces
 

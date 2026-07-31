@@ -83,6 +83,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private pendingPause = false;
     private pendingStep = false;
     private pendingStepOverAddr: number | undefined;
+    private terminationEmitted = false;
+    private terminationRequested = false;
 
     // IS_RUNNING poll
     private pollTimer: NodeJS.Timeout | null = null;
@@ -195,11 +197,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             this.emulatorProcess = process;
             process.spawnResult.exitPromise.then(code => {
                 this.logger.info(`v6emul exited with code ${code}`);
-                if (this.sessionState !== 'disconnected') {
-                    this.sessionState = 'disconnected';
-                    this.stopPoll();
-                    this.sendEvent('exited', { exitCode: code ?? 0 });
-                    this.sendEvent('terminated');
+                if (!this.terminationRequested) {
+                    this.emitTerminated(code ?? 0);
                 }
             }).catch(() => {});
 
@@ -432,13 +431,18 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private async buildStackVars(sp: number): Promise<any[]> {
         const vars: any[] = [];
         try {
-            const resp = await this.client!.send<GetStackSampleResponse>(IpcCommand.GET_STACK_SAMPLE);
-            if (resp.ok && resp.data?.data) {
-                const words = resp.data.data;
-                for (let i = 0; i < words.length; i++) {
-                    const addr = (sp - (words.length / 2 - i) * 2 + 0x10000) & 0xFFFF;
-                    const label = addr === sp ? `[SP] ${hex4(addr)}` : hex4(addr);
-                    vars.push(mkVar(label, hex4(words[i]), 0));
+            const resp = await this.client!.send<GetStackSampleResponse>(
+                IpcCommand.GET_STACK_SAMPLE,
+                { addr: sp },
+                5000,
+                'high',
+            );
+            if (resp.ok && resp.data) {
+                const offsets = [-10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10] as const;
+                for (const offset of offsets) {
+                    const addr = (sp + offset + 0x10000) & 0xFFFF;
+                    const label = offset === 0 ? `[SP] ${hex4(addr)}` : hex4(addr);
+                    vars.push(mkVar(label, hex4(resp.data[String(offset) as keyof GetStackSampleResponse]), 0));
                 }
             }
         } catch (err) {
@@ -716,13 +720,17 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
     private async onDisconnect(req: any): Promise<void> {
         const terminateDebuggee = req.arguments?.terminateDebuggee ?? (this.emulatorProcess !== null);
-        this.sendResponseBody(req, {});
+        this.terminationRequested = true;
         await this.cleanup(terminateDebuggee);
+        this.sendResponseBody(req, {});
+        this.emitTerminated();
     }
 
     private async onTerminate(req: any): Promise<void> {
-        this.sendResponseBody(req, {});
+        this.terminationRequested = true;
         await this.cleanup(true);
+        this.sendResponseBody(req, {});
+        this.emitTerminated();
     }
 
     // -----------------------------------------------------------------------
@@ -858,6 +866,17 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         this.client = null;
         this.emulatorProcess = null;
         this.cachedRegs = null;
+    }
+
+    private emitTerminated(exitCode?: number): void {
+        if (this.terminationEmitted) { return; }
+        this.terminationEmitted = true;
+        this.stopPoll();
+        this.sessionState = 'disconnected';
+        if (exitCode !== undefined) {
+            this.sendEvent('exited', { exitCode });
+        }
+        this.sendEvent('terminated');
     }
 
     // -----------------------------------------------------------------------

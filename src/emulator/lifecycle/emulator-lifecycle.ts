@@ -228,9 +228,7 @@ export class EmulatorLifecycle extends EventEmitter {
     }
 
     async stopFromDisplay(): Promise<void> {
-        if (this._owner !== 'debug') {
-            await this.stop();
-        }
+        await this.stop();
     }
 
     async stop(): Promise<void> {

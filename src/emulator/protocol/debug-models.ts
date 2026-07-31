@@ -178,5 +178,15 @@ export interface GetStepOverAddrResponse {
 
 /** GET_STACK_SAMPLE (command 18) response. */
 export interface GetStackSampleResponse {
-    data: number[];
+    '-10': number;
+    '-8': number;
+    '-6': number;
+    '-4': number;
+    '-2': number;
+    '0': number;
+    '2': number;
+    '4': number;
+    '6': number;
+    '8': number;
+    '10': number;
 }

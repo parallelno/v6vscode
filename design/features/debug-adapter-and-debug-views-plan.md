@@ -248,7 +248,7 @@ Implement a `DebugConfigurationProvider` that:
 4. Rejects incompatible combinations early.
 5. Keeps debug-only settings in `launch.json` initially; add project-schema fields only after stable use cases are proven.
 
-Define one ownership matrix for Run Project, debug launch, debug attach, emulator panel close, debug disconnect, restart, and extension deactivation. Closing the display panel must not terminate an active debug session.
+Define one ownership matrix for Run Project, debug launch, debug attach, emulator panel close, debug disconnect, restart, and extension deactivation. Closing the display panel terminates an active debug launch and closes its debug session.
 
 > **Design Notes**: Attach must never send `EXIT` unless explicitly configured. Launch owns its child process and normally terminates it on disconnect.
 >
@@ -271,7 +271,7 @@ Add coordinator tests for concurrent frame/stat/register requests, launch failur
 
 > **Design Notes**: The existing `IpcClient` correctly serializes requests, but it has no priorities, cancellation, or session ownership. Keep encoding/transport separate from coordination.
 >
-> **Implementation Notes**: `EmulatorLifecycle` now acts as the shared launch-session owner for Run Project and DAP launch. The adapter and display panel share one `IpcClient`; debug launch uses a free port; closing the panel does not terminate a debug-owned process. `IpcClient` has stable critical/high/normal/low queue priorities and frames are low priority. Ownership/state and queue-order tests pass. Attach sharing, cancellation, leases, richer state/events, telemetry coalescing, and failure/soak coverage remain open.
+> **Implementation Notes**: `EmulatorLifecycle` now acts as the shared launch-session owner for Run Project and DAP launch. The adapter and display panel share one `IpcClient`; debug launch uses a free port; closing the panel terminates a debug-owned process, and debug termination closes the panel. `IpcClient` has stable critical/high/normal/low queue priorities and frames are low priority. Ownership/state and queue-order tests pass. Attach sharing, cancellation, leases, richer state/events, telemetry coalescing, and failure/soak coverage remain open.
 
 ### Step 3.7 - Add typed debug protocol models [ ]
 
@@ -435,7 +435,7 @@ Return `memoryReference` values for registers or symbols that denote addresses. 
 
 Add unit tests for flag decoding, register splitting, expression precedence, invalid expressions, memory bounds, symbol shadowing, variable-reference lifetime, and stale frame IDs.
 
-> **Implementation Notes**: Implemented one honest CPU frame with local source path and instruction pointer, register/flag/raw-stack scopes, and evaluation of register names plus decimal/hex literals. Symbols, memory expressions, arithmetic, interrupt scope, write operations, semantic callers, and C locals remain open or metadata-limited.
+> **Implementation Notes**: Implemented one honest CPU frame with local source path and instruction pointer, register/flag/raw-stack scopes, and evaluation of register names plus decimal/hex literals. Raw Stack sends the current SP to the backend and decodes words at SP-10 through SP+10. Symbols, memory expressions, arithmetic, interrupt scope, write operations, semantic callers, and C locals remain open or metadata-limited.
 
 ### Step 3.13 - Implement watchpoints through DAP data breakpoints [ ]
 
