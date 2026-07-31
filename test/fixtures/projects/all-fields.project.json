@@ -2,6 +2,7 @@
   "name": "full-project",
   "run": {
     "executable": "build/game.rom",
+    "debugArtifact": "build/game.elf",
     "bootRom": "res/boot.bin",
     "loadAddr": "0x200",
     "fddReadOnly": true,

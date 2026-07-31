@@ -27,6 +27,7 @@ export class ProjectRepository {
             name: result.name,
             run: {
                 executable: path.resolve(projectDir, result.run.executable),
+                debugArtifact: result.run.debugArtifact ? path.resolve(projectDir, result.run.debugArtifact) : undefined,
                 bootRom: result.run.bootRom ? path.resolve(projectDir, result.run.bootRom) : undefined,
                 loadAddr: result.run.loadAddr,
                 fddReadOnly: result.run.fddReadOnly,
@@ -43,6 +44,7 @@ export class ProjectRepository {
             name: project.name,
             run: {
                 executable: path.relative(projectDir, project.run.executable),
+                ...(project.run.debugArtifact && { debugArtifact: path.relative(projectDir, project.run.debugArtifact) }),
                 ...(project.run.bootRom && { bootRom: path.relative(projectDir, project.run.bootRom) }),
                 ...(project.run.loadAddr && { loadAddr: project.run.loadAddr }),
                 ...(project.run.fddReadOnly !== undefined && { fddReadOnly: project.run.fddReadOnly }),

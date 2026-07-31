@@ -9,6 +9,7 @@ export type ValidationResult =
 
 interface ValidatedRun {
     executable: string;
+    debugArtifact?: string;
     bootRom?: string;
     loadAddr: string;
     fddReadOnly: boolean;
@@ -51,7 +52,7 @@ export function validate(data: unknown): ValidationResult {
         errors.push({ path: 'run', message: '"run" must be an object.' });
     } else {
         const run = obj.run as Record<string, unknown>;
-        const knownRunKeys = new Set(['executable', 'bootRom', 'loadAddr', 'fddReadOnly', 'speed', 'viewMode']);
+        const knownRunKeys = new Set(['executable', 'debugArtifact', 'bootRom', 'loadAddr', 'fddReadOnly', 'speed', 'viewMode']);
         for (const key of Object.keys(run)) {
             if (!knownRunKeys.has(key)) {
                 errors.push({ path: `run.${key}`, message: `Unknown property "run.${key}".` });
@@ -64,6 +65,12 @@ export function validate(data: unknown): ValidationResult {
             errors.push({ path: 'run.executable', message: '"run.executable" must be a string.' });
         } else if (run.executable.length === 0) {
             errors.push({ path: 'run.executable', message: '"run.executable" must not be empty.' });
+        }
+
+        if ('debugArtifact' in run && typeof run.debugArtifact !== 'string') {
+            errors.push({ path: 'run.debugArtifact', message: '"run.debugArtifact" must be a string.' });
+        } else if (run.debugArtifact === '') {
+            errors.push({ path: 'run.debugArtifact', message: '"run.debugArtifact" must not be empty.' });
         }
 
         if ('bootRom' in run && typeof run.bootRom !== 'string') {
@@ -101,6 +108,7 @@ export function validate(data: unknown): ValidationResult {
         name: obj.name as string,
         run: {
             executable: run.executable as string,
+            debugArtifact: run.debugArtifact as string | undefined,
             bootRom: run.bootRom as string | undefined,
             loadAddr: typeof run.loadAddr === 'string' ? run.loadAddr : '0x100',
             fddReadOnly: typeof run.fddReadOnly === 'boolean' ? run.fddReadOnly : false,

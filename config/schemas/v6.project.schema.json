@@ -17,6 +17,11 @@
           "type": "string",
           "description": "Path to the ROM or FDD image to load."
         },
+        "debugArtifact": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to the companion ELF file containing debug metadata."
+        },
         "bootRom": {
           "type": "string",
           "description": "Path to the boot ROM image. Defaults to bundled boots.bin."

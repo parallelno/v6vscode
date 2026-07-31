@@ -1,4 +1,5 @@
 import * as net from 'net';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { IpcClient } from '../../emulator/client/ipc-client';
 import { V6emulLocator } from '../../emulator/launcher/v6emul-locator';
@@ -11,12 +12,12 @@ import {
 } from '../../emulator/protocol/ipc-commands';
 import {
     makeBreakpointAdd,
-    BreakpointEntry,
-    decodeBpAddr,
     GetStepOverAddrResponse,
     GetStackSampleResponse,
     StopReason,
 } from '../../emulator/protocol/debug-models';
+import { loadDebugArtifact } from '../metadata/debug-artifact-loader';
+import { DebugIndex } from '../metadata/debug-index';
 import { Logger } from '../../platform/logging/logger';
 import { PathService } from '../../platform/files/path-service';
 
@@ -86,6 +87,11 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // IPC
     private client: IpcClient | null = null;
     private emulatorProcess: EmulatorProcess | null = null;
+
+    // Debug metadata
+    private debugIndex: DebugIndex | null = null;
+    private debugMetadataError = 'No debug artifact was configured. Set debugArtifact in launch.json.';
+    private workspaceRoot = '';
 
     // Session state
     private initialized = false;
@@ -178,8 +184,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             supportTerminateDebuggee: true,
             supportsRestartRequest: false,
         });
-        // Advertise that we're ready for breakpoints
-        this.sendEvent('initialized');
+        // 'initialized' is sent from onLaunch/onAttach after the ELF is loaded,
+        // so that VS Code doesn't send setBreakpoints before the debug index is ready.
     }
 
     // -----------------------------------------------------------------------
@@ -189,6 +195,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private async onLaunch(req: any): Promise<void> {
         const args = req.arguments ?? {};
         try {
+            this.debugIndex = null;
+            this.debugMetadataError = 'No debug artifact was configured. Set debugArtifact in launch.json.';
             const port = await findFreePort();
             const emulatorPath = this.locator.resolve();
             const bootRomPath = args.bootRom
@@ -231,11 +239,41 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             // Attach debugger
             await client.send(IpcCommand.DEBUG_ATTACH, { data: true });
 
+            // Load debug artifact (companion ELF) if provided
+            const debugArtifact = args.debugArtifact as string | undefined;
+            if (debugArtifact) {
+                const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+                this.workspaceRoot = folder;
+                const elfPath = path.isAbsolute(debugArtifact)
+                    ? debugArtifact
+                    : path.resolve(folder, debugArtifact);
+                const romPath = String(args.program ?? '');
+                try {
+                    const loadResult = await loadDebugArtifact(elfPath, romPath);
+                    this.debugIndex = loadResult.index;
+                    this.debugMetadataError = '';
+                    if (loadResult.validationWarning) {
+                        this.sendEvent('output', { category: 'important', output: `V6: ${loadResult.validationWarning}\n` });
+                    } else {
+                        const fc = loadResult.index.sourceFiles.length;
+                        this.sendEvent('output', { category: 'console', output: `V6: Debug metadata loaded — ${fc} source file(s)\n` });
+                    }
+                } catch (e: any) {
+                    this.debugMetadataError = `Could not load debug artifact '${elfPath}': ${e.message}`;
+                    this.sendEvent('output', { category: 'important', output: `V6: ${this.debugMetadataError}\n` });
+                }
+            }
+
             // Keep paused until configurationDone
             await client.send(IpcCommand.STOP);
             this.sessionState = 'paused';
 
+            this.sendEvent('output', { category: 'console', output: `V6: Emulator ready on port ${port} \u2014 display panel not yet available in debug mode (Step 3.6 coordinator required).\n` });
+
             this.sendResponseBody(req, {});
+            // Signal VS Code that breakpoints can now be sent.
+            // Must come AFTER the ELF is loaded so debugIndex is ready for setBreakpoints.
+            this.sendEvent('initialized');
         } catch (err: any) {
             this.sendResponse(req, false, `Launch failed: ${err.message}`);
             this.cleanup(false);
@@ -265,6 +303,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             this.sessionState = 'paused';
 
             this.sendResponseBody(req, {});
+            this.sendEvent('initialized');
         } catch (err: any) {
             this.sendResponse(req, false, `Attach failed: ${err.message}`);
         }
@@ -306,14 +345,33 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private async onStackTrace(req: any): Promise<void> {
         const regs = await this.safeGetRegs();
         const pc = regs?.pc ?? 0;
-        const frame = {
+
+        // Resolve PC to source location using debug index
+        const srcLoc = this.debugIndex?.resolveAddress(pc);
+        const funcName = this.debugIndex?.symbolAtAddress(pc)?.name;
+        const frameName = funcName ? `${funcName} ${hex4(pc)}` : hex4(pc);
+
+        const frame: any = {
             id: 1,
-            name: hex4(pc),
+            name: frameName,
             instructionPointerReference: hex4(pc),
             line: 0,
             column: 0,
-            // source is omitted until ELF/DWARF consumer (Step 3.10) is available
         };
+
+        if (srcLoc) {
+            const sourcePath = path.isAbsolute(srcLoc.file)
+                ? srcLoc.file
+                : path.resolve(this.workspaceRoot, srcLoc.file);
+            frame.source = {
+                path: sourcePath,
+                name: path.basename(sourcePath),
+                sourceReference: 0,
+            };
+            frame.line = srcLoc.line;
+            frame.column = srcLoc.column;
+        }
+
         this.sendResponseBody(req, {
             stackFrames: [frame],
             totalFrames: 1,
@@ -513,17 +571,66 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
     private async onSetBreakpoints(req: any): Promise<void> {
         const args = req.arguments ?? {};
-        const sourceBreakpoints = args.breakpoints ?? [];
+        const source: string = args.source?.path ?? args.source?.name ?? '';
+        const sourceBreakpoints: any[] = args.breakpoints ?? [];
 
-        // Return all as unverified until the ELF/DWARF consumer (Step 3.10) is in place.
-        const breakpoints = sourceBreakpoints.map((_bp: any, i: number) => ({
-            id: this.nextBpId++,
-            verified: false,
-            message: 'Source breakpoints require a debug artifact (ELF companion). Set debugArtifact in launch.json.',
-            line: _bp.line,
-        }));
+        if (!this.debugIndex) {
+            const breakpoints = sourceBreakpoints.map((_bp: any) => ({
+                id: this.nextBpId++,
+                verified: false,
+                message: this.debugMetadataError,
+                line: _bp.line,
+            }));
+            this.sendResponseBody(req, { breakpoints });
+            return;
+        }
 
-        this.sendResponseBody(req, { breakpoints });
+        if (!source) {
+            const breakpoints = sourceBreakpoints.map((_bp: any) => ({
+                id: this.nextBpId++,
+                verified: false,
+                message: 'The breakpoint request did not include a source file path.',
+                line: _bp.line,
+            }));
+            this.sendResponseBody(req, { breakpoints });
+            return;
+        }
+
+        if (!this.client) { this.sendResponseBody(req, { breakpoints: [] }); return; }
+
+        const result: any[] = [];
+        for (const bp of sourceBreakpoints) {
+            const resolved = this.debugIndex.resolveBreakpoint(source, bp.line);
+            if (!resolved) {
+                result.push({
+                    id: this.nextBpId++,
+                    verified: false,
+                    message: `No executable code at line ${bp.line}`,
+                    line: bp.line,
+                });
+                continue;
+            }
+            const id = this.nextBpId++;
+            const addResp = await this.client.send(
+                IpcCommand.DEBUG_BREAKPOINT_ADD,
+                makeBreakpointAdd(resolved.address, `dap:src:${id}`),
+            ).catch(() => ({ ok: false }));
+
+            if (addResp.ok) {
+                this.bpAddrToId.set(resolved.address, id);
+                this.bpIdToAddr.set(id, resolved.address);
+                result.push({
+                    id,
+                    verified: true,
+                    line: resolved.verifiedLine,
+                    instructionReference: hex4(resolved.address),
+                    message: `CPU address: ${hex4(resolved.address)}`,
+                });
+            } else {
+                result.push({ id, verified: false, message: 'Backend rejected breakpoint', line: bp.line });
+            }
+        }
+        this.sendResponseBody(req, { breakpoints: result });
     }
 
     // -----------------------------------------------------------------------

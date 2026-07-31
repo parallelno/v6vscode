@@ -34,7 +34,7 @@ export class V6DebugConfigurationProvider implements vscode.DebugConfigurationPr
                 request: 'launch',
                 name: `Launch ${project.name}`,
                 program: project.run.executable,
-                debugArtifact: '',
+                debugArtifact: project.run.debugArtifact ?? '',
                 bootRom: project.run.bootRom ?? '',
                 loadAddress: project.run.loadAddr ?? '',
                 speed: project.run.speed ?? '100%',
@@ -64,6 +64,7 @@ export class V6DebugConfigurationProvider implements vscode.DebugConfigurationPr
                 request: 'launch',
                 name: `Launch ${project.name}`,
                 program: project.run.executable,
+                debugArtifact: project.run.debugArtifact ?? '',
                 bootRom: project.run.bootRom ?? '',
                 loadAddress: project.run.loadAddr ?? '',
                 speed: project.run.speed ?? '100%',
@@ -90,6 +91,13 @@ export class V6DebugConfigurationProvider implements vscode.DebugConfigurationPr
                 return undefined;
             }
             config.program = resolved;
+
+            if (!config.debugArtifact) {
+                const project = await this.getOrResolveProject();
+                if (project?.run.debugArtifact) {
+                    config.debugArtifact = project.run.debugArtifact;
+                }
+            }
         }
 
         this.logger.debug(`v6 debug config resolved: ${JSON.stringify(config)}`);

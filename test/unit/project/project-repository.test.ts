@@ -5,7 +5,7 @@ import { ProjectRepository } from '../../../src/project/persistence/project-repo
 import { V6Project } from '../../../src/project/model/v6-project';
 
 describe('ProjectRepository', () => {
-    it('should save emulator speed and display mode', async () => {
+    it('should save debug artifact, emulator speed, and display mode', async () => {
         let savedUri: vscode.Uri | undefined;
         let savedText = '';
         const workspace = vscode.workspace as unknown as {
@@ -24,6 +24,7 @@ describe('ProjectRepository', () => {
             uri: vscode.Uri.file('/workspace/demo.project.json'),
             run: {
                 executable: '/workspace/out/demo.rom',
+                debugArtifact: '/workspace/out/demo.elf',
                 speed: '200%',
                 viewMode: 'bordered',
             },
@@ -41,6 +42,7 @@ describe('ProjectRepository', () => {
             name: 'demo',
             run: {
                 executable: path.join('out', 'demo.rom'),
+                debugArtifact: path.join('out', 'demo.elf'),
                 speed: '200%',
                 viewMode: 'bordered',
             },
