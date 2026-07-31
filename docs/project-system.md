@@ -19,6 +19,7 @@ Files named `*.project.json` at the workspace root. Validated by `config/schemas
 |-------|------|----------|---------|-------------|
 | `name` | string | yes | — | Project display name |
 | `run.executable` | string | yes | — | Path to ROM or FDD image |
+| `run.debugArtifact` | string | no | — | Companion ELF containing source lines and symbols |
 | `run.bootRom` | string | no | bundled | Boot ROM path |
 | `run.loadAddr` | string | no | `"0x100"` | Load address (hex) |
 | `run.fddReadOnly` | boolean | no | `false` | Discard FDD writes on stop |

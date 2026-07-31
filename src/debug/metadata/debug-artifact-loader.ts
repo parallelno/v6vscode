@@ -8,7 +8,6 @@
  */
 
 import * as fs from 'fs';
-import * as path from 'path';
 import { parseElf32 } from './elf32-reader';
 import { parseDwarf4LineSection } from './dwarf4-line-reader';
 import { buildDebugIndex, DebugIndex } from './debug-index';
@@ -93,6 +92,9 @@ export async function loadDebugArtifact(elfPath: string, romPath = ''): Promise<
 
     // Validate ROM/ELF match
     const validationWarning = validateRomElf(elf, romPath);
+    if (validationWarning) {
+        throw new Error(validationWarning);
+    }
 
     return { index, validationWarning, compDir };
 }

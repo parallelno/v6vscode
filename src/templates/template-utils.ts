@@ -56,7 +56,10 @@ export function validateProjectName(name: string): string | undefined {
     if (!name || name.trim().length === 0) {
         return 'Project name cannot be empty.';
     }
-    if (/[<>:"/\\|?*\x00-\x1F]/.test(name)) {
+    const hasInvalidCharacter = [...name].some(character =>
+        '<>:"/\\|?*'.includes(character) || character.charCodeAt(0) < 0x20,
+    );
+    if (hasInvalidCharacter) {
         return 'Project name contains invalid characters.';
     }
     if (name.length > 100) {

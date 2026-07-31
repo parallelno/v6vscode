@@ -21,3 +21,18 @@ Infrastructure services with no domain logic:
 ## Extension Entry Point (`src/extension.ts`)
 
 Composition root. Creates platform and project services, registers commands, pushes all disposables onto `context.subscriptions`. On activation, project discovery and active project resolution are available on demand.
+
+## Debug Session Boundary
+
+`EmulatorLifecycle` is the shared process/socket owner for ordinary runs and debug launches. `V6DebugAdapter` borrows the lifecycle's `IpcClient`; `EmulatorPanel` renders frames through that same client. `IpcClient` serializes requests and orders queued work by priority, with debugger control above telemetry and display frames.
+
+```mermaid
+flowchart LR
+	DAP[V6 Debug Adapter] --> Lifecycle[Emulator Lifecycle]
+	Panel[Emulator Panel] --> Lifecycle
+	Stats[Hardware Statistics] --> Lifecycle
+	Lifecycle --> Client[Prioritized IpcClient]
+	Client --> Emulator[v6emul single-client server]
+```
+
+Source debugging loads a final companion ELF through `debug-artifact-loader.ts`. The immutable debug index maps source lines to CPU addresses and CPU addresses back to source locations. ROM/ELF byte mismatches fail metadata loading before source breakpoints can be verified.

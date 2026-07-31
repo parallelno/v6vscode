@@ -2,7 +2,9 @@
 
 Status: Proposed
 Owner: v6vscode / v6emul maintainers
-Last updated: 2026-07-28
+Last updated: 2026-07-30
+
+Checkboxes: `[x]` complete; `[~]` partially implemented with acceptance work remaining; `[ ]` not complete.
 
 ## 1. Problem
 
@@ -211,7 +213,7 @@ Acceptance gate:
 
 > **Implementation Notes**:
 
-### Step 3.5 - Define debug configuration and session ownership [ ]
+### Step 3.5 - Define debug configuration and session ownership [~]
 
 Add a `Vector-06C` debugger contribution in `package.json`:
 
@@ -250,9 +252,9 @@ Define one ownership matrix for Run Project, debug launch, debug attach, emulato
 
 > **Design Notes**: Attach must never send `EXIT` unless explicitly configured. Launch owns its child process and normally terminates it on disconnect.
 >
-> **Implementation Notes**:
+> **Implementation Notes**: Registered the `v6` debugger, launch/attach schemas and snippets, inline adapter factory, and active-project defaults. `run.debugArtifact` is supported in the project schema and supplies the default ELF. Debug launch uses a free port. Explicit artifact discovery, the complete ownership matrix, restart, and remaining configuration fields/tests are still open.
 
-### Step 3.6 - Introduce an emulator session coordinator [ ]
+### Step 3.6 - Introduce an emulator session coordinator [~]
 
 Refactor the current direct lifecycle/client usage behind an `EmulatorSessionCoordinator`:
 
@@ -269,7 +271,7 @@ Add coordinator tests for concurrent frame/stat/register requests, launch failur
 
 > **Design Notes**: The existing `IpcClient` correctly serializes requests, but it has no priorities, cancellation, or session ownership. Keep encoding/transport separate from coordination.
 >
-> **Implementation Notes**:
+> **Implementation Notes**: `EmulatorLifecycle` now acts as the shared launch-session owner for Run Project and DAP launch. The adapter and display panel share one `IpcClient`; debug launch uses a free port; closing the panel does not terminate a debug-owned process. `IpcClient` has stable critical/high/normal/low queue priorities and frames are low priority. Ownership/state and queue-order tests pass. Attach sharing, cancellation, leases, richer state/events, telemetry coalescing, and failure/soak coverage remain open.
 
 ### Step 3.7 - Add typed debug protocol models [ ]
 
@@ -287,7 +289,7 @@ Add codec contract tests using recorded/golden backend responses. Include null/e
 
 > **Implementation Notes**:
 
-### Step 3.8 - Implement the DAP adapter skeleton and lifecycle [ ]
+### Step 3.8 - Implement the DAP adapter skeleton and lifecycle [~]
 
 Add `@vscode/debugadapter` and `@vscode/debugprotocol` as runtime dependencies, pinned to compatible versions. Implement an inline adapter with focused components rather than one monolithic session class:
 
@@ -309,9 +311,9 @@ Implement and test:
 
 Do not advertise unsupported DAP capabilities. Enable each capability only in the step that implements and tests it.
 
-> **Implementation Notes**:
+> **Implementation Notes**: An inline TypeScript adapter implements initialize, launch, attach, configurationDone, one thread, disconnect/terminate, continued/stopped/exited/terminated/output events, and shared lifecycle launch ownership. It remains a single class without the planned service decomposition; restart and broader lifecycle tests remain open.
 
-### Step 3.9 - Implement execution control and stopped events [ ]
+### Step 3.9 - Implement execution control and stopped events [~]
 
 Map DAP requests:
 
@@ -340,9 +342,9 @@ Acceptance targets:
 - Single-step changes PC exactly once for deterministic test instructions.
 - No orphan temporary breakpoint after 1,000 next operations.
 
-> **Implementation Notes**:
+> **Implementation Notes**: Continue, pause, instruction step, and basic next are implemented with 20 ms `IS_RUNNING` polling. Shared lifecycle state drives display frame polling, and control/poll requests outrank frames. Exact backend stop records, restart, robust race handling, latency instrumentation, and soak acceptance remain blocked or open.
 
-### Step 3.10 - Consume final ELF debug metadata in v6vscode [ ]
+### Step 3.10 - Consume final ELF debug metadata in v6vscode [~]
 
 This step is owned and implemented in this repository. Add the parser and immutable indexes under `src/debug/metadata/`, artifact selection under `src/debug/artifacts/`, and the debugger-facing mapping policy under `src/debug/source/`. Implement a pure TypeScript reader for the supported ELF32/DWARF v4 subset, or adopt a maintained pure JavaScript/WASM parser after validating it against V6C's 16-bit address size. Avoid native dependencies in the VSIX.
 
@@ -384,9 +386,9 @@ Acceptance gate:
 
 > **Design Notes**: Current metadata is sufficient for source breakpoints, current-line display, and symbol/function lookup. It does not include C variable locations, lexical-block locals, or `.debug_frame`/`.eh_frame` unwind rules. The initial adapter therefore exposes CPU registers, flags, symbols, memory, and one current CPU frame; semantic C locals, caller frames, and reliable step-out remain future toolchain work.
 >
-> **Implementation Notes**:
+> **Implementation Notes**: Implemented pure TypeScript ELF32, DWARF v4 line-table, symbol, immutable source/address index, Windows path reconciliation, project-level ELF selection, and direct-ROM byte validation. Missing, malformed, and mismatched companions fail explicitly before breakpoint verification. Direct-ASM fixture conformance passes; linked ASM/C/mixed fixtures, section-gap reconstruction, discarded-section checks, and full DWARF compilation-unit parsing remain open.
 
-### Step 3.11 - Synchronize source and instruction breakpoints [ ]
+### Step 3.11 - Synchronize source and instruction breakpoints [~]
 
 Implement DAP `setBreakpoints`, `setInstructionBreakpoints`, and `breakpointLocations`:
 
@@ -403,9 +405,9 @@ Advanced page masks, register operands, comparison values, auto-delete behavior,
 
 Add tests for duplicate addresses, several source lines mapping to one address, one source line mapping to several addresses, disabled mappings, temporary-next collisions, reconnect, and external backend breakpoint changes.
 
-> **Implementation Notes**:
+> **Implementation Notes**: Source and instruction breakpoints resolve to CPU addresses, are added through the backend, return verified lines/address messages, and contribute inferred hit IDs. Desired-set reconciliation, removals per source, restart reapplication, breakpoint events, ownership-safe structured backend IDs, conditions, and collision tests remain open.
 
-### Step 3.12 - Implement stack traces, scopes, registers, variables, and Watch evaluation [ ]
+### Step 3.12 - Implement stack traces, scopes, registers, variables, and Watch evaluation [~]
 
 Implement an honest staged stack model:
 
@@ -433,7 +435,7 @@ Return `memoryReference` values for registers or symbols that denote addresses. 
 
 Add unit tests for flag decoding, register splitting, expression precedence, invalid expressions, memory bounds, symbol shadowing, variable-reference lifetime, and stale frame IDs.
 
-> **Implementation Notes**:
+> **Implementation Notes**: Implemented one honest CPU frame with local source path and instruction pointer, register/flag/raw-stack scopes, and evaluation of register names plus decimal/hex literals. Symbols, memory expressions, arithmetic, interrupt scope, write operations, semantic callers, and C locals remain open or metadata-limited.
 
 ### Step 3.13 - Implement watchpoints through DAP data breakpoints [ ]
 
@@ -491,7 +493,7 @@ Acceptance targets:
 
 > **Implementation Notes**:
 
-### Step 3.15 - Implement the Hardware Statistics debug-sidebar view [ ]
+### Step 3.15 - Implement the Hardware Statistics debug-sidebar view [~]
 
 Replace the editor-tab `CpuStatisticsPanel` with a `TreeDataProvider` contributed as `V6 Hardware Statistics` under Run and Debug. Reuse pure formatting logic, but obtain data through the coordinator and cache one paused-state snapshot.
 
@@ -518,7 +520,7 @@ Behavior:
 
 Add provider tests for grouping, formatting, stale/running context, lazy requests, and refresh coalescing.
 
-> **Implementation Notes**:
+> **Implementation Notes**: Added `V6 Hardware Statistics` as a Run and Debug `TreeDataProvider` with CPU registers, flags, execution counters, interrupt summary, and display state. It refreshes from the shared client on pause, shows running/stale state, and has a manual refresh command. Automatic CPU-statistics editor tabs were removed. Raw stack, palette, ports, mappings, FDC/drives, visibility-aware lazy requests, and full provider lifecycle tests remain open.
 
 ### Step 3.16 - Integrate custom views, context keys, and commands [ ]
 
@@ -540,7 +542,7 @@ Add accessibility labels, keyboard navigation, focus behavior, high-contrast sup
 
 > **Implementation Notes**:
 
-### Step 3.17 - Build and static validation [ ]
+### Step 3.17 - Build and static validation [~]
 
 Run from `v6vscode`:
 
@@ -558,9 +560,9 @@ npm run package
 
 Inspect the VSIX contents to confirm runtime DAP dependencies, contributed view assets, and the compatible `v6emul` binary are included.
 
-> **Implementation Notes**:
+> **Implementation Notes**: `npm run compile`, `npm run lint`, unit tests, regression tests, metadata feature conformance, and `npm run package` pass. The VSIX contains compiled debug modules, the Hardware Statistics view, schema, runtime MessagePack dependency, and resources. Lint reports existing warnings but no errors. Backend formatting/build checks, debugger-capability packaging verification, and clean-install smoke testing remain open.
 
-### Step 3.18 - Establish feature-test verification artifacts [ ]
+### Step 3.18 - Establish feature-test verification artifacts [~]
 
 The planning guide requires verification through `tests/features/README.md` and a `result.txt`, but this repository currently has neither `tests/` nor feature-test conventions. Establish the equivalent under the existing singular `test/` root:
 
@@ -574,9 +576,9 @@ The planning guide requires verification through `tests/features/README.md` and 
 
 The ELF/DWARF consumer fixtures and conformance runner are v6vscode-owned implementation, not prerequisites to be supplied by v6asm or V6C. Producer repositories retain responsibility for producer unit/lit tests. This step is the repository-appropriate replacement for the requested lit-test and result workflow. No LLVM `lit` dependency should be introduced here because the extension uses Mocha, VS Code Extension Host, and CLI smoke tests.
 
-> **Implementation Notes**:
+> **Implementation Notes**: Added `test/features/README.md`, metadata and debug-adapter PowerShell entry points, npm scripts, deterministic result policy, and a passing direct-ASM ELF/ROM conformance result with hashes. The real-emulator runner fails explicitly without writing a result because its scenario is not implemented. Linked ASM/C/mixed fixtures, producer version recording, and CI policy remain open.
 
-### Step 3.19 - Unit tests [ ]
+### Step 3.19 - Unit tests [~]
 
 Expand fast unit coverage for:
 
@@ -595,7 +597,7 @@ Expand fast unit coverage for:
 
 Use a stateful mock TCP server that models running state, PC changes, break/watch hits, memory, stop sequences, and backend errors. Do not rely on generic success responses for debugger tests.
 
-> **Implementation Notes**:
+> **Implementation Notes**: Coverage now includes shared-session ownership, control-over-frame queue priority, Hardware Statistics grouping, ELF/DWARF parsing and bidirectional mapping, and missing/malformed/mismatched artifacts. Full adapter lifecycle, cancellation, capabilities, watchpoints, memory, Hex Viewer, and stateful stop-record coverage remain open.
 
 ### Step 3.20 - Integration and extension-host tests [ ]
 
@@ -615,7 +617,7 @@ Use an in-process fake adapter/backend for deterministic UI contract tests and r
 
 > **Implementation Notes**:
 
-### Step 3.21 - Run regression tests [ ]
+### Step 3.21 - Run regression tests [~]
 
 Add regression coverage for:
 
@@ -642,7 +644,7 @@ npm run test:all
 npm run ci
 ```
 
-> **Implementation Notes**:
+> **Implementation Notes**: Existing regression suites remain available and focused unit regressions cover panel-close ownership and artifact failures. The complete matrix in this step, especially extension-host display coexistence, restart/reconnect, repeated-cycle leak checks, linked metadata, and backend capability failures, remains open.
 
 ### Step 3.22 - Real-emulator feature verification [ ]
 
@@ -690,7 +692,7 @@ Acceptance targets must be recorded in `result.txt`. Investigate unbounded liste
 
 > **Implementation Notes**:
 
-### Step 3.24 - Documentation and design synchronization [ ]
+### Step 3.24 - Documentation and design synchronization [~]
 
 Update:
 
@@ -708,7 +710,7 @@ Update:
 
 Include a Mermaid lifecycle diagram and a sequence diagram for continue -> backend break -> stop-info poll -> DAP stopped event.
 
-> **Implementation Notes**:
+> **Implementation Notes**: Added `docs/debugging.md` and updated project-system, emulator, architecture, development, and docs index content for project ELF fields, shared socket ownership, request priorities, display coexistence, Hardware Statistics, artifact failures, and current limitations. Protocol documentation, commands/README/design synchronization, external repository docs, and the stop-info sequence diagram remain open.
 
 ### Step 3.25 - Result verification against design expectations [ ]
 

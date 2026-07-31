@@ -14,11 +14,11 @@ Launches the `v6emul` backend, communicates over TCP using length-prefixed Messa
 
 ## Client (`src/emulator/client/`)
 
-- **`ipc-client.ts`** — TCP client with `connect(port)`, `disconnect()`, `send(cmd, data)`, `sendRaw(cmd, data)`. Sequential request-response (one outstanding request). Connection timeout, request timeout, and automatic error propagation on socket close/error.
+- **`ipc-client.ts`** — TCP client with `connect(port)`, `disconnect()`, `send(cmd, data)`, `sendRaw(cmd, data)`. Sequential request-response with a stable priority queue. Debug control and stop polling can overtake queued frame requests; the active request is never interrupted.
 
 ## Lifecycle (`src/emulator/lifecycle/`)
 
-- **`emulator-lifecycle.ts`** — Orchestrates the full launch → connect → health-check → load → run / stop → exit flow. States: `stopped`, `launching`, `connected`, `running`. Retry logic for TCP connection (emulator startup delay). Emits `stateChange`, `exit`, and `error` events.
+- **`emulator-lifecycle.ts`** — Shared owner for Run Project and debug-launch processes, the single emulator socket, and execution state. Debug launch chooses a free port and lends the same `IpcClient` to the DAP adapter and display panel. Closing the display does not terminate a debug-owned session. States: `stopped`, `launching`, `connected`, `running`; ownership is `run` or `debug`.
 
 ## Panel (`src/emulator/panel/`)
 
@@ -29,6 +29,12 @@ Webview-based display and control surface for the running emulator.
 - **`assets/panel.html`** — Webview shell: header bar (Run/Pause, Reset, Speed dropdown, Display dropdown), canvas viewport, error bar.
 - **`assets/panel.css`** — VS Code themed styles using CSS variables. Pixelated canvas rendering.
 - **`assets/panel.js`** — IIFE webview script. Renders frames to canvas via `putImageData`, forwards keyboard events (keyCode + action) to the extension host, handles control interactions.
+
+During a debug launch the panel uses the lifecycle's existing connection. It does not open a second TCP client. Frame requests are low priority so continue, pause, stepping, breakpoint updates, and stop polling remain responsive.
+
+## Hardware Statistics
+
+`V6 Hardware Statistics` is contributed to the Run and Debug sidebar. It refreshes registers, flags, execution counters, and display state whenever the shared session pauses. While running it keeps the last snapshot and reports that values refresh on pause. The view title provides a manual refresh command. Pausing no longer opens a CPU-statistics editor tab.
 
 ## FPS Counter
 

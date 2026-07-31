@@ -4,7 +4,7 @@ import { Logger } from './platform/logging/logger';
 import { PathService } from './platform/files/path-service';
 import { WorkspaceService } from './platform/files/workspace-service';
 import { ProcessRunner } from './platform/process/process-runner';
-import { DisposableStore, toDisposable } from './platform/disposable/lifecycle';
+import { DisposableStore } from './platform/disposable/lifecycle';
 import { CMD_CREATE_PROJECT, CMD_RUN_PROJECT, OUTPUT_CHANNEL_NAME, SETTING_EMULATOR_PATH } from './config/contribution-ids';
 import { ProjectDiscovery } from './project/discovery/project-discovery';
 import { ProjectRepository } from './project/persistence/project-repository';
@@ -20,6 +20,11 @@ import { CreateProjectCommand } from './commands/create-project-command';
 import { FddPersistence } from './emulator/persistence/fdd-persistence';
 import { V6DebugConfigurationProvider } from './debug/configuration/debug-configuration-provider';
 import { registerDebugAdapter } from './debug/adapter/v6-debug-adapter-factory';
+import {
+    CMD_REFRESH_HARDWARE_STATISTICS,
+    HARDWARE_STATISTICS_VIEW_ID,
+    HardwareStatisticsView,
+} from './debug/views/hardware-statistics-view';
 
 export function activate(context: vscode.ExtensionContext): void {
     const store = new DisposableStore();
@@ -66,6 +71,12 @@ export function activate(context: vscode.ExtensionContext): void {
         },
     ));
     const fddPersistence = new FddPersistence(ipcClient, logger);
+    const hardwareStatistics = store.add(new HardwareStatisticsView(lifecycle, ipcClient, logger));
+    store.add(vscode.window.registerTreeDataProvider(HARDWARE_STATISTICS_VIEW_ID, hardwareStatistics));
+    store.add(vscode.commands.registerCommand(
+        CMD_REFRESH_HARDWARE_STATISTICS,
+        () => hardwareStatistics.refresh(),
+    ));
 
     // Persist FDD images before emulator stops
     const onBeforeStop = async () => {
@@ -136,8 +147,8 @@ export function activate(context: vscode.ExtensionContext): void {
     const debugConfigProvider = new V6DebugConfigurationProvider(activeProjectService, logger);
     registerDebugAdapter(
         context,
-        locator,
-        launcher,
+        lifecycle,
+        emulatorPanel,
         logger,
         pathService,
         (section) => vscode.workspace.getConfiguration(section),

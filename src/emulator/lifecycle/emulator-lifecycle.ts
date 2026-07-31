@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as net from 'net';
 import { EventEmitter } from 'events';
 import { V6Project } from '../../project/model/v6-project';
 import { V6emulLocator } from '../launcher/v6emul-locator';
@@ -16,6 +17,14 @@ const CONNECT_MAX_RETRIES = 10;
 
 export type EmulatorState = 'stopped' | 'launching' | 'connected' | 'running';
 export type EmulatorFrameMode = 'full' | 'border' | 'borderless';
+export type EmulatorSessionOwner = 'run' | 'debug' | null;
+
+export interface DebugLaunchRequest {
+    program: string;
+    bootRomPath: string;
+    loadAddr?: string;
+    speed?: string;
+}
 
 export class EmulatorLifecycle extends EventEmitter {
     private readonly locator: V6emulLocator;
@@ -27,6 +36,7 @@ export class EmulatorLifecycle extends EventEmitter {
     private emulatorProcess: EmulatorProcess | null = null;
     private _state: EmulatorState = 'stopped';
     private _frameMode: EmulatorFrameMode = 'borderless';
+    private _owner: EmulatorSessionOwner = null;
 
     constructor(
         locator: V6emulLocator,
@@ -51,6 +61,14 @@ export class EmulatorLifecycle extends EventEmitter {
         return this._frameMode;
     }
 
+    get owner(): EmulatorSessionOwner {
+        return this._owner;
+    }
+
+    get ipcClient(): IpcClient {
+        return this.client;
+    }
+
     get running(): boolean {
         return this._state === 'running';
     }
@@ -65,6 +83,7 @@ export class EmulatorLifecycle extends EventEmitter {
         }
 
         this.setState('launching');
+        this._owner = 'run';
 
         try {
             const emulatorPath = this.locator.resolve();
@@ -160,6 +179,60 @@ export class EmulatorLifecycle extends EventEmitter {
         }
     }
 
+    async startDebug(request: DebugLaunchRequest): Promise<{ client: IpcClient; process: EmulatorProcess; port: number }> {
+        if (this._state !== 'stopped') {
+            await this.stop();
+        }
+
+        this.setState('launching');
+        this._owner = 'debug';
+
+        try {
+            const port = await this.findFreePort();
+            const isRom = !request.program.toLowerCase().endsWith('.fdd');
+            this.emulatorProcess = this.launcher.launch({
+                emulatorPath: this.locator.resolve(),
+                tcpPort: port,
+                bootRomPath: request.bootRomPath,
+                romPath: isRom ? request.program : undefined,
+                loadAddr: request.loadAddr,
+                fddPath: isRom ? undefined : request.program,
+                fddAutoboot: isRom ? undefined : true,
+                speed: request.speed ?? '100%',
+            });
+            const process = this.emulatorProcess;
+            this.monitorProcess(process);
+
+            await this.connectWithRetries(port);
+            const ping = await this.client.send<PingResponse>(IpcCommand.PING);
+            if (!ping.ok) {
+                throw new V6Error(ErrorCode.EMULATOR_LAUNCH_FAILED, 'PING health check failed');
+            }
+            await this.client.send(IpcCommand.DEBUG_ATTACH, { data: true });
+            await this.client.send(IpcCommand.SET_COLOR_FORMAT, { colorFormat: 0 });
+            await this.client.send(IpcCommand.STOP);
+            this.setState('connected');
+            return { client: this.client, process, port };
+        } catch (err) {
+            this.cleanup();
+            this._owner = null;
+            this.setState('stopped');
+            throw err;
+        }
+    }
+
+    setExecutionRunning(running: boolean): void {
+        if (this.connected) {
+            this.setState(running ? 'running' : 'connected');
+        }
+    }
+
+    async stopFromDisplay(): Promise<void> {
+        if (this._owner !== 'debug') {
+            await this.stop();
+        }
+    }
+
     async stop(): Promise<void> {
         if (this._state === 'stopped') {
             return;
@@ -186,6 +259,7 @@ export class EmulatorLifecycle extends EventEmitter {
         }
 
         this.cleanup();
+        this._owner = null;
         this.setState('stopped');
         this.logger.info('v6emul: stopped');
     }
@@ -230,6 +304,37 @@ export class EmulatorLifecycle extends EventEmitter {
             }
             this.emulatorProcess = null;
         }
+    }
+
+    private monitorProcess(process: EmulatorProcess): void {
+        process.spawnResult.exitPromise.then((code) => {
+            if (this.emulatorProcess !== process) { return; }
+            this.logger.info(`v6emul process exited with code ${code}`);
+            this.emulatorProcess = null;
+            this.client.disconnect();
+            this._owner = null;
+            this.setState('stopped');
+            this.emit('exit', code);
+        }).catch((err) => {
+            if (this.emulatorProcess !== process) { return; }
+            this.logger.error(`v6emul process error: ${err.message}`);
+            this.emulatorProcess = null;
+            this.client.disconnect();
+            this._owner = null;
+            this.setState('stopped');
+            this.emit('error', err);
+        });
+    }
+
+    private findFreePort(): Promise<number> {
+        return new Promise<number>((resolve, reject) => {
+            const server = net.createServer();
+            server.listen(0, '127.0.0.1', () => {
+                const address = server.address() as net.AddressInfo;
+                server.close(() => resolve(address.port));
+            });
+            server.on('error', reject);
+        });
     }
 
     private setState(state: EmulatorState): void {

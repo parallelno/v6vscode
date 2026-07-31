@@ -183,13 +183,13 @@ export function readCString(buf: Buffer, offset: number): string {
 /** Read an unsigned LEB128 value; returns [value, bytesConsumed]. */
 export function readULEB128(buf: Buffer, offset: number): [number, number] {
     let value = 0, shift = 0, read = 0;
-    while (true) {
+    while (offset + read < buf.length) {
         const byte = buf[offset + read++];
         value |= (byte & 0x7F) << shift;
         shift += 7;
-        if ((byte & 0x80) === 0) { break; }
+        if ((byte & 0x80) === 0) { return [value, read]; }
     }
-    return [value, read];
+    throw new Error('Truncated ULEB128 value');
 }
 
 /** Read a signed LEB128 value; returns [value, bytesConsumed]. */

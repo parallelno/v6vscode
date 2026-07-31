@@ -63,6 +63,10 @@ The `.vscodeignore` file excludes `src/`, `test/`, `design/`, `temp/`, `docs/`, 
 npm test              # unit tests
 npm run test:unit     # unit tests only
 npm run test:regression  # regression suite
+npm run test:feature:metadata # real ELF/ROM consumer conformance
+npm run test:feature:debug    # gated real-emulator scenario
 npm run test:all      # unit + regression
 npm run ci            # compile + lint + test:all
 ```
+
+See `test/features/README.md` for prerequisites and deterministic `result.txt` rules. The metadata runner is operational. The real-emulator DAP runner intentionally fails until its automated scenario is implemented and never writes a partial result.

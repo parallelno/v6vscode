@@ -5,6 +5,10 @@
   "version": "0.1.0",
   "publisher": "parallelno",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/parallelno/v6vscode.git"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -28,8 +32,31 @@
         "command": "v6.runProject",
         "title": "Run Project",
         "category": "V6"
+      },
+      {
+        "command": "v6.refreshHardwareStatistics",
+        "title": "Refresh Hardware Statistics",
+        "category": "V6",
+        "icon": "$(refresh)"
       }
     ],
+    "views": {
+      "debug": [
+        {
+          "id": "v6.hardwareStatistics",
+          "name": "V6 Hardware Statistics"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "v6.refreshHardwareStatistics",
+          "when": "view == v6.hardwareStatistics",
+          "group": "navigation"
+        }
+      ]
+    },
     "languages": [
       {
         "id": "asm",
@@ -273,6 +300,8 @@
     "test:unit": "mocha",
     "test:integration": "node ./node_modules/@vscode/test-electron/out/runTest.js",
     "test:regression": "mocha --no-config --require ./test/register.js --timeout 5000 'test/regression/**/*.test.ts'",
+    "test:feature:metadata": "powershell -NoProfile -ExecutionPolicy Bypass -File test/features/debug-metadata/run.ps1",
+    "test:feature:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File test/features/debug-adapter/run.ps1",
     "test:all": "npm run test:unit && npm run test:regression",
     "ci": "npm run compile && npm run lint && npm run test:all",
     "package": "vsce package"

@@ -8,6 +8,15 @@ import { Logger } from '../../platform/logging/logger';
 const DEFAULT_TIMEOUT_MS = 5000;
 const CONNECT_TIMEOUT_MS = 3000;
 
+export type IpcPriority = 'critical' | 'high' | 'normal' | 'low';
+
+const PRIORITY_ORDER: Record<IpcPriority, number> = {
+    critical: 0,
+    high: 1,
+    normal: 2,
+    low: 3,
+};
+
 export class IpcClient {
     private socket: net.Socket | null = null;
     private receiveBuffer = Buffer.alloc(0);
@@ -16,9 +25,12 @@ export class IpcClient {
     private readonly requestQueue: Array<{
         frame: Buffer;
         timeoutMs: number;
+        priority: IpcPriority;
+        sequence: number;
         resolve: (buf: Buffer) => void;
         reject: (err: Error) => void;
     }> = [];
+    private nextSequence = 0;
     private readonly logger: Logger;
 
     constructor(logger: Logger) {
@@ -72,29 +84,50 @@ export class IpcClient {
         this.receiveBuffer = Buffer.alloc(0);
     }
 
-    async send<T = unknown>(cmd: IpcCommand, data?: unknown, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<IpcResponse<T>> {
+    async send<T = unknown>(
+        cmd: IpcCommand,
+        data?: unknown,
+        timeoutMs = DEFAULT_TIMEOUT_MS,
+        priority: IpcPriority = 'normal',
+    ): Promise<IpcResponse<T>> {
         if (!this.socket || this.socket.destroyed) {
             throw new V6Error(ErrorCode.IPC_CONNECTION_REFUSED, 'Not connected');
         }
 
         const frame = encodeRequest(cmd, data);
-        const rawResponse = await this.writeAndRead(frame, timeoutMs);
+        const rawResponse = await this.writeAndRead(frame, timeoutMs, priority);
         return decodeResponse(rawResponse) as IpcResponse<T>;
     }
 
-    async sendRaw(cmd: IpcCommand, data?: unknown, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<Buffer> {
+    async sendRaw(
+        cmd: IpcCommand,
+        data?: unknown,
+        timeoutMs = DEFAULT_TIMEOUT_MS,
+        priority: IpcPriority = 'normal',
+    ): Promise<Buffer> {
         if (!this.socket || this.socket.destroyed) {
             throw new V6Error(ErrorCode.IPC_CONNECTION_REFUSED, 'Not connected');
         }
 
         const frame = encodeRequest(cmd, data);
-        return this.writeAndRead(frame, timeoutMs);
+        return this.writeAndRead(frame, timeoutMs, priority);
     }
 
-    private writeAndRead(frame: Buffer, timeoutMs: number): Promise<Buffer> {
+    private writeAndRead(frame: Buffer, timeoutMs: number, priority: IpcPriority): Promise<Buffer> {
         return new Promise<Buffer>((resolve, reject) => {
             if (this.pendingResolve) {
-                this.requestQueue.push({ frame, timeoutMs, resolve, reject });
+                this.requestQueue.push({
+                    frame,
+                    timeoutMs,
+                    priority,
+                    sequence: this.nextSequence++,
+                    resolve,
+                    reject,
+                });
+                this.requestQueue.sort((left, right) =>
+                    PRIORITY_ORDER[left.priority] - PRIORITY_ORDER[right.priority]
+                    || left.sequence - right.sequence,
+                );
                 return;
             }
 

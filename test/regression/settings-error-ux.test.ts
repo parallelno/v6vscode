@@ -25,9 +25,9 @@ describe('Settings and error UX regression tests', () => {
         it('should warn when setting path does not exist but still try fallbacks', () => {
             const logger = makeLogger();
             const deps: V6emulLocatorDeps = {
-                pathService: { resolveExtensionPath: () => '/nonexistent/bundled/v6emul' } as any,
                 logger,
                 getConfiguration: () => ({ get: () => '/nonexistent/fake/v6emul' }),
+                getEnv: () => undefined,
                 which: () => undefined,
             };
             const locator = new V6emulLocator(deps);
@@ -37,12 +37,12 @@ describe('Settings and error UX regression tests', () => {
             expect(warnLogs.some((l: string) => l.includes('does not exist'))).to.be.true;
         });
 
-        it('should accept empty emulator path and skip to bundled lookup', () => {
+        it('should accept empty emulator path and skip to environment/PATH lookup', () => {
             const logger = makeLogger();
             const deps: V6emulLocatorDeps = {
-                pathService: { resolveExtensionPath: () => '/nonexistent/bundled/v6emul' } as any,
                 logger,
                 getConfiguration: () => ({ get: () => '' }),
+            getEnv: () => undefined,
                 which: () => undefined,
             };
             const locator = new V6emulLocator(deps);
@@ -57,9 +57,9 @@ describe('Settings and error UX regression tests', () => {
             // Use package.json as a stand-in for an existing file
             const existingFile = path.join(EXTENSION_ROOT, 'package.json');
             const deps: V6emulLocatorDeps = {
-                pathService: { resolveExtensionPath: () => '/nonexistent/bundled/v6emul' } as any,
                 logger,
                 getConfiguration: () => ({ get: () => existingFile }),
+                getEnv: () => undefined,
                 which: () => undefined,
             };
             const locator = new V6emulLocator(deps);

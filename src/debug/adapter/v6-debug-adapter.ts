@@ -1,9 +1,9 @@
-import * as net from 'net';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { IpcClient } from '../../emulator/client/ipc-client';
-import { V6emulLocator } from '../../emulator/launcher/v6emul-locator';
-import { V6emulLauncher, EmulatorProcess } from '../../emulator/launcher/v6emul-launcher';
+import { EmulatorProcess } from '../../emulator/launcher/v6emul-launcher';
+import { EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
+import { EmulatorPanel } from '../../emulator/panel/emulator-panel';
 import {
     IpcCommand,
     GetRegsResponse,
@@ -28,8 +28,6 @@ import { PathService } from '../../platform/files/path-service';
 const THREAD_ID = 1;
 const THREAD_NAME = 'V6 CPU';
 const POLL_INTERVAL_MS = 20;
-const CONNECT_RETRIES = 15;
-const CONNECT_DELAY_MS = 300;
 
 // variablesReference identifiers — non-zero means expandable
 const VARREF_REGISTERS = 1;
@@ -44,21 +42,6 @@ function hex4(n: number): string { return `0x${(n >>> 0).toString(16).padStart(4
 function hex2(n: number): string { return `0x${(n >>> 0).toString(16).padStart(2, '0').toUpperCase()}`; }
 
 function flag(f: number, bit: number): string { return (f >> bit & 1) ? '1' : '0'; }
-
-async function findFreePort(): Promise<number> {
-    return new Promise<number>((resolve, reject) => {
-        const srv = net.createServer();
-        srv.listen(0, '127.0.0.1', () => {
-            const port = (srv.address() as net.AddressInfo).port;
-            srv.close(() => resolve(port));
-        });
-        srv.on('error', reject);
-    });
-}
-
-async function delay(ms: number): Promise<void> {
-    return new Promise(r => setTimeout(r, ms));
-}
 
 // ---------------------------------------------------------------------------
 // V6DebugAdapter
@@ -114,8 +97,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private cachedRegs: GetRegsResponse | null = null;
 
     constructor(
-        private readonly locator: V6emulLocator,
-        private readonly launcher: V6emulLauncher,
+        private readonly lifecycle: EmulatorLifecycle,
+        private readonly emulatorPanel: EmulatorPanel,
         private readonly logger: Logger,
         private readonly pathService: PathService,
         private readonly getConfiguration: (s: string) => vscode.WorkspaceConfiguration,
@@ -197,26 +180,20 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         try {
             this.debugIndex = null;
             this.debugMetadataError = 'No debug artifact was configured. Set debugArtifact in launch.json.';
-            const port = await findFreePort();
-            const emulatorPath = this.locator.resolve();
             const bootRomPath = args.bootRom
                 ? String(args.bootRom)
                 : this.pathService.resolveExtensionPath('res/boot/boots.bin');
 
-            const isRom = !String(args.program ?? '').endsWith('.fdd');
-
-            this.emulatorProcess = this.launcher.launch({
-                emulatorPath,
-                tcpPort: port,
+            const launch = await this.lifecycle.startDebug({
+                program: String(args.program),
                 bootRomPath,
-                romPath: isRom ? String(args.program) : undefined,
                 loadAddr: args.loadAddress ? String(args.loadAddress) : undefined,
-                fddPath: !isRom ? String(args.program) : undefined,
-                fddAutoboot: !isRom ? true : undefined,
                 speed: args.speed ?? '100%',
             });
-
-            this.emulatorProcess.spawnResult.exitPromise.then(code => {
+            const { client, process, port } = launch;
+            this.client = client;
+            this.emulatorProcess = process;
+            process.spawnResult.exitPromise.then(code => {
                 this.logger.info(`v6emul exited with code ${code}`);
                 if (this.sessionState !== 'disconnected') {
                     this.sessionState = 'disconnected';
@@ -225,19 +202,6 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                     this.sendEvent('terminated');
                 }
             }).catch(() => {});
-
-            const client = new IpcClient(this.logger);
-            await this.connectWithRetries(client, port);
-            this.client = client;
-
-            // Health check
-            const ping = await client.send<PingResponse>(IpcCommand.PING);
-            if (!ping.ok) {
-                throw new Error('PING failed');
-            }
-
-            // Attach debugger
-            await client.send(IpcCommand.DEBUG_ATTACH, { data: true });
 
             // Load debug artifact (companion ELF) if provided
             const debugArtifact = args.debugArtifact as string | undefined;
@@ -265,10 +229,9 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             }
 
             // Keep paused until configurationDone
-            await client.send(IpcCommand.STOP);
             this.sessionState = 'paused';
-
-            this.sendEvent('output', { category: 'console', output: `V6: Emulator ready on port ${port} \u2014 display panel not yet available in debug mode (Step 3.6 coordinator required).\n` });
+            this.emulatorPanel.reveal();
+            this.sendEvent('output', { category: 'console', output: `V6: Emulator ready on port ${port}; display panel connected to debug session.\n` });
 
             this.sendResponseBody(req, {});
             // Signal VS Code that breakpoints can now be sent.
@@ -276,7 +239,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             this.sendEvent('initialized');
         } catch (err: any) {
             this.sendResponse(req, false, `Launch failed: ${err.message}`);
-            this.cleanup(false);
+            this.cleanup(true);
         }
     }
 
@@ -478,7 +441,9 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                     vars.push(mkVar(label, hex4(words[i]), 0));
                 }
             }
-        } catch {}
+        } catch (err) {
+            this.logger.debug(`v6-debug: stack sample unavailable: ${err instanceof Error ? err.message : String(err)}`);
+        }
         return vars;
     }
 
@@ -497,7 +462,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         this.pendingPause = false;
         this.pendingStep = false;
         this.sessionState = 'running';
-        await this.client.send(IpcCommand.RUN);
+        await this.client.send(IpcCommand.RUN, undefined, 5000, 'critical');
+        this.lifecycle.setExecutionRunning(true);
         this.sendEvent('continued', { threadId: THREAD_ID, allThreadsContinued: true });
         this.startPoll();
     }
@@ -508,7 +474,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
     private async onPause(req: any): Promise<void> {
         this.pendingPause = true;
-        await this.client?.send(IpcCommand.STOP);
+        await this.client?.send(IpcCommand.STOP, undefined, 5000, 'critical');
+        this.lifecycle.setExecutionRunning(false);
         this.sendResponseBody(req, {});
         // Poll will detect the stop and emit StoppedEvent
     }
@@ -558,10 +525,12 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private async singleStep(): Promise<void> {
         if (!this.client) { return; }
         this.sessionState = 'running';
+        this.lifecycle.setExecutionRunning(true);
         this.sendEvent('continued', { threadId: THREAD_ID, allThreadsContinued: true });
-        await this.client.send(IpcCommand.EXECUTE_INSTR);
+        await this.client.send(IpcCommand.EXECUTE_INSTR, undefined, 5000, 'critical');
         // EXECUTE_INSTR keeps the emulator paused — read stop state immediately
         this.sessionState = 'paused';
+        this.lifecycle.setExecutionRunning(false);
         await this.onStop();
     }
 
@@ -766,11 +735,12 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         const poll = async () => {
             if (!this.pollingActive || !this.client) { return; }
             try {
-                const resp = await this.client.send<IsRunningResponse>(IpcCommand.IS_RUNNING);
+                const resp = await this.client.send<IsRunningResponse>(IpcCommand.IS_RUNNING, undefined, 5000, 'critical');
                 if (resp.ok && resp.data && !resp.data.isRunning) {
                     this.pollingActive = false;
                     this.pollTimer = null;
                     this.sessionState = 'paused';
+                    this.lifecycle.setExecutionRunning(false);
                     await this.onStop();
                     return;
                 }
@@ -850,25 +820,15 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             if (resp.ok && resp.data) {
                 this.cachedRegs = resp.data;
             }
-        } catch {}
+        } catch (err) {
+            this.logger.debug(`v6-debug: registers unavailable: ${err instanceof Error ? err.message : String(err)}`);
+        }
     }
 
     private async safeGetRegs(): Promise<GetRegsResponse | null> {
         if (this.cachedRegs) { return this.cachedRegs; }
         await this.refreshRegs();
         return this.cachedRegs;
-    }
-
-    private async connectWithRetries(client: IpcClient, port: number): Promise<void> {
-        for (let i = 0; i < CONNECT_RETRIES; i++) {
-            try {
-                await client.connect(port);
-                return;
-            } catch {
-                if (i === CONNECT_RETRIES - 1) { throw new Error(`Cannot connect to v6emul on port ${port}`); }
-                await delay(CONNECT_DELAY_MS);
-            }
-        }
     }
 
     private async cleanup(terminateDebuggee: boolean): Promise<void> {
@@ -881,10 +841,16 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                 await this.client.send(IpcCommand.DEBUG_BREAKPOINT_DEL, { addr }).catch(() => {});
             }
             await this.client.send(IpcCommand.DEBUG_ATTACH, { data: false }).catch(() => {});
-            if (terminateDebuggee) {
+            if (terminateDebuggee && this.lifecycle.owner !== 'debug') {
                 await this.client.send(IpcCommand.EXIT, {}).catch(() => {});
             }
-            this.client.disconnect();
+            if (this.lifecycle.owner === 'debug') {
+                if (terminateDebuggee) {
+                    await this.lifecycle.stop();
+                }
+            } else {
+                this.client.disconnect();
+            }
         }
 
         this.bpAddrToId.clear();

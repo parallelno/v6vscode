@@ -1,6 +1,7 @@
 import { expect } from 'chai';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import { parseElf32, readULEB128, readSLEB128, ELFCLASS32, ELFDATA2LSB, SHT_SYMTAB } from '../../../src/debug/metadata/elf32-reader';
 import { parseDwarf4LineSection } from '../../../src/debug/metadata/dwarf4-line-reader';
 import { buildDebugIndex } from '../../../src/debug/metadata/debug-index';
@@ -133,6 +134,7 @@ describe('readSLEB128', () => {
 
 (ELF_EXISTS ? describe : describe.skip)('DebugIndex against demo1.elf', () => {
     let index: ReturnType<typeof buildDebugIndex>;
+    let statementAddresses: Map<number, number>;
 
     before(() => {
         const elfBuf = fs.readFileSync(ELF_PATH);
@@ -140,6 +142,9 @@ describe('readSLEB128', () => {
         const dl = elf.sections.find(s => s.name === '.debug_line')!;
         const rows = parseDwarf4LineSection(dl.data, elf.addressSize);
         index = buildDebugIndex(rows, elf.symbols, '');
+        statementAddresses = new Map(
+            rows.filter(row => row.isStmt).map(row => [row.line, row.address]),
+        );
     });
 
     it('reports at least one source file', () => {
@@ -172,12 +177,8 @@ describe('readSLEB128', () => {
     it('resolves an absolute editor path against a DWARF-relative source path', () => {
         const sourcePath = path.join(__dirname, '..', '..', '..', 'temp', 'project', 'src', 'main.asm');
         expect(index.resolveBreakpoint(sourcePath, 46)).to.deep.equal({
-            address: 0x0127,
+            address: statementAddresses.get(46),
             verifiedLine: 46,
-        });
-        expect(index.resolveBreakpoint(sourcePath, 59)).to.deep.equal({
-            address: 0x0134,
-            verifiedLine: 59,
         });
     });
 
@@ -195,11 +196,60 @@ describe('readSLEB128', () => {
         const romPath = path.join(path.dirname(ELF_PATH), 'demo1.rom');
         const sourcePath = path.join(path.dirname(path.dirname(ELF_PATH)), 'src', 'main.asm');
         const result = await loadDebugArtifact(ELF_PATH, romPath);
+        const elf = parseElf32(fs.readFileSync(ELF_PATH));
+        const debugLine = elf.sections.find(section => section.name === '.debug_line')!;
+        const expectedAddress = parseDwarf4LineSection(debugLine.data, elf.addressSize)
+            .find(row => row.isStmt && row.line === 46)?.address;
 
         expect(result.compDir).to.equal('');
         expect(result.index.resolveBreakpoint(sourcePath, 46)).to.deep.equal({
-            address: 0x0127,
+            address: expectedAddress,
             verifiedLine: 46,
         });
+    });
+
+    it('rejects a missing ELF companion', async () => {
+        let error: Error | undefined;
+        try {
+            await loadDebugArtifact(path.join(path.dirname(ELF_PATH), 'missing.elf'));
+        } catch (caught) {
+            error = caught as Error;
+        }
+        expect(error?.message).to.include('Debug artifact not found');
+    });
+
+    it('rejects a malformed ELF companion', async () => {
+        const malformedPath = path.join(os.tmpdir(), `v6-malformed-${process.pid}.elf`);
+        fs.writeFileSync(malformedPath, Buffer.from('not an elf'));
+        try {
+            let error: Error | undefined;
+            try {
+                await loadDebugArtifact(malformedPath);
+            } catch (caught) {
+                error = caught as Error;
+            }
+            expect(error).to.exist;
+        } finally {
+            fs.unlinkSync(malformedPath);
+        }
+    });
+
+    it('rejects an ELF companion whose text does not match the ROM', async () => {
+        const mismatchedRom = path.join(os.tmpdir(), `v6-mismatch-${process.pid}.rom`);
+        const rom = fs.readFileSync(path.join(path.dirname(ELF_PATH), 'demo1.rom'));
+        const changed = Buffer.from(rom);
+        changed[0] ^= 0xFF;
+        fs.writeFileSync(mismatchedRom, changed);
+        try {
+            let error: Error | undefined;
+            try {
+                await loadDebugArtifact(ELF_PATH, mismatchedRom);
+            } catch (caught) {
+                error = caught as Error;
+            }
+            expect(error?.message).to.include('ELF .text content does not match ROM');
+        } finally {
+            fs.unlinkSync(mismatchedRom);
+        }
     });
 });

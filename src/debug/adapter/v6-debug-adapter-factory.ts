@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { V6emulLocator } from '../../emulator/launcher/v6emul-locator';
-import { V6emulLauncher } from '../../emulator/launcher/v6emul-launcher';
+import { EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
+import { EmulatorPanel } from '../../emulator/panel/emulator-panel';
 import { Logger } from '../../platform/logging/logger';
 import { PathService } from '../../platform/files/path-service';
 import { V6DebugAdapter } from './v6-debug-adapter';
@@ -11,8 +11,8 @@ import { V6_DEBUG_TYPE } from '../configuration/debug-configuration-provider';
  */
 export class V6DebugAdapterFactory implements vscode.DebugAdapterDescriptorFactory {
     constructor(
-        private readonly locator: V6emulLocator,
-        private readonly launcher: V6emulLauncher,
+        private readonly lifecycle: EmulatorLifecycle,
+        private readonly emulatorPanel: EmulatorPanel,
         private readonly logger: Logger,
         private readonly pathService: PathService,
         private readonly getConfiguration: (s: string) => vscode.WorkspaceConfiguration,
@@ -22,8 +22,8 @@ export class V6DebugAdapterFactory implements vscode.DebugAdapterDescriptorFacto
         _session: vscode.DebugSession,
     ): vscode.ProviderResult<vscode.DebugAdapterDescriptor> {
         const adapter = new V6DebugAdapter(
-            this.locator,
-            this.launcher,
+            this.lifecycle,
+            this.emulatorPanel,
             this.logger,
             this.pathService,
             this.getConfiguration,
@@ -38,14 +38,14 @@ export class V6DebugAdapterFactory implements vscode.DebugAdapterDescriptorFacto
  */
 export function registerDebugAdapter(
     context: vscode.ExtensionContext,
-    locator: V6emulLocator,
-    launcher: V6emulLauncher,
+    lifecycle: EmulatorLifecycle,
+    emulatorPanel: EmulatorPanel,
     logger: Logger,
     pathService: PathService,
     getConfiguration: (s: string) => vscode.WorkspaceConfiguration,
     configProvider: vscode.DebugConfigurationProvider,
 ): void {
-    const factory = new V6DebugAdapterFactory(locator, launcher, logger, pathService, getConfiguration);
+    const factory = new V6DebugAdapterFactory(lifecycle, emulatorPanel, logger, pathService, getConfiguration);
 
     context.subscriptions.push(
         vscode.debug.registerDebugAdapterDescriptorFactory(V6_DEBUG_TYPE, factory),

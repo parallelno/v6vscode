@@ -141,4 +141,34 @@ describe('IpcClient + MockTcpServer', () => {
             expect(resp.ok).to.equal(true);
         }
     });
+
+    it('should prioritize queued control requests over queued frame requests', async () => {
+        const seen: number[] = [];
+        let releaseFirst: (() => void) | undefined;
+        const firstBlocked = new Promise<void>(resolve => { releaseFirst = resolve; });
+        let requestCount = 0;
+        await server.stop();
+        server = new MockTcpServer(asyncHandler((cmd) => {
+            seen.push(cmd);
+            requestCount++;
+            return requestCount === 1 ? firstBlocked : { ok: true, data: {} };
+        }));
+        await server.start();
+        client.disconnect();
+        await client.connect(server.port);
+
+        const first = client.send(IpcCommand.PING);
+        const frame = client.sendRaw(IpcCommand.GET_FRAME_RAW, undefined, 5000, 'low');
+        const stop = client.send(IpcCommand.STOP, undefined, 5000, 'critical');
+        releaseFirst!();
+        await Promise.all([first, stop, frame]);
+
+        expect(seen).to.deep.equal([IpcCommand.PING, IpcCommand.STOP, IpcCommand.GET_FRAME_RAW]);
+    });
 });
+
+function asyncHandler(
+    handler: (cmd: number, data: unknown) => Promise<unknown> | unknown,
+): (cmd: number, data: unknown) => unknown {
+    return (cmd, data) => handler(cmd, data);
+}
