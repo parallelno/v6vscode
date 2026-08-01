@@ -1,5 +1,6 @@
 import * as crypto from 'crypto';
 import * as vscode from 'vscode';
+import { ActiveProjectService } from '../../project/active/active-project-service';
 import { EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
 import { MemoryService } from '../../emulator/memory/memory-service';
 import {
@@ -8,11 +9,19 @@ import {
     memorySpaceKey,
 } from '../../emulator/memory/memory-space';
 import { IpcCommand } from '../../emulator/protocol/ipc-commands';
-import { WatchpointEntry } from '../../emulator/protocol/debug-models';
+import { WatchpointAddRequest, WatchpointEditRequest, WatchpointEntry } from '../../emulator/protocol/debug-models';
 import { Logger } from '../../platform/logging/logger';
+import { DebugSymbolService } from '../metadata/debug-symbol-service';
+import { evaluateSymbolExpression } from '../utilities/symbol-expression';
 import { WatchpointService } from '../watchpoints/watchpoint-service';
 import { HexViewerProvider } from './hex-viewer-provider';
-import { WatchpointsHostMessage, WatchpointsWebviewMessage } from './watchpoints-messages';
+import { WatchpointExpressionStore } from './watchpoint-expression-store';
+import {
+    WatchpointCandidate,
+    WatchpointEditCandidate,
+    WatchpointsHostMessage,
+    WatchpointsWebviewMessage,
+} from './watchpoints-messages';
 
 export const WATCHPOINTS_VIEW_ID = 'v6.watchpoints';
 export const CMD_REFRESH_WATCHPOINTS = 'v6.refreshWatchpoints';
@@ -21,16 +30,18 @@ export const CMD_ADD_WATCHPOINT = 'v6.addWatchpoint';
 export class WatchpointsProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     private view: vscode.WebviewView | undefined;
     private readonly memory: MemoryService;
+    private readonly symbols = new DebugSymbolService();
+    private readonly addressExpressions = new WatchpointExpressionStore();
     private pollTimer: ReturnType<typeof setInterval> | undefined;
     private readonly stateListener: () => void;
     private readonly changeListener: () => void;
-    private pendingAdd = false;
 
     constructor(
         private readonly extensionUri: vscode.Uri,
         private readonly lifecycle: EmulatorLifecycle,
         private readonly service: WatchpointService,
         private readonly hexViewer: HexViewerProvider,
+        private readonly activeProjectService: ActiveProjectService,
         private readonly logger: Logger,
     ) {
         this.memory = new MemoryService(lifecycle.ipcClient, undefined);
@@ -55,9 +66,22 @@ export class WatchpointsProvider implements vscode.WebviewViewProvider, vscode.D
     }
 
     async add(): Promise<void> {
-        this.pendingAdd = true;
         await vscode.commands.executeCommand(`${WATCHPOINTS_VIEW_ID}.focus`);
-        this.applyPendingAdd();
+        await this.runOperation('add', async () => {
+            const expression = '0';
+            const added = await this.service.add({
+                globalAddr: 0,
+                len: 1,
+                value: 0,
+                access: 'RW',
+                condition: 'ANY',
+                type: 'LEN',
+                active: true,
+                comment: '',
+            });
+            this.addressExpressions.set(added.id, expression);
+            this.postSnapshot();
+        });
     }
 
     dispose(): void {
@@ -70,12 +94,27 @@ export class WatchpointsProvider implements vscode.WebviewViewProvider, vscode.D
         if (!message || typeof message.type !== 'string') { return; }
         try {
             switch (message.type) {
-                case 'ready': await this.syncSession(); this.applyPendingAdd(); break;
+                case 'ready': await this.syncSession(); break;
                 case 'refresh': if (this.current(message)) { await this.refresh(); } break;
-                case 'add': if (this.current(message)) { await this.runOperation('add', () => this.service.add(message.candidate)); } break;
-                case 'edit': if (this.current(message)) { await this.runOperation('edit', () => this.service.edit(message.candidate)); } break;
+                case 'add': if (this.current(message)) {
+                    await this.runOperation('add', async () => {
+                        const added = await this.service.add(await this.resolveCandidate(message.candidate));
+                        this.addressExpressions.set(added.id, message.candidate.globalAddr);
+                        this.postSnapshot();
+                    });
+                } break;
+                case 'edit': if (this.current(message)) {
+                    await this.runOperation('edit', async () => {
+                        const edited = await this.service.edit(await this.resolveEditCandidate(message.candidate));
+                        this.addressExpressions.set(edited.id, message.candidate.globalAddr);
+                        this.postSnapshot();
+                    });
+                } break;
                 case 'delete': if (this.current(message) && validId(message.id)) {
-                    await this.runOperation('delete', () => this.service.delete(message.id));
+                    await this.runOperation('delete', async () => {
+                        await this.service.delete(message.id);
+                        this.addressExpressions.delete(message.id);
+                    });
                 } break;
                 case 'disableAll': if (this.current(message)) {
                     await this.runOperation('disableAll', () => this.service.disableAll());
@@ -112,6 +151,7 @@ export class WatchpointsProvider implements vscode.WebviewViewProvider, vscode.D
             return;
         }
         this.configureMemory();
+        await this.loadSymbols();
         this.post({ type: 'state', state: 'loading', message: 'Synchronizing watchpoints...', canMutate: false });
         try {
             await this.service.refresh();
@@ -142,7 +182,12 @@ export class WatchpointsProvider implements vscode.WebviewViewProvider, vscode.D
             `Delete all ${count} backend watchpoints? This also removes watchpoints created by other clients.`,
             { modal: true }, 'Delete All',
         );
-        if (answer === 'Delete All') { await this.runOperation('deleteAll', () => this.service.deleteAll()); }
+        if (answer === 'Delete All') {
+            await this.runOperation('deleteAll', async () => {
+                await this.service.deleteAll();
+                this.addressExpressions.clear();
+            });
+        }
     }
 
     private async preview(id: number): Promise<void> {
@@ -188,6 +233,37 @@ export class WatchpointsProvider implements vscode.WebviewViewProvider, vscode.D
         } : undefined);
     }
 
+    private async resolveCandidate(candidate: WatchpointCandidate): Promise<WatchpointAddRequest> {
+        const globalAddr = typeof candidate.globalAddr === 'number'
+            ? candidate.globalAddr
+            : evaluateSymbolExpression(candidate.globalAddr, name => {
+                const resolution = this.symbols.resolveSymbol(name);
+                if (resolution.kind === 'missing') { throw new Error(`Symbol not found: ${name}`); }
+                if (resolution.kind === 'ambiguous') { throw new Error(`Symbol is ambiguous: ${name}`); }
+                return resolution.symbol.address;
+            });
+        return { ...candidate, globalAddr };
+    }
+
+    private async resolveEditCandidate(candidate: WatchpointEditCandidate): Promise<WatchpointEditRequest> {
+        const { id, ...config } = candidate;
+        return { id, ...await this.resolveCandidate(config) };
+    }
+
+    private async loadSymbols(): Promise<void> {
+        const project = this.activeProjectService.getActiveProject();
+        if (!project?.run.debugArtifact) {
+            this.symbols.clear();
+            return;
+        }
+        try {
+            await this.symbols.load(project.run.debugArtifact, project.run.executable);
+        } catch (error) {
+            this.symbols.clear();
+            this.logger.warn(`watchpoints: debug metadata unavailable: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
     private startPolling(): void {
         this.stopPolling();
         if (this.view?.visible) {
@@ -200,19 +276,15 @@ export class WatchpointsProvider implements vscode.WebviewViewProvider, vscode.D
     }
 
     private postSnapshot(): void {
-        this.post({ type: 'snapshot', generation: this.service.sessionGeneration, entries: this.service.snapshot });
-    }
-
-    private applyPendingAdd(): void {
-        if (!this.view || !this.pendingAdd) { return; }
-        this.pendingAdd = false;
-        this.post({ type: 'operation', operation: 'beginAdd', ok: true, message: '' });
+        const generation = this.service.sessionGeneration;
+        const entries = this.addressExpressions.decorate(this.service.snapshot, generation);
+        this.post({ type: 'snapshot', generation, entries });
     }
 
     private report(operation: string, error: unknown): void {
         const message = error instanceof Error ? error.message : String(error);
         this.logger.error(`watchpoints: ${message}`);
-        this.post({ type: 'operation', operation, ok: false, message });
+        this.post({ type: 'operation', operation, ok: false, message, field: watchpointErrorField(message) });
         this.post({ type: 'state', state: 'error', message, canMutate: this.service.available });
     }
 
@@ -234,3 +306,15 @@ export class WatchpointsProvider implements vscode.WebviewViewProvider, vscode.D
 }
 
 function validId(id: number): boolean { return Number.isSafeInteger(id) && id >= 0; }
+
+function watchpointErrorField(message: string): string | undefined {
+    if (/globalAddr|Global Address|Symbol|Expression|position/i.test(message)) { return 'globalAddr'; }
+    if (/\blen(?:gth)?\b|range exceeds|WORD watchpoints require/i.test(message)) { return 'len'; }
+    if (/\bvalue\b/i.test(message)) { return 'value'; }
+    if (/\baccess\b/i.test(message)) { return 'access'; }
+    if (/\bcondition\b/i.test(message)) { return 'condition'; }
+    if (/\btype\b/i.test(message)) { return 'type'; }
+    if (/\bactive\b/i.test(message)) { return 'active'; }
+    if (/\bcomment\b|UTF-8/i.test(message)) { return 'comment'; }
+    return undefined;
+}

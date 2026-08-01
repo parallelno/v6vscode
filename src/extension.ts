@@ -105,6 +105,7 @@ export function activate(context: vscode.ExtensionContext): void {
         lifecycle,
         watchpointService,
         hexViewer,
+        activeProjectService,
         logger,
     ));
     store.add(vscode.window.registerWebviewViewProvider(WATCHPOINTS_VIEW_ID, watchpoints));

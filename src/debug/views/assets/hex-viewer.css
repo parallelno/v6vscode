@@ -3,7 +3,7 @@ body { margin: 0; height: 100vh; display: flex; flex-direction: column; color: v
 body.session-empty > * { display: none; }
 .controls { display: grid; gap: 4px; padding: 6px; border-bottom: 1px solid var(--vscode-panel-border); }
 input, select { width: 100%; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); padding: 4px 6px; }
-input.invalid { border-color: var(--vscode-inputValidation-errorBorder); }
+input.invalid { color: var(--vscode-inputValidation-errorForeground, var(--vscode-input-foreground)); background: var(--vscode-inputValidation-errorBackground, var(--vscode-input-background)); border-color: var(--vscode-inputValidation-errorBorder); outline: 1px solid var(--vscode-inputValidation-errorBorder); }
 #status { min-height: 22px; padding: 4px 6px; color: var(--vscode-descriptionForeground); }
 #header, .row { display: grid; grid-template-columns: 42px max-content minmax(90px, 1fr); column-gap: 8px; align-items: center; font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); }
 #header { height: 24px; padding: 0 6px; position: sticky; top: 0; z-index: 2; color: var(--vscode-descriptionForeground); background: var(--vscode-sideBar-background); border-bottom: 1px solid var(--vscode-panel-border); }

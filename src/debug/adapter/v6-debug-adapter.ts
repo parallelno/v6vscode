@@ -146,6 +146,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             case 'setBreakpoints':       await this.onSetBreakpoints(req); break;
             case 'setInstructionBreakpoints': await this.onSetInstructionBreakpoints(req); break;
             case 'evaluate':             await this.onEvaluate(req); break;
+            case 'restart':              await this.onRestart(req); break;
             case 'disconnect':           await this.onDisconnect(req); break;
             case 'terminate':            await this.onTerminate(req); break;
             default:
@@ -168,7 +169,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             supportsBreakpointLocationsRequest: false,
             supportsTerminateRequest: true,
             supportTerminateDebuggee: true,
-            supportsRestartRequest: false,
+            supportsRestartRequest: true,
         });
         // 'initialized' is sent from onLaunch/onAttach after the ELF is loaded,
         // so that VS Code doesn't send setBreakpoints before the debug index is ready.
@@ -716,6 +717,37 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         if (/^\d+$/.test(expr)) { return parseInt(expr, 10); }
 
         return undefined;
+    }
+
+    private async onRestart(req: any): Promise<void> {
+        if (!this.client) {
+            this.sendResponse(req, false, 'No active emulator session');
+            return;
+        }
+
+        const resume = this.sessionState === 'running';
+        this.stopPoll();
+        this.pendingPause = false;
+        this.pendingStep = false;
+        this.pendingStepOverAddr = undefined;
+        this.cachedRegs = null;
+
+        try {
+            const response = await this.client.send(IpcCommand.RESTART, undefined, 5000, 'critical');
+            if (!response.ok) { throw new Error(response.error ?? 'Emulator restart failed'); }
+            this.sessionState = 'paused';
+            this.lifecycle.setExecutionRunning(false);
+            if (resume) {
+                await this.run();
+            } else {
+                this.stopReason = 'entry';
+                await this.refreshRegs();
+                this.emitStopped('entry');
+            }
+            this.sendResponseBody(req, {});
+        } catch (error) {
+            this.sendResponse(req, false, error instanceof Error ? error.message : String(error));
+        }
     }
 
     // -----------------------------------------------------------------------

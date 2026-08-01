@@ -1,6 +1,9 @@
+import { bareSymbol, validateSymbolExpression } from '../utilities/symbol-expression';
+
 export type ParsedLocation =
     | { kind: 'address'; value: number }
-    | { kind: 'symbol'; name: string };
+    | { kind: 'symbol'; name: string }
+    | { kind: 'expression'; value: string };
 
 export type ParsedHexQuery =
     | { kind: 'empty' }
@@ -8,7 +11,8 @@ export type ParsedHexQuery =
     | { kind: 'location'; location: ParsedLocation }
     | { kind: 'range'; start: ParsedLocation; end: ParsedLocation };
 
-const SYMBOL_PATTERN = /^[A-Za-z_.@][A-Za-z0-9_.@$]*$/;
+const NUMERIC_LITERAL = '(?:[0-9]+|0x[0-9a-f]+|[0-9a-f]+h|\\$[0-9a-f]+)';
+const LEGACY_RANGE_PATTERN = new RegExp(`^\\s*(${NUMERIC_LITERAL})\\s*-\\s*(${NUMERIC_LITERAL})\\s*$`, 'i');
 
 export function parseHexQuery(input: string): ParsedHexQuery {
     const query = input.trim();
@@ -16,21 +20,22 @@ export function parseHexQuery(input: string): ParsedHexQuery {
         return { kind: 'empty' };
     }
 
-    const delimiter = query.includes('..') ? '..' : '-';
-    const parts = query.split(delimiter);
-    if (parts.length > 2) {
-        return { kind: 'invalid', message: `A range may contain only one "${delimiter}" delimiter` };
+    const range = query.includes('..')
+        ? query.split('..')
+        : LEGACY_RANGE_PATTERN.exec(query)?.slice(1);
+    if (range && range.length > 2) {
+        return { kind: 'invalid', message: 'A range may contain only one ".." delimiter' };
     }
 
-    const start = parseLocation(parts[0].trim());
+    const start = parseLocation((range?.[0] ?? query).trim());
     if (typeof start === 'string') {
         return { kind: 'invalid', message: start };
     }
-    if (parts.length === 1) {
+    if (!range) {
         return { kind: 'location', location: start };
     }
 
-    const end = parseLocation(parts[1].trim());
+    const end = parseLocation(range[1].trim());
     if (typeof end === 'string') {
         return { kind: 'invalid', message: end };
     }
@@ -54,10 +59,11 @@ function parseLocation(input: string): ParsedLocation | string {
         value = Number.parseInt(input.slice(0, -1), 16);
     } else if (/^\$[0-9a-f]+$/i.test(input)) {
         value = Number.parseInt(input.slice(1), 16);
-    } else if (SYMBOL_PATTERN.test(input)) {
+    } else if (bareSymbol(input)) {
         return { kind: 'symbol', name: input };
     } else {
-        return `Invalid address or symbol: ${input}`;
+        const error = validateSymbolExpression(input);
+        return error ?? { kind: 'expression', value: input };
     }
 
     return value <= 0xFFFF

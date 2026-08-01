@@ -16,6 +16,7 @@ import {
 import { MemoryReadCapabilities } from '../../emulator/protocol/memory-models';
 import { IpcCommand } from '../../emulator/protocol/ipc-commands';
 import { DebugSymbolService } from '../metadata/debug-symbol-service';
+import { evaluateSymbolExpression } from '../utilities/symbol-expression';
 import { Logger } from '../../platform/logging/logger';
 import { parseHexQuery, ParsedLocation } from './hex-viewer-query';
 import { HexViewerHostMessage, HexViewerWebviewMessage } from './hex-viewer-messages';
@@ -300,16 +301,27 @@ export class HexViewerProvider implements vscode.WebviewViewProvider, vscode.Dis
         if (location.kind === 'address') {
             return { start: location.value, end: location.value };
         }
-        if (this.selectedSpace.kind !== 'main') {
-            return 'Symbols are available only in Main RAM';
-        }
-        const resolution = this.symbols.resolveSymbol(location.name);
-        if (resolution.kind === 'missing') { return `Symbol not found: ${location.name}`; }
-        if (resolution.kind === 'ambiguous') { return `Symbol is ambiguous: ${location.name}`; }
-        return {
-            start: resolution.symbol.address,
-            end: Math.min(0xFFFF, resolution.symbol.address + Math.max(1, resolution.symbol.size) - 1),
+        const resolveSymbol = (name: string): number => {
+            if (this.selectedSpace.kind !== 'main') { throw new Error('Symbols are available only in Main RAM'); }
+            const resolution = this.symbols.resolveSymbol(name);
+            if (resolution.kind === 'missing') { throw new Error(`Symbol not found: ${name}`); }
+            if (resolution.kind === 'ambiguous') { throw new Error(`Symbol is ambiguous: ${name}`); }
+            return resolution.symbol.address;
         };
+        if (location.kind === 'symbol') {
+            try {
+                const start = resolveSymbol(location.name);
+                const resolution = this.symbols.resolveSymbol(location.name);
+                const size = resolution.kind === 'found' ? resolution.symbol.size : 1;
+                return { start, end: Math.min(0xFFFF, start + Math.max(1, size) - 1) };
+            } catch (error) { return error instanceof Error ? error.message : String(error); }
+        }
+        try {
+            const address = evaluateSymbolExpression(location.value, resolveSymbol);
+            return address >= 0 && address <= 0xFFFF
+                ? { start: address, end: address }
+                : `Address is outside 0x0000..0xFFFF: ${location.value}`;
+        } catch (error) { return error instanceof Error ? error.message : String(error); }
     }
 
     private async copy(message: Extract<HexViewerWebviewMessage, { type: 'copy' }>): Promise<void> {
@@ -415,7 +427,7 @@ export class HexViewerProvider implements vscode.WebviewViewProvider, vscode.Dis
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="${cssUri}"><title>V6 Hex Viewer</title></head>
-<body class="session-empty"><div class="controls"><input id="query" type="text" aria-label="Address, symbol, or inclusive range" placeholder="Address, symbol, 11-14, or 11..14" title="Enter a decimal address; a hexadecimal address as 0x100, 100h, or $100; a Main RAM symbol; or an inclusive range such as 11-14 or $100..$1FF. Results update while you type.">
+<body class="session-empty"><div class="controls"><input id="query" type="text" aria-label="Address expression or inclusive range" placeholder="Symbol + offset, or start..end" title="Address expressions: decimal (256), 0x hex (0x100), $ hex ($100), h suffix (100h), or Main RAM symbols. Operators: +, -, *, unary +/-, and parentheses; multiplication has precedence. Examples: set_palette+1, set_palette+0x10*3. Inclusive ranges use start..end, for example buffer+2..buffer_end-1. Legacy numeric ranges such as 11-14 are also accepted. Bare symbols highlight the complete symbol; expressions highlight one address. Results update while you type.">
 <select id="space" aria-label="Memory bank"><option>Main RAM</option></select></div>
 <div id="status" role="status">No active emulator session</div>
 <div id="header" aria-hidden="true"><span>ADDR</span><span>00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F</span><span>Symbols</span></div>

@@ -5,8 +5,8 @@
     const ROW_HEIGHT = 24;
     const ROW_COUNT = 4096;
     const OVERSCAN = 8;
-    const SEARCH_TOOLTIP = 'Enter a decimal address; a hexadecimal address as 0x100, 100h, or $100; a Main RAM symbol; or an inclusive range such as 11-14 or $100..$1FF. Results update while you type.';
     const query = /** @type {HTMLInputElement} */ (document.getElementById('query'));
+    const SEARCH_TOOLTIP = query.title;
     const spaceSelect = /** @type {HTMLSelectElement} */ (document.getElementById('space'));
     const status = /** @type {HTMLDivElement} */ (document.getElementById('status'));
     const viewport = /** @type {HTMLDivElement} */ (document.getElementById('viewport'));

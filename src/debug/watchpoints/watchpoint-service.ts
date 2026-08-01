@@ -47,6 +47,24 @@ export class WatchpointService extends EventEmitter {
     }
 
     async refresh(): Promise<readonly WatchpointEntry[]> {
+        return this.enqueue(() => this.refreshNow());
+    }
+
+    async refreshIfChanged(): Promise<boolean> {
+        return this.enqueue(async () => {
+            this.requireAvailable();
+            const generation = this.generation;
+            const current = await this.fetchUpdateCounter();
+            if (generation !== this.generation) { return false; }
+            if (this.updateCounter === undefined || current !== this.updateCounter) {
+                await this.refreshNow();
+                return true;
+            }
+            return false;
+        });
+    }
+
+    private async refreshNow(): Promise<readonly WatchpointEntry[]> {
         this.requireAvailable();
         const generation = this.generation;
         const response = await this.client.send<unknown>(IpcCommand.DEBUG_WATCHPOINT_GET_ALL, undefined, 5000, 'high');
@@ -59,27 +77,19 @@ export class WatchpointService extends EventEmitter {
         return this.entries;
     }
 
-    async refreshIfChanged(): Promise<boolean> {
-        this.requireAvailable();
-        const generation = this.generation;
-        const current = await this.fetchUpdateCounter();
-        if (generation !== this.generation) { return false; }
-        if (this.updateCounter === undefined || current !== this.updateCounter) {
-            await this.refresh();
-            return true;
-        }
-        return false;
-    }
-
     add(candidate: WatchpointAddRequest): Promise<WatchpointEntry> {
         return this.mutate(async () => {
             const request = validateWatchpointConfig(candidate, this.limits());
             const oldIds = new Set(this.entries.map(entry => entry.id));
             await this.sendMutation(IpcCommand.DEBUG_WATCHPOINT_ADD, request);
-            await this.refresh();
-            const matches = this.entries.filter(entry => !oldIds.has(entry.id) && sameConfig(entry, request));
-            if (matches.length !== 1) { throw new Error('Unable to identify the added watchpoint'); }
-            return matches[0];
+            await this.refreshNow();
+            const added = this.entries.filter(entry => !oldIds.has(entry.id));
+            // The backend allocates the ID and may normalize stored fields (for example
+            // clearing the value when the condition is ANY), so identify by the new ID
+            // set first and only fall back to configuration matching to disambiguate.
+            const match = added.length === 1 ? added[0] : added.find(entry => sameConfig(entry, request));
+            if (!match) { throw new Error('Unable to identify the added watchpoint'); }
+            return match;
         });
     }
 
@@ -89,9 +99,9 @@ export class WatchpointService extends EventEmitter {
             const { id, ...config } = candidate;
             const request = { id, ...validateWatchpointConfig(config, this.limits()) };
             await this.sendMutation(IpcCommand.DEBUG_WATCHPOINT_EDIT, request);
-            await this.refresh();
+            await this.refreshNow();
             const updated = this.entries.find(entry => entry.id === request.id);
-            if (!updated || !sameConfig(updated, request)) { throw new Error(`Watchpoint ${request.id} was not updated`); }
+            if (!updated) { throw new Error(`Watchpoint ${request.id} was not updated`); }
             return updated;
         });
     }
@@ -100,7 +110,7 @@ export class WatchpointService extends EventEmitter {
         return this.mutate(async () => {
             if (!Number.isSafeInteger(id) || id < 0) { throw new Error('Invalid watchpoint id'); }
             await this.sendMutation(IpcCommand.DEBUG_WATCHPOINT_DEL, { id });
-            await this.refresh();
+            await this.refreshNow();
             if (this.entries.some(entry => entry.id === id)) { throw new Error(`Watchpoint ${id} was not deleted`); }
         });
     }
@@ -108,7 +118,7 @@ export class WatchpointService extends EventEmitter {
     deleteAll(): Promise<void> {
         return this.mutate(async () => {
             await this.sendMutation(IpcCommand.DEBUG_WATCHPOINT_DEL_ALL);
-            await this.refresh();
+            await this.refreshNow();
             if (this.entries.length) { throw new Error('Not all watchpoints were deleted'); }
         });
     }
@@ -118,7 +128,7 @@ export class WatchpointService extends EventEmitter {
             for (const entry of this.entries.filter(item => item.active)) {
                 await this.sendMutation(IpcCommand.DEBUG_WATCHPOINT_EDIT, { ...entry, active: false });
             }
-            await this.refresh();
+            await this.refreshNow();
             if (this.entries.some(entry => entry.active)) { throw new Error('Not all watchpoints were disabled'); }
         });
     }
@@ -129,13 +139,17 @@ export class WatchpointService extends EventEmitter {
     }
 
     private mutate<T>(operation: () => Promise<T>): Promise<T> {
-        const result = this.queue.then(() => {
+        return this.enqueue(() => {
             const info = this.requireAvailable();
             if (this.lifecycle.running && info.capabilities.watchpointMutationsWhileRunning !== true) {
                 throw new Error('The active emulator does not allow watchpoint changes while running');
             }
             return operation();
         });
+    }
+
+    private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+        const result = this.queue.then(operation);
         this.queue = result.then(() => undefined, () => undefined);
         return result;
     }

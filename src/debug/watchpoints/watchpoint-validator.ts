@@ -56,7 +56,8 @@ export function decodeWatchpointEntry(
     limits: WatchpointValidationLimits = DEFAULT_WATCHPOINT_LIMITS,
 ): WatchpointEntry {
     if (!isRecord(value)) { throw new Error('Watchpoint entry must be an object'); }
-    rejectUnknownFields(value, [...CONFIG_FIELDS, 'id']);
+    // Responses may carry additional backend fields; ignore unknown keys rather than
+    // rejecting the whole entry so a newer emulator does not blank the panel.
     return { id: integer(value.id, 'id', 0, Number.MAX_SAFE_INTEGER), ...validateFields(value, limits) };
 }
 

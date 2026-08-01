@@ -41,6 +41,21 @@ describe('ipc-codec', () => {
             const payload = decode(buf.subarray(4)) as { cmd: number; data: unknown };
             expect(payload).to.deep.equal({ cmd: IpcCommand.RUN, data: {} });
         });
+
+        it('should encode schema-1 watchpoint requests accepted by v6emul', () => {
+            const watchpoint = {
+                globalAddr: 0x10000, len: 4, value: 0x20, access: 'RW',
+                condition: 'EQU', type: 'LEN', active: true, comment: 'screen buffer',
+            };
+            const add = encodeRequest(IpcCommand.DEBUG_WATCHPOINT_ADD, watchpoint);
+            const addPayload = decode(add.subarray(4)) as { cmd: number; data: unknown };
+            expect(addPayload).to.deep.equal({ cmd: 69, data: watchpoint });
+            expect(addPayload.data).not.to.have.property('id');
+
+            const getAll = encodeRequest(IpcCommand.DEBUG_WATCHPOINT_GET_ALL);
+            const getAllPayload = decode(getAll.subarray(4)) as { cmd: number; data: unknown };
+            expect(getAllPayload).to.deep.equal({ cmd: 73, data: {} });
+        });
     });
 
     describe('decodeResponse', () => {

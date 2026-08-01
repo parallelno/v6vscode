@@ -12,6 +12,8 @@ body { margin: 0; color: var(--vscode-foreground); background: var(--vscode-side
 .activity { display: flex; align-items: center; gap: 5px; }
 .activity input { width: auto; }
 input, select { width: 100%; min-height: 26px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); padding: 3px 5px; font: inherit; }
+input.invalid, select.invalid { color: var(--vscode-inputValidation-errorForeground, var(--vscode-input-foreground)); background: var(--vscode-inputValidation-errorBackground, var(--vscode-input-background)); border-color: var(--vscode-inputValidation-errorBorder); outline: 1px solid var(--vscode-inputValidation-errorBorder); }
+input:disabled, select:disabled { opacity: .45; color: var(--vscode-disabledForeground, var(--vscode-input-foreground)); cursor: not-allowed; }
 .address, .value { font-family: var(--vscode-editor-font-family); }
 #empty { padding: 16px 8px; color: var(--vscode-descriptionForeground); }
 #preview { position: fixed; z-index: 15; max-width: min(520px, calc(100vw - 16px)); padding: 6px 8px; color: var(--vscode-editorHoverWidget-foreground); background: var(--vscode-editorHoverWidget-background); border: 1px solid var(--vscode-editorHoverWidget-border); box-shadow: 0 2px 8px var(--vscode-widget-shadow); font-family: var(--vscode-editor-font-family); white-space: pre-wrap; }

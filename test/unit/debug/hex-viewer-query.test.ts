@@ -28,6 +28,14 @@ describe('Hex Viewer query parser', () => {
             start: { kind: 'address', value: 11 },
             end: { kind: 'address', value: 14 },
         });
+        expect(parseHexQuery('set_palette+0x10*3')).to.deep.equal({
+            kind: 'location', location: { kind: 'expression', value: 'set_palette+0x10*3' },
+        });
+        expect(parseHexQuery('set_palette+1 .. buffer_end-1')).to.deep.equal({
+            kind: 'range',
+            start: { kind: 'expression', value: 'set_palette+1' },
+            end: { kind: 'expression', value: 'buffer_end-1' },
+        });
     });
 
     it('rejects incomplete, overflowing, reversed, and multiply delimited ranges', () => {

@@ -347,6 +347,7 @@
     "test:feature:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File test/features/debug-adapter/run.ps1",
     "test:all": "npm run test:unit && npm run test:regression",
     "ci": "npm run compile && npm run lint && npm run test:all",
+    "vscode:prepublish": "npm run compile",
     "package": "vsce package"
   },
   "devDependencies": {
