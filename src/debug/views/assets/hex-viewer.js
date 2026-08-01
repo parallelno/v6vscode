@@ -27,6 +27,9 @@
     /** @type {{target:'byte'|'symbol',value:string,address:number,space:any,element:HTMLElement}|null} */
     let menuTarget = null;
     let lastVisibleKey = '';
+    let editingEnabled = false;
+    /** @type {{space:any,address:number,expression:string,submitting:boolean,message:string}|null} */
+    let byteEdit = null;
 
     const key = (space) => space.kind === 'main' ? 'main' : `ramDisk:${space.disk}:${space.bank}`;
     function bankCache() {
@@ -69,6 +72,10 @@
         const byteGroup = document.createElement('span'); byteGroup.className = 'bytes';
         for (let column = 0; column < 16; column++) {
             const byteAddress = offset + column;
+            if (byteEdit && byteEdit.address === byteAddress && key(byteEdit.space) === key(selectedSpace)) {
+                const editorCell = document.createElement('span'); editorCell.className = 'byte editing';
+                editorCell.appendChild(createByteEditor()); byteGroup.appendChild(editorCell); continue;
+            }
             const button = document.createElement('button'); button.className = 'byte'; button.setAttribute('role', 'gridcell'); button.tabIndex = -1;
             button.textContent = bank.valid[byteAddress] ? bank.values[byteAddress].toString(16).toUpperCase().padStart(2, '0') : '--';
             if (byteAddress >= highlightStart && byteAddress <= highlightEnd) button.classList.add('match');
@@ -78,6 +85,11 @@
             button.addEventListener('mouseleave', () => row.classList.remove('hovered'));
             button.addEventListener('contextmenu', event => openMenu(event, { target: 'byte', value: button.textContent || '', address: byteAddress, space: selectedSpace, element: button }));
             button.addEventListener('keydown', event => byteKey(event, byteAddress));
+            button.addEventListener('dblclick', event => {
+                if (!editingEnabled || !bank.valid[byteAddress]) return;
+                event.preventDefault();
+                startByteEdit(byteAddress, bank.values[byteAddress]);
+            });
             byteGroup.appendChild(button);
         }
         row.appendChild(byteGroup);
@@ -108,6 +120,36 @@
     }
     function navigateFocus(address) { viewport.scrollTop = Math.floor(address / 16) * ROW_HEIGHT; render(); requestAnimationFrame(() => rows.querySelectorAll('.byte')[address % 16 + OVERSCAN * 16]?.focus()); }
 
+    function startByteEdit(address, value) {
+        byteEdit = { space: selectedSpace, address, expression: `0x${value.toString(16).toUpperCase().padStart(2, '0')}`, submitting: false, message: '' };
+        render();
+        requestAnimationFrame(() => {
+            const input = /** @type {HTMLInputElement|null} */ (rows.querySelector('.byte-editor'));
+            input?.focus(); input?.select();
+        });
+    }
+
+    function createByteEditor() {
+        const input = document.createElement('input');
+        input.className = 'byte-editor'; input.type = 'text'; input.value = byteEdit?.expression ?? '';
+        input.setAttribute('aria-label', `Edit byte at 0x${(byteEdit?.address ?? 0).toString(16).toUpperCase().padStart(4, '0')}`);
+        input.title = byteEdit?.message || 'Enter a byte expression using literals, symbols, +, -, *, unary signs, or parentheses. The final value must be 0..255.';
+        if (byteEdit?.message) { input.classList.add('invalid'); input.setAttribute('aria-invalid', 'true'); }
+        input.addEventListener('input', () => { if (byteEdit) { byteEdit.expression = input.value; byteEdit.message = ''; input.classList.remove('invalid'); input.removeAttribute('aria-invalid'); } });
+        input.addEventListener('keydown', event => {
+            if (event.key === 'Enter') { event.preventDefault(); submitByteEdit(); }
+            if (event.key === 'Escape') { event.preventDefault(); byteEdit = null; render(); }
+        });
+        input.addEventListener('blur', () => submitByteEdit());
+        return input;
+    }
+
+    function submitByteEdit() {
+        if (!byteEdit || byteEdit.submitting) return;
+        byteEdit.submitting = true;
+        vscode.postMessage({ type: 'editByte', space: byteEdit.space, address: byteEdit.address, expression: byteEdit.expression });
+    }
+
     function openMenu(event, target) {
         event.preventDefault(); menuTarget = target; menu.hidden = false; menu.style.left = `${Math.min(event.clientX, window.innerWidth - 150)}px`; menu.style.top = `${Math.min(event.clientY, window.innerHeight - 70)}px`;
         const source = /** @type {HTMLButtonElement} */ (menu.querySelector('[data-action="source"]')); source.disabled = target.space.kind !== 'main' || !sourceAddresses.has(target.address);
@@ -124,7 +166,7 @@
         if (event.key === 'ArrowUp') { event.preventDefault(); if (historyIndex === history.length) draft = query.value; if (historyIndex > 0) query.value = history[--historyIndex]; vscode.postMessage({ type: 'query', value: query.value }); }
         if (event.key === 'ArrowDown') { event.preventDefault(); if (historyIndex < history.length - 1) query.value = history[++historyIndex]; else { historyIndex = history.length; query.value = draft; } vscode.postMessage({ type: 'query', value: query.value }); }
     });
-    spaceSelect.addEventListener('change', () => { selectedSpace = spaces[spaceSelect.selectedIndex]?.space || { kind: 'main' }; lastVisibleKey = ''; symbols = []; vscode.postMessage({ type: 'selectSpace', space: selectedSpace }); persist(); render(); });
+    spaceSelect.addEventListener('change', () => { byteEdit = null; selectedSpace = spaces[spaceSelect.selectedIndex]?.space || { kind: 'main' }; lastVisibleKey = ''; symbols = []; vscode.postMessage({ type: 'selectSpace', space: selectedSpace }); persist(); render(); });
     viewport.addEventListener('scroll', () => { closeMenu(); render(); });
     new ResizeObserver(render).observe(viewport);
     function persist() { vscode.postMessage({ type: 'persist', space: selectedSpace, query: query.value, history }); }
@@ -137,6 +179,8 @@
         spaces = [];
         highlightStart = -1;
         highlightEnd = -1;
+        byteEdit = null;
+        editingEnabled = false;
         lastVisibleKey = '';
         rows.replaceChildren();
         spaceSelect.replaceChildren();
@@ -152,8 +196,18 @@
             }
         }
         if (message.type === 'reset') resetSession();
+        if (message.type === 'editing') editingEnabled = message.enabled;
         if (message.type === 'spaces') { document.body.classList.remove('session-empty'); spaces = message.spaces; selectedSpace = message.selected; spaceSelect.replaceChildren(...spaces.map(item => { const option = document.createElement('option'); option.textContent = item.label; return option; })); spaceSelect.selectedIndex = Math.max(0, spaces.findIndex(item => key(item.space) === key(selectedSpace))); lastVisibleKey = ''; render(); }
-        if (message.type === 'memory' && key(message.space) === key(selectedSpace)) { if (document.body.classList.contains('session-empty')) return; const bank = bankCache(); bank.values.set(new Uint8Array(message.values), message.offset); bank.valid.set(new Uint8Array(message.valid), message.offset); symbols = message.symbols; sourceAddresses.clear(); message.sourceAddresses.forEach(address => sourceAddresses.add(address)); render(); }
+        if (message.type === 'memory' && key(message.space) === key(selectedSpace)) { if (document.body.classList.contains('session-empty')) return; const bank = bankCache(); bank.values.set(new Uint8Array(message.values), message.offset); bank.valid.set(new Uint8Array(message.valid), message.offset); symbols = message.symbols; sourceAddresses.clear(); message.sourceAddresses.forEach(address => sourceAddresses.add(address)); if (!byteEdit) render(); }
+        if (message.type === 'byteEdit' && byteEdit && message.address === byteEdit.address && key(message.space) === key(byteEdit.space)) {
+            if (message.ok) {
+                const bank = bankCache(); bank.values[message.address] = message.value; bank.valid[message.address] = 1; byteEdit = null; render();
+            } else {
+                byteEdit.submitting = false; byteEdit.message = message.message;
+                const input = /** @type {HTMLInputElement|null} */ (rows.querySelector('.byte-editor'));
+                if (input) { input.classList.add('invalid'); input.setAttribute('aria-invalid', 'true'); input.title = message.message; input.focus(); }
+            }
+        }
         if (message.type === 'navigate') {
             if (message.space) {
                 selectedSpace = message.space;

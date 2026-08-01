@@ -83,4 +83,70 @@ describe('MemoryService', () => {
         });
         expect(() => globalAddressMemoryLocation(0x210000)).to.throw('outside emulator memory');
     });
+
+    it('writes a byte through SET_BYTE_GLOBAL and updates the cache after acknowledgment', async () => {
+        const requests: Array<{ command: IpcCommand; data: { addr: number; data: number } }> = [];
+        const client = {
+            send: async (command: IpcCommand, data: { addr: number; data: number }) => {
+                requests.push({ command, data });
+                return { ok: true, data: {} };
+            },
+        } as any;
+        const service = new MemoryService(client, capabilities);
+
+        await service.writeByte({ kind: 'ramDisk', disk: 1, bank: 0 }, 0x20, 0xAB);
+
+        expect(requests).to.deep.equal([{
+            command: IpcCommand.SET_BYTE_GLOBAL,
+            data: { addr: 0x10020, data: 0xAB },
+        }]);
+        expect(Array.from(service.readCached({ kind: 'ramDisk', disk: 1, bank: 0 }, 0x20, 1).values))
+            .to.deep.equal([0xAB]);
+        expect(Array.from(service.readCached({ kind: 'ramDisk', disk: 1, bank: 0 }, 0x20, 1).valid))
+            .to.deep.equal([1]);
+    });
+
+    it('does not update the cache when a byte write fails', async () => {
+        const service = new MemoryService({
+            send: async () => ({ ok: false, error: 'write rejected' }),
+        } as any, capabilities);
+
+        let message = '';
+        try {
+            await service.writeByte(MAIN_MEMORY_SPACE, 0x20, 0xAB);
+        } catch (error) {
+            message = error instanceof Error ? error.message : String(error);
+        }
+
+        expect(message).to.equal('write rejected');
+        expect(Array.from(service.readCached(MAIN_MEMORY_SPACE, 0x20, 1).valid)).to.deep.equal([0]);
+    });
+
+    it('rejects a byte write acknowledgment from an inactive session', async () => {
+        let acknowledge: ((response: { ok: boolean; data: object }) => void) | undefined;
+        const client = {
+            send: () => new Promise(resolve => { acknowledge = resolve; }),
+        } as any;
+        const service = new MemoryService(client, capabilities);
+        const write = service.writeByte(MAIN_MEMORY_SPACE, 0x20, 0xAB);
+
+        service.clear();
+        acknowledge!({ ok: true, data: {} });
+
+        let message = '';
+        try { await write; } catch (error) { message = error instanceof Error ? error.message : String(error); }
+        expect(message).to.equal('Memory write belongs to an inactive session');
+        expect(Array.from(service.readCached(MAIN_MEMORY_SPACE, 0x20, 1).valid)).to.deep.equal([0]);
+    });
+
+    it('rejects byte values outside 0..255 before sending', async () => {
+        let sends = 0;
+        const service = new MemoryService({ send: async () => { sends++; } } as any, capabilities);
+
+        for (const value of [-1, 256, 1.5]) {
+            try { await service.writeByte(MAIN_MEMORY_SPACE, 0, value); } catch { /* expected */ }
+        }
+
+        expect(sends).to.equal(0);
+    });
 });

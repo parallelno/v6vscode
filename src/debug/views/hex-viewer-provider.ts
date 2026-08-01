@@ -127,6 +127,9 @@ export class HexViewerProvider implements vscode.WebviewViewProvider, vscode.Dis
                 case 'query':
                     this.scheduleQuery(message.value);
                     break;
+                case 'editByte':
+                    await this.editByte(message);
+                    break;
                 case 'copy':
                     await this.copy(message);
                     break;
@@ -191,6 +194,10 @@ export class HexViewerProvider implements vscode.WebviewViewProvider, vscode.Dis
             type: 'spaces',
             spaces: spaces.map(space => ({ space, label: memorySpaceLabel(space) })),
             selected: this.selectedSpace,
+        });
+        this.post({
+            type: 'editing',
+            enabled: this.lifecycle.serverInfo?.commands.includes(IpcCommand.SET_BYTE_GLOBAL) === true,
         });
         this.post({
             type: 'state',
@@ -331,6 +338,34 @@ export class HexViewerProvider implements vscode.WebviewViewProvider, vscode.Dis
             : message.value.slice(0, 512);
         if (value !== undefined) {
             await vscode.env.clipboard.writeText(value);
+        }
+    }
+
+    private async editByte(message: Extract<HexViewerWebviewMessage, { type: 'editByte' }>): Promise<void> {
+        if (!this.validAddress(message.space, message.address)
+            || memorySpaceKey(message.space) !== memorySpaceKey(this.selectedSpace)) {
+            return;
+        }
+        try {
+            if (this.lifecycle.serverInfo?.commands.includes(IpcCommand.SET_BYTE_GLOBAL) !== true) {
+                throw new Error('The active v6emul does not support global memory writes');
+            }
+            const value = evaluateSymbolExpression(message.expression, name => {
+                const resolution = this.symbols.resolveSymbol(name);
+                if (resolution.kind === 'missing') { throw new Error(`Symbol not found: ${name}`); }
+                if (resolution.kind === 'ambiguous') { throw new Error(`Symbol is ambiguous: ${name}`); }
+                return resolution.symbol.address;
+            });
+            if (value < 0 || value > 0xFF) {
+                throw new Error('Byte value must be an integer from 0 to 255');
+            }
+            await this.memory.writeByte(message.space, message.address, value);
+            this.post({ type: 'byteEdit', space: message.space, address: message.address, ok: true, value, message: '' });
+        } catch (error) {
+            this.post({
+                type: 'byteEdit', space: message.space, address: message.address, ok: false,
+                message: error instanceof Error ? error.message : String(error),
+            });
         }
     }
 

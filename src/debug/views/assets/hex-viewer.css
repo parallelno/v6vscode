@@ -14,6 +14,9 @@ input.invalid { color: var(--vscode-inputValidation-errorForeground, var(--vscod
 .address { color: var(--vscode-descriptionForeground); }
 .bytes { display: grid; grid-template-columns: repeat(16, 2ch); gap: 1ch; }
 .byte { border: 0; padding: 2px 0; min-width: 2ch; color: inherit; background: transparent; font: inherit; text-align: center; }
+.byte.editing { position: relative; overflow: visible; z-index: 3; }
+.byte-editor { position: absolute; left: -1px; top: -3px; width: 14ch; min-width: 14ch; z-index: 4; padding: 2px 4px; font: inherit; text-align: left; }
+.byte-editor.invalid { border-color: var(--vscode-inputValidation-errorBorder); background: var(--vscode-inputValidation-errorBackground, var(--vscode-input-background)); }
 .byte:hover, .byte:focus, .byte.selected { color: var(--vscode-list-activeSelectionForeground); background: var(--vscode-list-activeSelectionBackground); outline: 1px solid var(--vscode-focusBorder); }
 .byte.match { background: var(--vscode-editor-findMatchHighlightBackground); }
 .symbols { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

@@ -118,6 +118,10 @@ Pressing `Enter` commits a valid non-empty query to history. Deduplicate consecu
 - Bytes: uppercase, zero-padded `00` through `FF`.
 - Search address: focused-cell highlight.
 - Search range: inclusive range highlight across all visible covered bytes.
+
+Double-clicking a valid byte enters inline edit mode. The editor accepts the common symbol-expression grammar used by watchpoint global addresses and Hex Viewer search: decimal, `0x`, `$`, and `h` literals; symbols; `+`, `-`, `*`, unary signs, and parentheses. `Enter` or focus loss evaluates and submits the expression. `Escape` cancels it. The final value must be an integer in `0..255`; malformed, unresolved, ambiguous, or out-of-range expressions keep the editor open with VS Code error styling and send no write.
+
+The extension host evaluates expressions authoritatively and sends `SET_BYTE_GLOBAL { addr, data }` only when command 43 is advertised. It translates the selected typed memory space to the emulator's linear global address. The cache and rendered byte update only after backend acknowledgment; failed or stale-session writes retain the previous byte.
 - Current PC: a distinct outline in Main RAM only, when available.
 - Symbol extent: subtle secondary decoration that must not obscure search or PC state.
 - Hovering a byte highlights both its table row and that byte. The byte highlight has stronger contrast than the row highlight and must remain distinguishable from search/range, PC, and symbol decorations.
@@ -346,9 +350,9 @@ Use a CSP nonce, no inline executable script, `localResourceRoots`, and VS Code 
 
 **Gate:** No leaked timers/listeners, no stale cross-session data, and no measurable degradation to stepping or display responsiveness.
 
-### Phase 4 - Optional Editing
+### Phase 4 - Byte Editing
 
-Only after read-only telemetry is stable, consider byte editing while paused. It requires a separate design for write capabilities, confirmation/undo semantics, ROM/read-only regions, partial writes, cache invalidation, DAP `writeMemory`, and coordination with watchpoints. Do not infer write support from read support.
+Inline single-byte editing uses the advertised `SET_BYTE_GLOBAL` command and shared expression evaluator. Multi-byte editing, confirmation/undo semantics, ROM/read-only-region metadata, and DAP `writeMemory` remain separate future work.
 
 ## 10. Test Strategy
 

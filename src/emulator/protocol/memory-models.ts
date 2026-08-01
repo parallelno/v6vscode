@@ -15,3 +15,8 @@ export interface ReadMemoryResponse {
     addr: number;
     data: Uint8Array | number[];
 }
+
+export interface WriteByteRequest {
+    addr: number;
+    data: number;
+}

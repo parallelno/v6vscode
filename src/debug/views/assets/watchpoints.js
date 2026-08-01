@@ -61,6 +61,7 @@
     }
     function editorRow(entry) {
         const row = document.createElement('form'); row.className = 'row'; row.setAttribute('role', 'row');
+        let canceled = false;
         const active = input('checkbox', entry?.active ?? true, 'Activity');
         const address = input('text', entry?.globalAddr ?? '0', 'Global Address');
         address.title = ADDRESS_EXPRESSION_TOOLTIP;
@@ -89,7 +90,7 @@
         updateFieldStates();
         row.addEventListener('submit', event => {
             event.preventDefault();
-            if (submitting) return;
+            if (canceled || submitting) return;
             Object.values(fields).forEach(control => {
                 control.classList.remove('invalid');
                 control.removeAttribute('aria-invalid');
@@ -111,10 +112,18 @@
         });
         row.addEventListener('keydown', event => {
             if (event.key === 'Enter') { event.preventDefault(); row.requestSubmit(); }
-            if (event.key === 'Escape') { editingId = null; submitting = false; submittedOperation = null; render(); }
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+                canceled = true;
+                editingId = null;
+                submitting = false;
+                submittedOperation = null;
+                render();
+            }
         });
         row.addEventListener('focusout', () => setTimeout(() => {
-            if (!row.contains(document.activeElement)) row.requestSubmit();
+            if (!canceled && !row.contains(document.activeElement)) row.requestSubmit();
         }, 0));
         setTimeout(() => address.focus(), 0);
         return row;

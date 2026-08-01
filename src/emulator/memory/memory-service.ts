@@ -1,6 +1,6 @@
 import { IpcClient } from '../client/ipc-client';
 import { IpcCommand } from '../protocol/ipc-commands';
-import { MemoryReadCapabilities, ReadMemoryResponse } from '../protocol/memory-models';
+import { MemoryReadCapabilities, ReadMemoryResponse, WriteByteRequest } from '../protocol/memory-models';
 import { MemoryCache, CachedMemoryRange } from './memory-cache';
 import { isValidMemorySpace, MEMORY_BANK_SIZE, MemorySpace, memorySpaceGlobalAddress } from './memory-space';
 
@@ -70,6 +70,26 @@ export class MemoryService {
 
     readCached(space: MemorySpace, offset: number, length: number): CachedMemoryRange {
         return this.cache.read(space, offset, length);
+    }
+
+    async writeByte(space: MemorySpace, offset: number, value: number): Promise<void> {
+        this.validateRequest(space, offset, 1);
+        if (!Number.isInteger(value) || value < 0 || value > 0xFF) {
+            throw new RangeError('Byte value must be an integer from 0 to 255');
+        }
+        const request: WriteByteRequest = {
+            addr: memorySpaceGlobalAddress(space, offset),
+            data: value,
+        };
+        const epoch = this.epoch;
+        const response = await this.client.send(IpcCommand.SET_BYTE_GLOBAL, request, 5000, 'normal');
+        if (!response.ok) {
+            throw new Error(response.error ?? 'Memory write failed');
+        }
+        if (epoch !== this.epoch) {
+            throw new Error('Memory write belongs to an inactive session');
+        }
+        this.cache.write(space, offset, Uint8Array.of(value));
     }
 
     clear(): void {
