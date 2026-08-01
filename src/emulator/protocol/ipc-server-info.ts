@@ -1,7 +1,8 @@
 import { IpcClient } from '../client/ipc-client';
 import { GetServerInfoResponse, IpcCommand } from './ipc-commands';
 
-export const SUPPORTED_IPC_PROTOCOL_VERSION = 1;
+export const SUPPORTED_IPC_PROTOCOL_VERSION = 2;
+export const SUPPORTED_RAW_FRAME_SCHEMA = 1;
 
 /** Reads and validates the required server metadata handshake. */
 export async function getServerInfo(client: IpcClient): Promise<GetServerInfoResponse> {
@@ -20,6 +21,14 @@ export async function getServerInfo(client: IpcClient): Promise<GetServerInfoRes
         throw new Error(
             `Unsupported v6emul IPC protocol ${info.protocolVersion}; `
             + `expected ${SUPPORTED_IPC_PROTOCOL_VERSION}`,
+        );
+    }
+    if (info.capabilities?.rawFrameSchema !== SUPPORTED_RAW_FRAME_SCHEMA
+        || !Array.isArray(info.commands)
+        || !info.commands.includes(IpcCommand.GET_FRAME_RAW)) {
+        throw new Error(
+            `v6emul ${info.emulatorVersion ?? 'unknown'} does not provide raw-frame schema `
+            + `${SUPPORTED_RAW_FRAME_SCHEMA}`,
         );
     }
     return info;

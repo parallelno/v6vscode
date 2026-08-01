@@ -14,10 +14,10 @@ describe('getServerInfo', () => {
 
     it('accepts the supported protocol and returns server metadata', async () => {
         const data = {
-            protocolVersion: 1,
+            protocolVersion: 2,
             emulatorVersion: '2026.07.30-test',
             commands: [-5, -4, -3, -1, 18, 51],
-            capabilities: { debugger: true, rawFrame: true, stackSampleSchema: 1 },
+            capabilities: { debugger: true, rawFrame: true, rawFrameSchema: 1, stackSampleSchema: 1 },
         };
 
         expect(await getServerInfo(makeClient({ ok: true, data }))).to.deep.equal(data);
@@ -53,10 +53,10 @@ describe('getServerInfo', () => {
         const client = makeClient({
             ok: true,
             data: {
-                protocolVersion: 2,
+                protocolVersion: 3,
                 emulatorVersion: 'future',
-                commands: [],
-                capabilities: { debugger: true, rawFrame: true, stackSampleSchema: 1 },
+                commands: [-4],
+                capabilities: { debugger: true, rawFrame: true, rawFrameSchema: 1, stackSampleSchema: 1 },
             },
         });
 
@@ -66,7 +66,29 @@ describe('getServerInfo', () => {
         } catch (error) {
             message = error instanceof Error ? error.message : String(error);
         }
-        expect(message).to.contain('Unsupported v6emul IPC protocol 2');
+        expect(message).to.contain('Unsupported v6emul IPC protocol 3');
+    });
+
+    it('rejects missing raw-frame schema and command support', async () => {
+        const base = {
+            protocolVersion: 2,
+            emulatorVersion: 'test-build',
+            commands: [-4],
+            capabilities: { debugger: true, rawFrame: true, rawFrameSchema: 1, stackSampleSchema: 1 },
+        };
+
+        for (const data of [
+            { ...base, commands: [] },
+            { ...base, capabilities: { ...base.capabilities, rawFrameSchema: 2 } },
+        ]) {
+            let message = '';
+            try {
+                await getServerInfo(makeClient({ ok: true, data }));
+            } catch (error) {
+                message = error instanceof Error ? error.message : String(error);
+            }
+            expect(message).to.contain('does not provide raw-frame schema 1');
+        }
     });
 
     it('preserves structured server failures', async () => {
@@ -84,10 +106,10 @@ describe('getServerInfo', () => {
 
 describe('validateDebuggerServer', () => {
     const validInfo = {
-        protocolVersion: 1,
+        protocolVersion: 2,
         emulatorVersion: 'test-build',
         commands: [IpcCommand.GET_STACK_SAMPLE, IpcCommand.DEBUG_ATTACH],
-        capabilities: { debugger: true, rawFrame: true, stackSampleSchema: 1 },
+        capabilities: { debugger: true, rawFrame: true, rawFrameSchema: 1, stackSampleSchema: 1 },
     };
 
     it('accepts the required debugger contract', () => {

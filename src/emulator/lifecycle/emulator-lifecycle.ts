@@ -126,14 +126,14 @@ export class EmulatorLifecycle extends EventEmitter {
             await this.connectWithRetries(port);
             this.setState('connected');
 
-            // Health check
+            const serverInfo = await getServerInfo(this.client);
+            this.logger.info(`v6emul: ${serverInfo.emulatorVersion}, IPC protocol ${serverInfo.protocolVersion}`);
+
             const pingResp = await this.client.send<PingResponse>(IpcCommand.PING);
             if (!pingResp.ok) {
                 throw new V6Error(ErrorCode.EMULATOR_LAUNCH_FAILED, 'PING health check failed');
             }
             this.logger.info('v6emul: PING OK');
-            const serverInfo = await getServerInfo(this.client);
-            this.logger.info(`v6emul: ${serverInfo.emulatorVersion}, IPC protocol ${serverInfo.protocolVersion}`);
 
             const frameMode = this.resolveFrameMode(project.run.viewMode);
             await this.setFrameMode(frameMode.panelMode);
@@ -207,13 +207,14 @@ export class EmulatorLifecycle extends EventEmitter {
             this.monitorProcess(process);
 
             await this.connectWithRetries(port);
+            const serverInfo = await getServerInfo(this.client);
+            validateDebuggerServer(serverInfo);
+            this.logger.info(`v6emul: ${serverInfo.emulatorVersion}, IPC protocol ${serverInfo.protocolVersion}`);
+
             const ping = await this.client.send<PingResponse>(IpcCommand.PING);
             if (!ping.ok) {
                 throw new V6Error(ErrorCode.EMULATOR_LAUNCH_FAILED, 'PING health check failed');
             }
-            const serverInfo = await getServerInfo(this.client);
-            validateDebuggerServer(serverInfo);
-            this.logger.info(`v6emul: ${serverInfo.emulatorVersion}, IPC protocol ${serverInfo.protocolVersion}`);
             await this.client.send(IpcCommand.DEBUG_ATTACH, { data: true });
             await this.client.send(IpcCommand.SET_COLOR_FORMAT, { colorFormat: 0 });
             await this.client.send(IpcCommand.STOP);

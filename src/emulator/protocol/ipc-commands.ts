@@ -174,6 +174,7 @@ export interface PingResponse {
 export interface ServerCapabilities {
     debugger: boolean;
     rawFrame: boolean;
+    rawFrameSchema: number;
     stackSampleSchema: number;
 }
 
@@ -231,11 +232,20 @@ export interface GetHardwareMainStatsResponse {
     speedPercent: number;
 }
 
-export interface FrameRawResponse {
+export interface FrameRawFrameResponse {
+    kind: 'frame';
     width: number;
     height: number;
     pixels: Buffer;
 }
+
+export interface FrameRawErrorResponse {
+    kind: 'error';
+    code: number;
+    message: string;
+}
+
+export type FrameRawResponse = FrameRawFrameResponse | FrameRawErrorResponse;
 
 // Generic IPC response envelope
 export interface IpcResponse<T = unknown> {

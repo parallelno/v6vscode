@@ -100,21 +100,33 @@ describe('ipc-codec', () => {
     });
 
     describe('decodeFrameRaw', () => {
+        function makeRawEnvelope(kind: number, value0: number, value1: number, body: Buffer): Buffer {
+            const payloadLen = 16 + body.length;
+            const buf = Buffer.alloc(4 + payloadLen);
+            buf.writeUInt32LE(payloadLen, 0);
+            buf.write('V6RF', 4, 'ascii');
+            buf[8] = 1;
+            buf[9] = kind;
+            buf.writeUInt16LE(0, 10);
+            buf.writeUInt32LE(value0, 12);
+            buf.writeUInt32LE(value1, 16);
+            body.copy(buf, 20);
+            return buf;
+        }
+
         it('should decode a valid frame', () => {
             const width = 4;
             const height = 2;
             const pixelBytes = width * height * 4; // 32 bytes
-            const payloadLen = 8 + pixelBytes; // width + height + pixels
-            const buf = Buffer.alloc(4 + payloadLen);
-            buf.writeUInt32LE(payloadLen, 0);
-            buf.writeUInt32LE(width, 4);
-            buf.writeUInt32LE(height, 8);
-            // Fill pixel data with a pattern
+            const pixels = Buffer.alloc(pixelBytes);
             for (let i = 0; i < pixelBytes; i++) {
-                buf[12 + i] = i % 256;
+                pixels[i] = i % 256;
             }
+            const buf = makeRawEnvelope(1, width, height, pixels);
 
             const frame = decodeFrameRaw(buf);
+            expect(frame.kind).to.equal('frame');
+            if (frame.kind !== 'frame') { throw new Error('Expected frame response'); }
             expect(frame.width).to.equal(width);
             expect(frame.height).to.equal(height);
             expect(frame.pixels.length).to.equal(pixelBytes);
@@ -127,12 +139,38 @@ describe('ipc-codec', () => {
             expect(() => decodeFrameRaw(buf)).to.throw(V6Error);
         });
 
+        it('should decode and consume a raw-frame error', () => {
+            const message = 'no frame available';
+            const frame = decodeFrameRaw(makeRawEnvelope(2, 1, Buffer.byteLength(message), Buffer.from(message)));
+
+            expect(frame).to.deep.equal({ kind: 'error', code: 1, message });
+        });
+
         it('should throw on pixel data size mismatch', () => {
-            const buf = Buffer.alloc(4 + 8 + 10); // payloadLen says 18, but 4*2*4=32 expected
-            buf.writeUInt32LE(18, 0); // payloadLen = 8 + 10
-            buf.writeUInt32LE(4, 4); // width
-            buf.writeUInt32LE(2, 8); // height — expects 32 bytes but only 10
+            const buf = makeRawEnvelope(1, 4, 2, Buffer.alloc(10));
             expect(() => decodeFrameRaw(buf)).to.throw(V6Error);
+        });
+
+        it('should reject invalid magic, schema, kind, flags, and error length', () => {
+            const valid = makeRawEnvelope(1, 1, 1, Buffer.alloc(4));
+            const invalidMagic = Buffer.from(valid);
+            invalidMagic.write('BAD!', 4, 'ascii');
+            expect(() => decodeFrameRaw(invalidMagic)).to.throw(V6Error);
+
+            const invalidSchema = Buffer.from(valid);
+            invalidSchema[8] = 2;
+            expect(() => decodeFrameRaw(invalidSchema)).to.throw(V6Error);
+
+            const invalidKind = Buffer.from(valid);
+            invalidKind[9] = 99;
+            expect(() => decodeFrameRaw(invalidKind)).to.throw(V6Error);
+
+            const invalidFlags = Buffer.from(valid);
+            invalidFlags[10] = 1;
+            expect(() => decodeFrameRaw(invalidFlags)).to.throw(V6Error);
+
+            const invalidErrorLength = makeRawEnvelope(2, 1, 99, Buffer.from('short'));
+            expect(() => decodeFrameRaw(invalidErrorLength)).to.throw(V6Error);
         });
     });
 

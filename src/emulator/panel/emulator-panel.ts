@@ -266,6 +266,10 @@ export class EmulatorPanel implements vscode.Disposable {
         try {
             const rawBuf = await this.client.sendRaw(IpcCommand.GET_FRAME_RAW, undefined, 5000, 'low');
             const frame = decodeFrameRaw(rawBuf);
+            if (frame.kind === 'error') {
+                this.scheduleNextFrame();
+                return;
+            }
             const panelMsg = this.viewModel.processFrame(
                 new Uint8Array(frame.pixels.buffer, frame.pixels.byteOffset, frame.pixels.byteLength),
                 frame.width,

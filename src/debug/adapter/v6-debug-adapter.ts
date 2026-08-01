@@ -256,13 +256,13 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             await client.connect(port, host);
             this.client = client;
 
+            const serverInfo = await getServerInfo(client);
+            validateDebuggerServer(serverInfo);
+
             const ping = await client.send<PingResponse>(IpcCommand.PING);
             if (!ping.ok) {
                 throw new Error('PING failed');
             }
-
-            const serverInfo = await getServerInfo(client);
-            validateDebuggerServer(serverInfo);
 
             await client.send(IpcCommand.DEBUG_ATTACH, { data: true });
             await client.send(IpcCommand.STOP);

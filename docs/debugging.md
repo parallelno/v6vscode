@@ -23,12 +23,14 @@ Choose a `Vector-06C` launch configuration and press F5. A debug launch:
 
 1. Starts `v6emul` on a free local TCP port.
 2. Opens one shared IPC connection.
-3. Reads and validates server identity and protocol-1 capabilities through `GET_SERVER_INFO`.
+3. Reads and validates server identity and protocol-2 capabilities through `GET_SERVER_INFO`.
 4. Attaches the backend debugger and loads the companion ELF.
 5. Opens the emulator display panel on that shared session.
 6. Configures source and instruction breakpoints before running.
 
-Servers must implement `GET_SERVER_INFO` and protocol version 1. Debug sessions additionally require advertised debugger support, stack-sample schema 1, and the required debugger commands. Structured server error codes are preserved for diagnostics.
+Servers must implement `GET_SERVER_INFO` and protocol version 2. Every session requires `GET_FRAME_RAW` and raw-frame schema 1. Debug sessions additionally require advertised debugger support, stack-sample schema 1, and the required debugger commands. Structured server error codes are preserved for diagnostics.
+
+Display frames use the schema-1 `V6RF` binary envelope. Frame and error responses share this format, so transient `FRAME_UNAVAILABLE` responses are consumed without desynchronizing or closing the IPC connection.
 
 Closing the display panel terminates the active debug launch and closes the Run and Debug session. Ending a launch session terminates its emulator process and closes the display panel.
 
