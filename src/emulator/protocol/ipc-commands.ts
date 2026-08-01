@@ -33,6 +33,7 @@ export const enum IpcCommand {
     GET_MEM_STRING_GLOBAL = 16,
     GET_WORD_STACK = 17,
     GET_STACK_SAMPLE = 18,
+    GET_MEM = 93,
     SET_MEM = 42,
     SET_BYTE_GLOBAL = 43,
 

@@ -1,0 +1,24 @@
+* { box-sizing: border-box; }
+body { margin: 0; height: 100vh; display: flex; flex-direction: column; color: var(--vscode-foreground); background: var(--vscode-sideBar-background); font-family: var(--vscode-font-family); }
+.controls { display: grid; gap: 4px; padding: 6px; border-bottom: 1px solid var(--vscode-panel-border); }
+input, select { width: 100%; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); padding: 4px 6px; }
+input.invalid { border-color: var(--vscode-inputValidation-errorBorder); }
+#status { min-height: 22px; padding: 4px 6px; color: var(--vscode-descriptionForeground); }
+#header, .row { display: grid; grid-template-columns: 42px max-content minmax(90px, 1fr); column-gap: 8px; align-items: center; font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); }
+#header { height: 24px; padding: 0 6px; position: sticky; top: 0; z-index: 2; color: var(--vscode-descriptionForeground); background: var(--vscode-sideBar-background); border-bottom: 1px solid var(--vscode-panel-border); }
+#viewport { flex: 1; min-height: 0; overflow: auto; position: relative; outline: none; }
+#rows { position: relative; height: 98304px; }
+.row { position: absolute; left: 0; right: 0; height: 24px; padding: 0 6px; }
+.row.hovered { background: var(--vscode-list-hoverBackground); }
+.address { color: var(--vscode-descriptionForeground); }
+.bytes { display: grid; grid-template-columns: repeat(16, 2ch); gap: 1ch; }
+.byte { border: 0; padding: 2px 0; min-width: 2ch; color: inherit; background: transparent; font: inherit; text-align: center; }
+.byte:hover, .byte:focus, .byte.selected { color: var(--vscode-list-activeSelectionForeground); background: var(--vscode-list-activeSelectionBackground); outline: 1px solid var(--vscode-focusBorder); }
+.byte.match { background: var(--vscode-editor-findMatchHighlightBackground); }
+.symbols { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.symbol { border: 0; padding: 0 4px; color: var(--vscode-textLink-foreground); background: transparent; font: inherit; cursor: pointer; }
+#menu { position: fixed; z-index: 10; min-width: 140px; padding: 3px; background: var(--vscode-menu-background); color: var(--vscode-menu-foreground); border: 1px solid var(--vscode-menu-border); box-shadow: 0 2px 8px var(--vscode-widget-shadow); }
+#menu button { display: block; width: 100%; padding: 4px 8px; border: 0; text-align: left; color: inherit; background: transparent; }
+#menu button:hover, #menu button:focus { background: var(--vscode-menu-selectionBackground); color: var(--vscode-menu-selectionForeground); outline: none; }
+#menu button:disabled { opacity: .55; }
+@media (max-width: 430px) { #header, .row { grid-template-columns: 42px max-content; } .symbols { grid-column: 2; font-family: var(--vscode-font-family); font-size: 11px; } }

@@ -92,22 +92,22 @@ Rules:
 - Ranges are inclusive at both ends and must remain in one selected 64 KiB bank.
 - Both endpoints must resolve to `0x0000..0xFFFF`, and start must be less than or equal to end.
 - Symbol matching is exact and case-sensitive first. A unique case-insensitive match may be offered as a suggestion, but ambiguous matches are an error with candidate names.
-- Symbols are scoped to Main RAM unless metadata explicitly carries a RAM-disk space. Selecting an unsupported bank disables symbol resolution while numeric navigation continues to work.
+- Version 1 symbols are scoped to Main RAM because the current debug metadata contains only 16-bit CPU addresses and no RAM-disk identity. Selecting any RAM-disk bank disables symbol search and **Find in Source** while numeric navigation continues to work. Duplicate symbol names are presented as candidates and are never resolved by silently choosing one.
 - An empty input clears search highlighting without moving the viewport.
 - Invalid or incomplete text keeps the last valid viewport and highlight, shows VS Code validation styling, and never sends a memory request.
+- Clicking a rendered symbol places its name in the search field and highlights its known extent without scrolling the viewport. Hovering a symbol shows its associated CPU address.
 
-The explicit `..` delimiter avoids ambiguity with symbol characters and leaves room for future expression support. Arithmetic such as `symbol+4` and byte-pattern search are out of scope until a versioned expression grammar is designed.
+The explicit `..` delimiter avoids ambiguity with symbol characters and leaves room for future expression support. A range is only a client-side navigation and highlighting feature: it never determines the server read length or refresh scope. Server communication always depends exclusively on the currently visible rows. Arithmetic such as `symbol+4` and byte-pattern search are out of scope until a versioned expression grammar is designed.
 
 ### 3.4 Incremental Navigation
 
 On every input event:
 
-1. Send the current input to the extension host immediately, without a debounce interval.
-2. Parse and resolve the query immediately in the extension host.
-3. Immediately update validation state.
-4. For a valid query, scroll the first address into view, update the range highlight, and request any missing bytes in the new visible interval.
+1. Send the current input to the extension host and parse it immediately.
+2. Update validation state immediately.
+3. After a short 75 ms trailing delay, resolve a valid query, scroll its first address into view, update the address/range highlight, and request the new visible rows.
 
-Do not debounce query evaluation or wait for `Enter`. Request coalescing and a monotonically increasing generation prevent rapid typing from growing the IPC queue or applying obsolete results. The view discards responses whose generation, bank, or session ID no longer matches current state. A query change must never fetch bytes outside the resulting visible interval or the entire 64 KiB bank.
+Do not wait for `Enter`; the delay exists only to avoid unnecessary viewport reads while the user is still typing. Use one replaceable timer rather than a general-purpose request scheduler. If another input event arrives before the timer fires, replace the pending query. The view discards responses whose bank or session ID no longer matches current state. A query change reads the same visible rows as scrolling would; the query range never becomes a memory-read request.
 
 Pressing `Enter` commits a valid non-empty query to history. Deduplicate consecutive identical entries and cap workspace history at 50 entries. `ArrowUp` and `ArrowDown` traverse older and newer committed queries only while focus is in the search input, matching VS Code search-field behavior. Editing after history navigation creates a draft; `Escape` restores the draft or clears the active highlight when no draft exists. History is stored in `ExtensionContext.workspaceState`, never project files.
 
@@ -121,18 +121,18 @@ Pressing `Enter` commits a valid non-empty query to history. Deduplicate consecu
 - Current PC: a distinct outline in Main RAM only, when available.
 - Symbol extent: subtle secondary decoration that must not obscure search or PC state.
 - Hovering a byte highlights both its table row and that byte. The byte highlight has stronger contrast than the row highlight and must remain distinguishable from search/range, PC, and symbol decorations.
-- The byte hover/focus tooltip uses the text `Address: 0xNNNN, char: C`, with an uppercase zero-padded address. `C` is the printable ASCII character for byte values `0x20..0x7E`; use `.` for non-printable bytes. Escape characters that would otherwise be interpreted as markup.
+- The byte hover/focus tooltip uses the text `Address: 0xNNNN, char: C`, with an uppercase zero-padded address. For `0x21..0x7E`, `C` is the literal printable ASCII character; represent `0x20` as `space` and other values as `.`. Set tooltip content through DOM `textContent`, never `innerHTML`, so quotes, backslashes, and markup-sensitive characters remain literal text.
 
 The grid supports keyboard focus by byte: arrow keys move one byte/row, `PageUp`/`PageDown` move by the visible page, `Home`/`End` move to row or bank boundaries using standard modifier behavior. Use a roving `tabindex`, meaningful ARIA row/column labels, and theme tokens for normal, high-contrast, and reduced-motion environments.
 
 ### 3.6 Context Menu and Source Navigation
 
-Right-clicking a byte cell or symbol entry opens a compact context menu anchored to the target. Keyboard users can open the same menu with the Context Menu key or `Shift+F10`. The target remains highlighted while the menu is open.
+Right-clicking a byte cell or symbol entry opens a custom DOM context menu inside the webview, anchored to the target. VS Code does not expose native context-menu contributions for arbitrary webview DOM elements. The custom menu uses `role="menu"`/`role="menuitem"`, managed focus, and arrow-key navigation. Keyboard users can open it with the Context Menu key or `Shift+F10`. The target remains highlighted while the menu is open, and focus returns to it when the menu closes.
 
 The menu contains:
 
 - **Copy**: for a byte, copy its displayed uppercase two-digit hexadecimal value without a prefix (for example, `7F`); for a symbol, copy the symbol name exactly as displayed. Perform the clipboard write in the extension host through `vscode.env.clipboard.writeText`, not through browser clipboard permissions.
-- **Find in Source**: resolve the target address through `DebugSymbolService`/`DebugIndex.resolveAddress`. For a symbol, use its start address; for a byte, use the byte address. When a source location exists, open the related source file with `vscode.window.showTextDocument`, reveal the metadata line, and place the editor selection at the metadata column when available. Keep the item visible but disabled with the reason `Source location unavailable` when debug metadata is absent, stale, bank-incompatible, or has no row for the address.
+- **Find in Source**: available only for Main RAM and only when `DebugSymbolService`/`DebugIndex.resolveAddress` returns an exact DWARF row for the target address. For a symbol, use its start address; for a byte, use the byte address. Open the related source file with `vscode.window.showTextDocument`, reveal the metadata line, and place the editor selection at the metadata column when available. Do not fall back to an enclosing symbol. Keep the item visible but disabled with the reason `Source location unavailable` for RAM-disk banks or when debug metadata is absent, stale, ambiguous, or has no exact row for the address.
 
 Close the menu on action, `Escape`, focus loss, scrolling, bank change, or session change. Context-menu messages carry the session ID, memory-space identity, address, and optional symbol identity; the extension host validates all fields and re-resolves source metadata rather than trusting a webview-supplied file path or line number. Source navigation is supported only for memory spaces explicitly represented by the loaded debug metadata.
 
@@ -155,7 +155,7 @@ flowchart LR
 
 **`EmulatorSessionCoordinator`** is the extension-wide authority for session identity, execution state, negotiated capabilities, stop/write invalidation events, and access to the shared `IpcClient`. Introduce this boundary before adding another direct lifecycle/client consumer. It prevents the Hex Viewer, Hardware Statistics, display panel, and DAP adapter from independently inferring state.
 
-**`MemoryService`** owns bank validation, protocol translation, chunking, bounds checks, coherent-read policy, caching, and cancellation generations. It exposes a typed API such as:
+**`MemoryService`** owns bank validation, protocol translation, viewport reads, bounds checks, coherent-read policy, and the full session memory cache. It exposes a typed API such as:
 
 ```ts
 interface MemorySpace {
@@ -173,7 +173,7 @@ interface MemoryReadResult {
 }
 ```
 
-**`DebugSymbolService`** owns the latest validated artifact and exposes immutable query methods to all extension features. The current `DebugIndex` is private to `V6DebugAdapter`; do not reach into the adapter. Extend the index with ordered/range queries (`symbolsInRange(start, end)`) and explicit symbol-space metadata. Loading remains atomic: consumers see either the previous complete index or the new complete index.
+**`DebugSymbolService`** owns the latest validated artifact and exposes immutable query methods to all extension features. The current `DebugIndex` is private to `V6DebugAdapter`; do not reach into the adapter. Extend it with ordered Main-RAM range queries (`symbolsInRange(start, end)`) and duplicate-name candidate results without changing existing DAP lookups. Loading remains atomic: consumers see either the previous complete index or the new complete index. Bank-aware symbols are a future metadata feature, not inferred in version 1.
 
 **`AddressQueryParser`** is pure TypeScript with no VS Code or DOM dependencies. It returns a discriminated result for empty, incomplete, invalid, address, and range input. Symbol resolution is a separate step so parser tests do not require an ELF fixture.
 
@@ -212,51 +212,43 @@ Keep virtualization calculations in a DOM-independent module so row-window behav
 
 ## 5. Emulator Protocol Contract
 
-Do not build the viewer on repeated `GET_BYTE_RAM` calls or the undocumented shape of `GET_MEM_STRING_GLOBAL`. Add a validated bulk-memory contract to v6emul and negotiate it through `GET_SERVER_INFO`.
+Do not build the viewer on repeated `GET_BYTE_RAM` calls or the undocumented shape of `GET_MEM_STRING_GLOBAL`. Use the validated `GET_MEM` command advertised through `GET_SERVER_INFO`.
 
-Preferred request:
+Request:
 
 ```text
-READ_MEMORY {
-  space: { kind: "main" }
-       | { kind: "ramDisk", disk: 1..8, bank: 0..3 },
-  offset: 0..65535,
-  length: 1..4096
+GET_MEM {
+  addr: uint32,
+  len: uint32
 }
 ```
 
-Preferred response:
+Response:
 
 ```text
 {
-  offset: number,
-  data: binary,
-  unreadableBytes: number,
-  snapshotId?: number
+  addr: uint32,
+  data: byte[]
 }
 ```
 
-Capability metadata must include:
+Global memory mapping:
 
-- `memoryReadSchema` version.
-- Maximum read length and maximum payload size.
-- Main-memory availability.
-- RAM-disk count, banks per disk, and bytes per bank.
-- Whether reads while running are coherent.
-- Whether a monotonic memory/snapshot generation is available.
+- Main RAM is `0x00000..0x0FFFF`.
+- RAM Disk 1 / Bank 0 is `0x10000..0x1FFFF`.
+- The remaining 31 RAM-disk banks occupy consecutive 64 KiB intervals in disk-major, bank-minor order.
 
 Backend requirements:
 
-- Validate every field and reject malformed, fractional, negative, overflowing, or cross-bank requests with structured errors.
-- Never wrap a bulk read at `0xFFFF`; return partial data plus `unreadableBytes` or reject consistently.
-- Return MessagePack binary, not arrays of JSON numbers.
+- Validate every field and reject malformed, fractional, negative, zero-length, overflowing, or out-of-global-memory requests with structured errors.
+- Never wrap at the end of global memory.
+- Return the requested bytes in address order.
 - Contain all dispatch exceptions at the IPC boundary so an invalid viewer request cannot terminate emulation.
-- Define whether a read is an atomic snapshot. If coherent live reads are not guaranteed, permit reads only while paused and show cached paused data while running.
 - Add native boundary, malformed-input, running-state, reconnect, and all-bank mapping tests.
 
-The extension must check the command and schema capability before enabling the grid. An older emulator shows an actionable message containing the executable path/version and required protocol version; it must not silently fall back to thousands of single-byte requests.
+The extension must check command `93` before enabling the grid. An older emulator shows an actionable message containing the emulator version and required command; it must not silently fall back to thousands of single-byte requests.
 
-Memory requests use `normal` IPC priority. Debug control and stop detection remain `critical`/`high`; display frames remain `low`. Coalesce overlapping pending reads and allow at most one queued Hex Viewer request behind the active request so rapid scrolling cannot starve debugger traffic.
+Memory requests use `normal` IPC priority. Debug control and stop detection remain `critical`/`high`; display frames remain `low`. A visible viewport is normally about 1 KiB and typing is low-frequency, so version 1 uses the existing serialized IPC queue. The 75 ms search delay prevents avoidable intermediate requests. Do not add a separate scheduler unless measurement shows sustained queue growth or debug-control latency.
 
 ## 6. Data Loading and Virtualization
 
@@ -264,17 +256,16 @@ Render only visible rows plus a bounded overscan, initially 8 rows above and bel
 
 Use fixed row height measured once from VS Code font variables, with a top spacer, rendered row window, and bottom spacer. Recalculate on resize and font/theme changes without moving the selected address.
 
-Read only the address interval currently visible in the UI. Align or split wire requests within that interval as required by the backend, but do not expand a server request into overscan, prefetch, near-viewport, or full-bank data. Overscan rows render from existing cache entries or placeholders until they become visible.
+The client maintains a complete cache for Main RAM and all 32 RAM-disk banks: 33 fixed 65,536-byte value buffers plus validity state. Raw byte storage is 2,162,688 bytes (about 2.1 MiB), which is small enough to keep for the active session and substantially simplifies rendering and bank changes. Cache allocation does not cause memory reads.
 
-Use chunks no larger than 256 bytes initially, configurable internally up to the backend maximum:
+Read exactly the address interval currently visible in the UI as one bulk request when it is within the backend's negotiated maximum. Split only when the visible interval exceeds that maximum, and keep every subrequest within the visible interval. Do not align requests outward and do not request overscan, prefetch, search-range, near-viewport, or full-bank data.
 
-- Cache key: session ID, memory space, aligned chunk start, snapshot generation.
-- Cache previously visible chunks within a bounded budget; target maximum 64 KiB per active bank and 256 KiB total. Cache retention must never trigger a server read.
-- Clear session cache on disconnect/reconnect and capability change.
-- Invalidate affected chunks on memory-write events.
-- Refresh all visible chunks on a new paused snapshot.
-- While emulation is running and the view is visible, request the visible interval once every second. Do not poll hidden or overscan data. If coherent live reads are not advertised, retain and label the last coherent snapshot as stale rather than presenting mixed-time bytes as current.
-- On hide, stop polling and cancel future queued reads. On reveal, fetch only the visible window.
+- Copy successful response bytes into their absolute offsets in the selected bank's cache and mark those offsets valid.
+- Render visible valid bytes from the cache; render unavailable placeholders for visible offsets not yet read. Render overscan from cache only.
+- Clear cache validity on session disconnect/reconnect or capability/geometry change. The fixed value buffers may be reused after validity is cleared.
+- On a new paused snapshot, refresh only the visible interval.
+- While emulation is running and the view is visible, request the visible interval once every second. Do not poll hidden, overscan, search-range, or non-selected-bank data. If coherent live reads are not advertised, retain and label the last coherent cache values as stale.
+- On hide, stop polling. On reveal, fetch only the visible interval.
 
 Send bytes to the webview as transferable/binary typed arrays where supported. Never expand bytes to hexadecimal strings in extension-host messages; formatting belongs in the renderer.
 
@@ -293,13 +284,13 @@ Viewer states:
 - **No session:** controls remain visible; grid states that no emulator session is active.
 - **Connecting:** preserve navigation state and show progress without clearing the grid prematurely.
 - **Ready/paused:** current snapshot, search, symbols, and PC decorations are active.
-- **Running/coherent:** visible chunks update at the bounded rate and are labeled live.
+- **Running/coherent:** the visible interval updates once per second and is labeled live.
 - **Running/non-coherent:** last paused snapshot remains visible and is labeled stale.
 - **Unsupported backend:** explain the minimum required emulator/protocol capability.
 - **Read failure:** retain the previous good data, mark the affected rows unavailable, log structured context, and provide a Refresh command.
 - **Disconnected:** reject stale responses, clear session-owned cache, retain only navigation preferences.
 
-One failed chunk must not blank the entire view. Retry only on explicit refresh, a new stop snapshot, or bounded exponential backoff for transient transport errors; never create a tight retry loop.
+One failed visible-interval read or subrequest must not blank previously cached data. Retry only on explicit refresh, a new stop snapshot, the next one-second refresh, or bounded exponential backoff for transient transport errors; never create a tight retry loop.
 
 ## 8. VS Code Contributions
 
@@ -308,7 +299,7 @@ Add to `package.json`:
 - `views.debug`: `v6.hexViewer`, type `webview`, name `V6 Hex Viewer`.
 - `v6.refreshHexViewer` command with `$(refresh)` icon in `view/title`.
 - Optional `v6.focusHexViewerSearch` command after the initial release if a reliable webview-focus handoff is verified.
-- `onView:v6.hexViewer` activation event only if required by the supported VS Code engine; retain workspace/debug activation for shared services.
+- `onView:v6.hexViewer` activation event so opening the view activates its provider before any Run Project or debug action.
 
 Register the provider and command in `src/extension.ts` through the existing `DisposableStore`. Use `WebviewViewProviderOptions.retainContextWhenHidden` only after measuring memory cost; correctness must not depend on retained DOM state because state is owned by the extension host and `workspaceState`.
 
@@ -329,7 +320,7 @@ Use a CSP nonce, no inline executable script, `localResourceRoots`, and VS Code 
 
 1. Introduce `EmulatorSessionCoordinator` without changing existing behavior.
 2. Add typed capability storage and memory-space models.
-3. Implement `MemoryService` with validation, aligned chunking, stale-generation rejection, and bounded cache.
+3. Implement `MemoryService` with validation, viewport-only bulk reads, and the complete 33-bank session cache with per-byte validity state.
 4. Extract artifact ownership into `DebugSymbolService`; preserve all DAP breakpoint behavior.
 5. Add `symbolsInRange` and duplicate-name handling to `DebugIndex`.
 
@@ -369,11 +360,11 @@ Only after read-only telemetry is stable, consider byte editing while paused. It
 - Inclusive range length and row/byte highlight boundaries.
 - History traversal, draft restoration, deduplication, and 50-entry eviction.
 - All 33 memory-space identities and rejection of invalid disk/bank combinations.
-- Chunk alignment at `0x0000`, viewport boundaries, and `0xFFFF`.
+- Full-cache indexing for Main RAM and all 32 RAM-disk banks, validity clearing, viewport boundaries, and `0xFFFF`.
 - Virtual windows at first row, middle, final row, resize, and overscan limits.
-- Request-generation rejection after search, bank, session, and visibility changes.
+- Replacement of a pending delayed search, plus stale-response rejection after bank, session, and visibility changes.
 - Symbol ordering, duplicate addresses, zero-size symbols, and range intersections.
-- Hover row/byte state and printable/non-printable tooltip formatting, including escaped markup characters.
+- Hover row/byte state and tooltip formatting for printable characters, `space`, non-printable values, quotes, backslashes, and markup-sensitive characters through `textContent`.
 - Context-menu target retention, byte/symbol Copy payloads, and close conditions.
 - `Find in Source` resolution for exact rows, unavailable metadata, stale sessions, incompatible banks, and metadata columns.
 
@@ -410,17 +401,18 @@ Only after read-only telemetry is stable, consider byte editing while paused. It
 - Up/Down history navigation survives view recreation within the workspace.
 - The grid displays `00..0F`, `0000..FFF0`, byte values, and address-associated symbols correctly.
 - Search/range, PC, and symbol decorations remain distinguishable in default dark, default light, and high-contrast themes.
-- Hovering or keyboard-focusing a byte highlights its row and the byte and shows `Address: 0xNNNN, char: C`, using `.` for non-printable values.
-- Right-clicking a byte or symbol exposes **Copy** and **Find in Source**. Copy writes the specified byte value or symbol name; Find in Source opens and selects the metadata-backed source line when available and is visibly disabled otherwise.
+- Hovering or keyboard-focusing a byte highlights its row and the byte and shows `Address: 0xNNNN, char: C`; `C` is literal printable ASCII, `space` for `0x20`, or `.` for other values, rendered through `textContent`.
+- Right-clicking a byte or symbol opens the accessible custom webview menu with **Copy** and **Find in Source**. Copy writes the specified byte value or symbol name; Find in Source opens an exact Main-RAM metadata row and is visibly disabled for RAM-disk banks or unavailable metadata.
 
 ### Performance
 
-- Opening, scrolling, resizing, searching, and periodic refresh fetch only bytes currently visible in the UI; no server request includes overscan, prefetch, near-viewport, or full-bank data.
+- Opening, scrolling, resizing, searching, and periodic refresh fetch only bytes currently visible in the UI; no server request includes overscan, prefetch, search-range, near-viewport, non-selected-bank, or full-bank data.
 - The DOM contains no more than visible rows plus configured overscan, never all 4,096 rows.
-- A 256-byte local read completes within 50 ms at p95 while display polling is active.
-- Every search-field input event is evaluated immediately without debounce or `Enter`; search-to-highlight latency is under 100 ms at p95 when required bytes are cached and under 200 ms at p95 for a local uncached read.
+- A visible-interval read of up to 1 KiB completes within 100 ms at p95 while display polling is active.
+- Every search-field input event is parsed immediately without `Enter`; a 75 ms trailing delay may precede navigation, highlighting, and the resulting visible-interval read.
 - While emulation is running and the view is visible, visible bytes are requested on a one-second cadence, with no overlapping Hex Viewer refresh requests.
-- Rapid scrolling does not grow the IPC queue without bound, allocate more than the cache budget, or delay debug control beyond existing tolerances.
+- The complete cache contains all 33 address spaces for the active session, while server traffic remains limited to the selected bank's visible interval.
+- Rapid scrolling does not grow the IPC queue without bound or delay debug control beyond existing tolerances; add a dedicated request scheduler only if measurements show this simple model is insufficient.
 
 ### Reliability and Operations
 
@@ -443,10 +435,10 @@ Only after read-only telemetry is stable, consider byte editing while paused. It
 |---|---|---|
 | RAM-disk mapping is inferred incorrectly | Viewer shows plausible but wrong data | Typed space identity, backend-owned mapping, all-bank sentinel tests |
 | Existing memory command is used without a schema | Crashes, truncation, version drift | New capability-gated bulk contract and boundary validation |
-| Shared serialized IPC is flooded by scrolling | Debug actions and frames become sluggish | Bounded request concurrency, coalescing, priorities, visibility gating |
+| Shared serialized IPC is delayed by repeated viewport changes | Debug actions and frames become sluggish | 75 ms search delay, existing priorities, visibility gating, and measurement before adding a scheduler |
 | DAP privately owns symbols | Viewer and debugger disagree or duplicate loading | Shared immutable `DebugSymbolService` |
 | Full-bank DOM/rendering | High memory and poor sidebar responsiveness | Fixed-row virtualization and bounded overscan |
-| Late responses overwrite current state | Cross-bank or cross-session data corruption in UI | Session/bank/query generations checked on both sides |
+| Late responses overwrite current state | Cross-bank or cross-session data corruption in UI | Session and bank identity checked before cache updates |
 | Live reads are not coherent | Mixed-time snapshots mislead debugging | Capability-driven paused snapshots and explicit stale labeling |
 | Scope expands into editing too early | Unsafe writes and unclear undo behavior | Ship read-only; require a separate editing design and capability |
 
@@ -462,3 +454,36 @@ These must be answered in Phase 0 and recorded in protocol documentation:
 6. Does the packaged backend support MessagePack binary payloads for the chosen response envelope?
 
 None of these questions block the query parser, virtualizer, or view shell, but the production grid must not ship until memory-space identity and coherence semantics are verified end to end.
+
+## 14. Implementation Checklist
+
+### Protocol and Memory
+
+- [x] Add typed `GET_MEM` global-memory request and response models in the extension.
+- [x] Retain negotiated server capabilities for the active emulator session.
+- [x] Implement the 33-space memory cache with per-byte validity state.
+- [x] Implement viewport-only reads, one-second visible refresh, and stale-response rejection.
+- [x] Show an actionable unsupported-backend state when bulk bank-aware reads are unavailable.
+- [x] Use the packaged v6emul `GET_MEM` command and command advertisement.
+
+### Query and Symbols
+
+- [x] Implement and unit-test the address/range parser and 75 ms delayed navigation model.
+- [x] Add duplicate-aware symbol lookup and ordered Main-RAM range queries.
+- [x] Share validated debug metadata outside the DAP adapter without exposing adapter internals.
+- [x] Restrict symbol search and exact **Find in Source** navigation to Main RAM.
+
+### View and Interaction
+
+- [x] Contribute and register the `v6.hexViewer` `WebviewView` and refresh command.
+- [x] Implement the bank selector, search history, virtualized 16-byte grid, symbols, and highlights.
+- [x] Implement byte hover tooltips and the accessible custom context menu.
+- [x] Implement extension-host clipboard and exact source-navigation actions.
+- [x] Persist navigation preferences and stop all refresh work while hidden or disposed.
+
+### Verification and Documentation
+
+- [ ] Add remaining unit tests for viewport calculations and browser interaction behavior.
+- [ ] Add provider/message tests for stale sessions, invalid messages, and unsupported capabilities.
+- [ ] Resolve the two existing ELF fixture expectations so the full unit suite is green; compile, lint, focused Hex Viewer tests, packaging, and regression tests pass.
+- [x] Update architecture, emulator, debugging, and command documentation.

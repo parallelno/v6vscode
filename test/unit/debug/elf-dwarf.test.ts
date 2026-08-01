@@ -189,6 +189,25 @@ describe('readSLEB128', () => {
             expect(sym.name).to.be.a('string').with.length.greaterThan(0);
         }
     });
+
+    it('resolves the fill_random function symbol from demo1 metadata', () => {
+        expect(index.symbol('fill_random')).to.include({
+            name: 'fill_random',
+            address: 0x0141,
+            size: 27,
+        });
+    });
+
+    it('returns symbols in an inclusive range without losing duplicate-name candidates', () => {
+        const duplicateIndex = buildDebugIndex([], [
+            { name: 'value', value: 0x0100, size: 1, type: 1, binding: 0, section: 1 },
+            { name: 'value', value: 0x0110, size: 1, type: 1, binding: 0, section: 1 },
+        ], '');
+
+        expect(duplicateIndex.symbol('value')).to.equal(undefined);
+        expect(duplicateIndex.symbols('value').map(symbol => symbol.address)).to.deep.equal([0x0100, 0x0110]);
+        expect(duplicateIndex.symbolsInRange(0x0108, 0x0110).map(symbol => symbol.address)).to.deep.equal([0x0110]);
+    });
 });
 
 (ELF_EXISTS ? describe : describe.skip)('Debug artifact loader against demo1.elf', () => {

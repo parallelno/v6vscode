@@ -9,7 +9,8 @@ Launches the `v6emul` backend, communicates over TCP using length-prefixed Messa
 
 ## Protocol (`src/emulator/protocol/`)
 
-- **`ipc-commands.ts`** — `IpcCommand` enum mapping all v6emul command IDs (PING, RUN, STOP, EXIT, LOAD_ROM, MOUNT_FDD, KEY_HANDLING, etc.). Typed request/response interfaces. `SPEED_VALUES` mapping from user strings to IPC integers.
+- **`ipc-commands.ts`** — `IpcCommand` enum mapping all v6emul command IDs (PING, RUN, STOP, EXIT, LOAD_ROM, MOUNT_FDD, KEY_HANDLING, GET_MEM, etc.). Typed request/response interfaces. `SPEED_VALUES` mapping from user strings to IPC integers.
+- **`memory-models.ts`** — Typed request and response models for bulk reads from the emulator's linear global memory address space.
 - **`ipc-codec.ts`** — `encodeRequest(cmd, data)` produces length-prefixed MessagePack buffers. `decodeResponse(buffer)` parses responses. `decodeFrameRaw(buffer)` handles the binary GET_FRAME_RAW format (width, height, ABGR pixels). `frameLength(buffer)` checks if a complete frame is available.
 
 ## Client (`src/emulator/client/`)
@@ -35,6 +36,12 @@ During a debug launch the panel uses the lifecycle's existing connection. It doe
 ## Hardware Statistics
 
 `V6 Hardware Statistics` is contributed to the Run and Debug sidebar. It refreshes registers, flags, execution counters, and display state whenever the shared session pauses. While running it keeps the last snapshot and reports that values refresh on pause. The view title provides a manual refresh command. Pausing no longer opens a CPU-statistics editor tab.
+
+## Hex Viewer
+
+`V6 Hex Viewer` is contributed to the Run and Debug sidebar and uses the lifecycle's shared IPC connection. It provides Main RAM and negotiated RAM-disk banks as separate 64 KiB spaces. The client allocates a complete 33-space cache but reads only the selected bank interval currently visible in the virtualized grid. While running and visible, coherent backends refresh that interval once per second; non-coherent backends retain and label the last paused values.
+
+The view requires `GET_MEM` command `93` in `GET_SERVER_INFO`. Main RAM starts at global address `0x00000`; RAM Disk 1 / Bank 0 starts at `0x10000`, and each subsequent bank occupies the next 64 KiB interval. Without command 93 the view shows an unsupported-backend state and sends no legacy per-byte requests.
 
 ## FPS Counter
 

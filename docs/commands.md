@@ -27,6 +27,10 @@ Templates live in `src/templates/` and use `{{key}}` placeholder expansion.
 4. If no emulator is running — launches via `EmulatorLifecycle.start()`.
 5. Reveals or creates the emulator webview panel.
 
+## V6: Refresh Hex Viewer
+
+Refreshes the currently visible address interval in the selected Hex Viewer memory space. The command is available from the `V6 Hex Viewer` title bar in Run and Debug. It requires an active emulator that advertises `GET_MEM` command 93; hidden views do not poll or refresh.
+
 ## FDD Persistence
 
 When the emulator stops (or the panel closes), if the loaded executable is a `.fdd` file:

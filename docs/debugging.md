@@ -43,6 +43,7 @@ Closing the display panel terminates the active debug launch and closes the Run 
 - Registers, flags, and a raw stack sample in Variables.
 - Register names and numeric literals in Watch/evaluate.
 - V6 Hardware Statistics in the Run and Debug sidebar.
+- A read-only V6 Hex Viewer with numeric, symbol, and inclusive-range navigation when the backend advertises `GET_MEM` command 93. Inclusive ranges accept `11-14` and `11..14`. Clearing the search clears its highlight; clicking a visible symbol selects its range without scrolling.
 
 Verified source breakpoints show their resolved CPU address in the breakpoint tooltip.
 
@@ -52,11 +53,11 @@ Source breakpoints remain unverified when the ELF is missing, malformed, or does
 
 ## Current Limitations
 
-The backend does not yet expose reliable stop records, watchpoint hit identity, or bulk global-memory operations. Consequently:
+The backend does not yet expose reliable stop records or watchpoint hit identity. Consequently:
 
 - Stop reasons can be inferred but are not authoritative for every stop cause.
 - DAP data breakpoints are not enabled.
-- The Hex Viewer is not implemented.
+- The Hex Viewer reports an unsupported backend instead of falling back to repeated per-byte requests when `GET_MEM` is unavailable.
 - Semantic caller frames, C locals, and Step Out require variable-location and unwind metadata not currently emitted by the toolchain.
 - Debug attach does not yet share an externally owned emulator session with the display panel.
 

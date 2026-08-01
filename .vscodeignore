@@ -1,5 +1,7 @@
 # Source — compiled output in out/ is shipped instead
 src/**
+!src/emulator/panel/assets/**
+!src/debug/views/assets/**
 
 # Tests, design docs, temp files
 test/**

@@ -50,6 +50,12 @@ export interface DebugIndex {
     /** Symbol by name. */
     symbol(name: string): SymbolInfo | undefined;
 
+    /** All exact-name symbols; duplicate names are preserved. */
+    symbols(name: string): ReadonlyArray<SymbolInfo>;
+
+    /** Symbols whose start address is within the inclusive range. */
+    symbolsInRange(start: number, end: number): ReadonlyArray<SymbolInfo>;
+
     /** Enclosing function/object symbol for a CPU address. */
     symbolAtAddress(address: number): SymbolInfo | undefined;
 }
@@ -103,13 +109,15 @@ export function buildDebugIndex(
     const sourceFiles = [...new Set(normalizedRows.map(r => r.file))].sort();
 
     // ---- Symbol indexes ----
-    const symbolByName = new Map<string, SymbolInfo>();
+    const symbolsByName = new Map<string, SymbolInfo[]>();
     const symbolsByAddr: SymbolInfo[] = [];
     for (const s of symbols) {
         if (!s.name || s.value === 0) { continue; }
         if (s.type !== STT_FUNC && s.type !== STT_OBJECT) { continue; }
         const info: SymbolInfo = { name: s.name, address: s.value, size: s.size, type: s.type, binding: s.binding };
-        symbolByName.set(s.name, info);
+        const named = symbolsByName.get(s.name) ?? [];
+        named.push(info);
+        symbolsByName.set(s.name, named);
         symbolsByAddr.push(info);
     }
     symbolsByAddr.sort((a, b) => a.address - b.address);
@@ -147,7 +155,17 @@ export function buildDebugIndex(
         },
 
         symbol(name) {
-            return symbolByName.get(name);
+            const matches = symbolsByName.get(name);
+            return matches?.length === 1 ? matches[0] : undefined;
+        },
+
+        symbols(name) {
+            return symbolsByName.get(name) ?? [];
+        },
+
+        symbolsInRange(start, end) {
+            if (start > end) { return []; }
+            return symbolsByAddr.filter(symbol => symbol.address >= start && symbol.address <= end);
         },
 
         symbolAtAddress(address) {

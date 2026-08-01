@@ -187,7 +187,7 @@ This backend addition is not required to detect that execution stopped: v6vscode
 
 Add bulk memory operations:
 
-- `READ_MEMORY_GLOBAL { globalAddr, length } -> { address, data, unreadableBytes }` using MessagePack binary.
+- `GET_MEM { addr, len } -> { addr, data }` using command 93 and the emulator's linear global memory address space.
 - `WRITE_MEMORY_GLOBAL { globalAddr, data } -> { bytesWritten }`.
 - Optional `GET_MEMORY_ACCESS_HISTORY { globalAddr, length }` for read/write overlays.
 
@@ -465,31 +465,28 @@ Test boundary-crossing ranges, word accesses split across an instruction, overla
 
 ### Step 3.14 - Implement DAP memory support and the Hex Viewer [ ]
 
-Implement DAP `readMemory` and `writeMemory` using bulk backend operations:
+The authoritative Hex Viewer design is `hex-viewer-panel-plan.md`. Implement the initial viewer as read-only. Byte editing and DAP `writeMemory` belong to the separate future editing phase defined there and require a validated backend write protocol.
+
+Implement DAP `readMemory` using bulk backend operations:
 
 - Parse versioned memory references rather than raw unchecked strings.
 - Support main RAM and all RAM-disk/global spaces.
-- Return unreadable byte counts and partial writes correctly.
-- Require paused state for edits by default; allow coherent live reads only if the backend capability guarantees them.
-- Invalidate relevant Variables and custom views after writes.
+- Return unreadable byte counts correctly.
+- Allow coherent live reads only if the backend capability guarantees them.
 
-Contribute a `V6 Hex Viewer` webview view to the built-in Run and Debug container. Reproduce the useful Devector behavior in VS Code terms:
+Contribute the `V6 Hex Viewer` webview view to the built-in Run and Debug container according to `hex-viewer-panel-plan.md`. In summary:
 
-- Stable compact toolbar with memory-space/bank selector, address input, previous/next page, refresh, and follow-PC toggle.
-- 16-byte rows with address, uppercase hex bytes, and printable ASCII.
-- Search/go-to address with range validation.
-- Keyboard-accessible byte selection and editing while paused.
-- Highlight current PC and externally selected watchpoint ranges.
-- Optional recent read/write overlays when backend history support exists.
-- Virtualized rendering and chunked reads; never transfer or render the full global memory on each refresh.
-- Preserve selected address and bank across view visibility changes.
-- Refresh immediately on stop/write and at a throttled rate only when visible.
+- Maintain the complete Main RAM plus 32 RAM-disk-bank cache in the extension for the active session.
+- Request only the selected bank's currently visible interval; search ranges affect navigation/highlighting only.
+- Render virtualized 16-byte rows with address, uppercase hex bytes, symbols, search/history, context actions, and keyboard access.
+- Refresh the visible interval once per second while running and only while the view is visible.
+- Keep symbols and **Find in Source** restricted to Main RAM until debug metadata becomes bank-aware.
 
 Acceptance targets:
 
-- Opening the view fetches no more than the visible range plus a bounded prefetch window.
+- Opening or updating the view fetches only the selected bank's visible interval, with no prefetch or search-range reads.
 - Scrolling a 64 KiB bank remains responsive and does not allocate a DOM node per byte for the whole bank.
-- A 256-byte read completes within 50 ms locally at p95 while the display panel is active.
+- A visible-interval read of up to 1 KiB completes within 100 ms locally at p95 while the display panel is active.
 
 > **Implementation Notes**:
 
@@ -593,7 +590,7 @@ Expand fast unit coverage for:
 - Watch expression parsing/evaluation.
 - Memory-reference parsing and bounds.
 - Hardware Statistics tree generation and lazy loading.
-- Hex Viewer address, paging, selection, editing, and rendering models.
+- Hex Viewer address, paging, selection, full-cache, viewport-read, and rendering models. Editing belongs to its separate future phase.
 
 Use a stateful mock TCP server that models running state, PC changes, break/watch hits, memory, stop sequences, and backend errors. Do not rely on generic success responses for debugger tests.
 
@@ -607,7 +604,7 @@ Add a real `test/integration/` suite for the existing `test:integration` script.
 - Launch and attach session startup.
 - Breakpoint gutter synchronization and verified state.
 - Continue, pause, step, next, restart, and stop events.
-- Variables, Watch evaluation, stack frame source location, readMemory/writeMemory.
+- Variables, Watch evaluation, stack frame source location, and `readMemory`. Add `writeMemory` coverage only with the separate future editing phase.
 - Data breakpoint setup and hit event.
 - Run and Debug sidebar view registration and refresh.
 - Display panel coexistence and panel close behavior.

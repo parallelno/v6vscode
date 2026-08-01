@@ -14,7 +14,7 @@
     "allowJs": true
   },
   "include": ["src", "test"],
-  "exclude": ["src/emulator/panel/assets"],
+  "exclude": ["src/emulator/panel/assets", "src/debug/views/assets"],
   "ts-node": {
     "project": "tsconfig.test.json"
   }

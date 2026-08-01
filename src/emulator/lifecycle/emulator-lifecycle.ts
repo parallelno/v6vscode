@@ -5,7 +5,7 @@ import { V6Project } from '../../project/model/v6-project';
 import { V6emulLocator } from '../launcher/v6emul-locator';
 import { V6emulLauncher, EmulatorProcess } from '../launcher/v6emul-launcher';
 import { IpcClient } from '../client/ipc-client';
-import { IpcCommand, PingResponse, SPEED_VALUES } from '../protocol/ipc-commands';
+import { GetServerInfoResponse, IpcCommand, PingResponse, SPEED_VALUES } from '../protocol/ipc-commands';
 import { getServerInfo, validateDebuggerServer } from '../protocol/ipc-server-info';
 import { Logger } from '../../platform/logging/logger';
 import { PathService } from '../../platform/files/path-service';
@@ -38,6 +38,7 @@ export class EmulatorLifecycle extends EventEmitter {
     private _state: EmulatorState = 'stopped';
     private _frameMode: EmulatorFrameMode = 'borderless';
     private _owner: EmulatorSessionOwner = null;
+    private _serverInfo: GetServerInfoResponse | undefined;
 
     constructor(
         locator: V6emulLocator,
@@ -78,6 +79,10 @@ export class EmulatorLifecycle extends EventEmitter {
         return this._state === 'connected' || this._state === 'running';
     }
 
+    get serverInfo(): GetServerInfoResponse | undefined {
+        return this._serverInfo;
+    }
+
     async start(project: V6Project): Promise<void> {
         if (this._state !== 'stopped') {
             await this.stop();
@@ -113,11 +118,13 @@ export class EmulatorLifecycle extends EventEmitter {
             this.emulatorProcess.spawnResult.exitPromise.then((code) => {
                 this.logger.info(`v6emul process exited with code ${code}`);
                 this.emulatorProcess = null;
+                this._serverInfo = undefined;
                 this.setState('stopped');
                 this.emit('exit', code);
             }).catch((err) => {
                 this.logger.error(`v6emul process error: ${err.message}`);
                 this.emulatorProcess = null;
+                this._serverInfo = undefined;
                 this.setState('stopped');
                 this.emit('error', err);
             });
@@ -127,6 +134,7 @@ export class EmulatorLifecycle extends EventEmitter {
             this.setState('connected');
 
             const serverInfo = await getServerInfo(this.client);
+            this._serverInfo = serverInfo;
             this.logger.info(`v6emul: ${serverInfo.emulatorVersion}, IPC protocol ${serverInfo.protocolVersion}`);
 
             const pingResp = await this.client.send<PingResponse>(IpcCommand.PING);
@@ -208,6 +216,7 @@ export class EmulatorLifecycle extends EventEmitter {
 
             await this.connectWithRetries(port);
             const serverInfo = await getServerInfo(this.client);
+            this._serverInfo = serverInfo;
             validateDebuggerServer(serverInfo);
             this.logger.info(`v6emul: ${serverInfo.emulatorVersion}, IPC protocol ${serverInfo.protocolVersion}`);
 
@@ -300,6 +309,7 @@ export class EmulatorLifecycle extends EventEmitter {
     }
 
     private cleanup(): void {
+        this._serverInfo = undefined;
         this.client.disconnect();
         if (this.emulatorProcess) {
             try {
@@ -317,6 +327,7 @@ export class EmulatorLifecycle extends EventEmitter {
             this.logger.info(`v6emul process exited with code ${code}`);
             this.emulatorProcess = null;
             this.client.disconnect();
+            this._serverInfo = undefined;
             this._owner = null;
             this.setState('stopped');
             this.emit('exit', code);
@@ -325,6 +336,7 @@ export class EmulatorLifecycle extends EventEmitter {
             this.logger.error(`v6emul process error: ${err.message}`);
             this.emulatorProcess = null;
             this.client.disconnect();
+            this._serverInfo = undefined;
             this._owner = null;
             this.setState('stopped');
             this.emit('error', err);

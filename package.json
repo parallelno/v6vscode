@@ -19,7 +19,8 @@
   "main": "./out/extension.js",
   "activationEvents": [
     "workspaceContains:**/*.project.json",
-    "onDebugResolve:v6"
+    "onDebugResolve:v6",
+    "onView:v6.hexViewer"
   ],
   "contributes": {
     "commands": [
@@ -38,6 +39,12 @@
         "title": "Refresh Hardware Statistics",
         "category": "V6",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "v6.refreshHexViewer",
+        "title": "Refresh Hex Viewer",
+        "category": "V6",
+        "icon": "$(refresh)"
       }
     ],
     "views": {
@@ -45,6 +52,11 @@
         {
           "id": "v6.hardwareStatistics",
           "name": "V6 Hardware Statistics"
+        },
+        {
+          "id": "v6.hexViewer",
+          "name": "V6 Hex Viewer",
+          "type": "webview"
         }
       ]
     },
@@ -53,6 +65,11 @@
         {
           "command": "v6.refreshHardwareStatistics",
           "when": "view == v6.hardwareStatistics",
+          "group": "navigation"
+        },
+        {
+          "command": "v6.refreshHexViewer",
+          "when": "view == v6.hexViewer",
           "group": "navigation"
         }
       ]

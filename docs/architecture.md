@@ -31,8 +31,13 @@ flowchart LR
 	DAP[V6 Debug Adapter] --> Lifecycle[Emulator Lifecycle]
 	Panel[Emulator Panel] --> Lifecycle
 	Stats[Hardware Statistics] --> Lifecycle
+	Hex[Hex Viewer] --> Lifecycle
+	Hex --> Memory[Memory Service]
+	Memory --> Client
 	Lifecycle --> Client[Prioritized IpcClient]
 	Client --> Emulator[v6emul single-client server]
 ```
 
 Source debugging loads a final companion ELF through `debug-artifact-loader.ts`. The immutable debug index maps source lines to CPU addresses and CPU addresses back to source locations. ROM/ELF byte mismatches fail metadata loading before source breakpoints can be verified.
+
+The Hex Viewer is a Run and Debug `WebviewView`. `MemoryService` validates negotiated bank-aware read capabilities, owns a complete validity-tracked cache for Main RAM and 32 RAM-disk banks, and requests only the selected bank's visible interval. `DebugSymbolService` exposes validated metadata for symbol search and exact source navigation without coupling the view to the DAP adapter. `HexViewerProvider` owns session orchestration, persistence, clipboard access, and webview message validation; browser assets own virtualization and keyboard interaction.

@@ -25,6 +25,11 @@ import {
     HARDWARE_STATISTICS_VIEW_ID,
     HardwareStatisticsView,
 } from './debug/views/hardware-statistics-view';
+import {
+    CMD_REFRESH_HEX_VIEWER,
+    HEX_VIEWER_VIEW_ID,
+    HexViewerProvider,
+} from './debug/views/hex-viewer-provider';
 
 export function activate(context: vscode.ExtensionContext): void {
     const store = new DisposableStore();
@@ -77,6 +82,16 @@ export function activate(context: vscode.ExtensionContext): void {
         CMD_REFRESH_HARDWARE_STATISTICS,
         () => hardwareStatistics.refresh(),
     ));
+    const hexViewer = store.add(new HexViewerProvider(
+        context.extensionUri,
+        lifecycle,
+        ipcClient,
+        activeProjectService,
+        context.workspaceState,
+        logger,
+    ));
+    store.add(vscode.window.registerWebviewViewProvider(HEX_VIEWER_VIEW_ID, hexViewer));
+    store.add(vscode.commands.registerCommand(CMD_REFRESH_HEX_VIEWER, () => hexViewer.refresh()));
 
     // Persist FDD images before emulator stops
     const onBeforeStop = async () => {
