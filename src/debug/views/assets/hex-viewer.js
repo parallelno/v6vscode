@@ -79,7 +79,7 @@
         row.appendChild(byteGroup);
         const symbolGroup = document.createElement('span'); symbolGroup.className = 'symbols';
         symbols.filter(symbol => symbol.address >= offset && symbol.address < offset + 16).forEach(symbol => {
-            const button = document.createElement('button'); button.className = 'symbol'; button.textContent = `${symbol.name} @ +${(symbol.address - offset).toString(16).toUpperCase().padStart(2, '0')}`;
+            const button = document.createElement('button'); button.className = 'symbol'; button.textContent = symbol.name;
             button.title = `Address: 0x${symbol.address.toString(16).toUpperCase().padStart(4, '0')}`;
             button.addEventListener('click', () => {
                 query.value = symbol.name;
