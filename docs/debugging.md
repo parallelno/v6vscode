@@ -23,9 +23,12 @@ Choose a `Vector-06C` launch configuration and press F5. A debug launch:
 
 1. Starts `v6emul` on a free local TCP port.
 2. Opens one shared IPC connection.
-3. Attaches the backend debugger and loads the companion ELF.
-4. Opens the emulator display panel on that shared session.
-5. Configures source and instruction breakpoints before running.
+3. Reads and validates server identity and protocol-1 capabilities through `GET_SERVER_INFO`.
+4. Attaches the backend debugger and loads the companion ELF.
+5. Opens the emulator display panel on that shared session.
+6. Configures source and instruction breakpoints before running.
+
+Servers must implement `GET_SERVER_INFO` and protocol version 1. Debug sessions additionally require advertised debugger support, stack-sample schema 1, and the required debugger commands. Structured server error codes are preserved for diagnostics.
 
 Closing the display panel terminates the active debug launch and closes the Run and Debug session. Ending a launch session terminates its emulator process and closes the display panel.
 
@@ -47,7 +50,7 @@ Source breakpoints remain unverified when the ELF is missing, malformed, or does
 
 ## Current Limitations
 
-The backend does not yet expose versioned capabilities, reliable stop records, watchpoint hit identity, or bulk global-memory operations. Consequently:
+The backend does not yet expose reliable stop records, watchpoint hit identity, or bulk global-memory operations. Consequently:
 
 - Stop reasons can be inferred but are not authoritative for every stop cause.
 - DAP data breakpoints are not enabled.

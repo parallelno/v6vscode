@@ -8,7 +8,7 @@ import { ErrorCode } from '../../platform/errors/error-codes';
  * Wire format: [4 bytes uint32 LE length] [MessagePack payload]
  */
 export function encodeRequest(cmd: IpcCommand, data?: unknown): Buffer {
-    const payload = encode({ cmd, data: data ?? null });
+    const payload = encode({ cmd, data: data ?? {} });
     const frame = Buffer.alloc(4 + payload.byteLength);
     frame.writeUInt32LE(payload.byteLength, 0);
     Buffer.from(payload.buffer, payload.byteOffset, payload.byteLength).copy(frame, 4);

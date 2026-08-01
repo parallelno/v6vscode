@@ -20,6 +20,7 @@ import { loadDebugArtifact } from '../metadata/debug-artifact-loader';
 import { DebugIndex } from '../metadata/debug-index';
 import { Logger } from '../../platform/logging/logger';
 import { PathService } from '../../platform/files/path-service';
+import { getServerInfo, validateDebuggerServer } from '../../emulator/protocol/ipc-server-info';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -259,6 +260,9 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             if (!ping.ok) {
                 throw new Error('PING failed');
             }
+
+            const serverInfo = await getServerInfo(client);
+            validateDebuggerServer(serverInfo);
 
             await client.send(IpcCommand.DEBUG_ATTACH, { data: true });
             await client.send(IpcCommand.STOP);

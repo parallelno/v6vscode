@@ -8,6 +8,7 @@ export const enum IpcCommand {
     PONG = -2,
     GET_FRAME = -3,
     GET_FRAME_RAW = -4,
+    GET_SERVER_INFO = -5,
 
     // Emulation control
     RUN = 1,
@@ -170,6 +171,19 @@ export interface PingResponse {
     pong: boolean;
 }
 
+export interface ServerCapabilities {
+    debugger: boolean;
+    rawFrame: boolean;
+    stackSampleSchema: number;
+}
+
+export interface GetServerInfoResponse {
+    protocolVersion: number;
+    emulatorVersion: string;
+    commands: number[];
+    capabilities: ServerCapabilities;
+}
+
 export interface IsRunningResponse {
     isRunning: boolean;
 }
@@ -227,5 +241,6 @@ export interface FrameRawResponse {
 export interface IpcResponse<T = unknown> {
     ok: boolean;
     data?: T;
+    code?: 'decode_error' | 'invalid_request' | 'unknown_command' | 'dispatch_error' | 'internal_error' | string;
     error?: string;
 }

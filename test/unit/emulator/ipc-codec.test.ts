@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { encode } from '@msgpack/msgpack';
+import { encode, decode } from '@msgpack/msgpack';
 import { encodeRequest, decodeResponse, decodeFrameRaw, frameLength } from '../../../src/emulator/protocol/ipc-codec';
 import { IpcCommand, IpcResponse } from '../../../src/emulator/protocol/ipc-commands';
 import { ErrorCode } from '../../../src/platform/errors/error-codes';
@@ -18,6 +18,7 @@ describe('ipc-codec', () => {
             expect(IpcCommand.RESET_UPDATE_FDD).to.equal(49);
             expect(IpcCommand.LOAD_ROM).to.equal(91);
             expect(IpcCommand.MOUNT_FDD).to.equal(92);
+            expect(IpcCommand.GET_SERVER_INFO).to.equal(-5);
         });
     });
 
@@ -35,9 +36,10 @@ describe('ipc-codec', () => {
             expect(payloadLen).to.be.greaterThan(0);
         });
 
-        it('should encode null data when data is undefined', () => {
+        it('should encode object data when data is undefined', () => {
             const buf = encodeRequest(IpcCommand.RUN);
-            expect(buf.length).to.be.greaterThan(4);
+            const payload = decode(buf.subarray(4)) as { cmd: number; data: unknown };
+            expect(payload).to.deep.equal({ cmd: IpcCommand.RUN, data: {} });
         });
     });
 
@@ -59,10 +61,11 @@ describe('ipc-codec', () => {
         });
 
         it('should decode an error response', () => {
-            const resp: IpcResponse = { ok: false, error: 'something went wrong' };
+            const resp: IpcResponse = { ok: false, code: 'invalid_request', error: 'something went wrong' };
             const buf = makeResponseBuffer(resp);
             const decoded = decodeResponse(buf);
             expect(decoded.ok).to.equal(false);
+            expect(decoded.code).to.equal('invalid_request');
             expect(decoded.error).to.equal('something went wrong');
         });
 

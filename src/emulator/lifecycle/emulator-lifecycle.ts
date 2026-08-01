@@ -6,6 +6,7 @@ import { V6emulLocator } from '../launcher/v6emul-locator';
 import { V6emulLauncher, EmulatorProcess } from '../launcher/v6emul-launcher';
 import { IpcClient } from '../client/ipc-client';
 import { IpcCommand, PingResponse, SPEED_VALUES } from '../protocol/ipc-commands';
+import { getServerInfo, validateDebuggerServer } from '../protocol/ipc-server-info';
 import { Logger } from '../../platform/logging/logger';
 import { PathService } from '../../platform/files/path-service';
 import { V6Error } from '../../platform/errors/v6-error';
@@ -131,6 +132,8 @@ export class EmulatorLifecycle extends EventEmitter {
                 throw new V6Error(ErrorCode.EMULATOR_LAUNCH_FAILED, 'PING health check failed');
             }
             this.logger.info('v6emul: PING OK');
+            const serverInfo = await getServerInfo(this.client);
+            this.logger.info(`v6emul: ${serverInfo.emulatorVersion}, IPC protocol ${serverInfo.protocolVersion}`);
 
             const frameMode = this.resolveFrameMode(project.run.viewMode);
             await this.setFrameMode(frameMode.panelMode);
@@ -208,6 +211,9 @@ export class EmulatorLifecycle extends EventEmitter {
             if (!ping.ok) {
                 throw new V6Error(ErrorCode.EMULATOR_LAUNCH_FAILED, 'PING health check failed');
             }
+            const serverInfo = await getServerInfo(this.client);
+            validateDebuggerServer(serverInfo);
+            this.logger.info(`v6emul: ${serverInfo.emulatorVersion}, IPC protocol ${serverInfo.protocolVersion}`);
             await this.client.send(IpcCommand.DEBUG_ATTACH, { data: true });
             await this.client.send(IpcCommand.SET_COLOR_FORMAT, { colorFormat: 0 });
             await this.client.send(IpcCommand.STOP);
