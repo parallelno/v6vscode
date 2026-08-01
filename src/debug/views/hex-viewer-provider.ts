@@ -48,6 +48,7 @@ export class HexViewerProvider implements vscode.WebviewViewProvider, vscode.Dis
     private refreshActive = false;
     private pendingRefresh: VisibleRange | undefined;
     private readonly stateListener: () => void;
+    private pendingNavigation: { space: MemorySpace; start: number; end: number } | undefined;
 
     constructor(
         private readonly extensionUri: vscode.Uri,
@@ -87,6 +88,16 @@ export class HexViewerProvider implements vscode.WebviewViewProvider, vscode.Dis
         }
     }
 
+    revealRange(space: MemorySpace, start: number, end: number): void {
+        if (!isValidMemorySpace(space) || !Number.isInteger(start) || !Number.isInteger(end)
+            || start < 0 || end < start || end >= MEMORY_BANK_SIZE) {
+            throw new RangeError('Hex Viewer range is invalid');
+        }
+        this.selectedSpace = space;
+        this.pendingNavigation = { space, start, end };
+        this.applyPendingNavigation();
+    }
+
     dispose(): void {
         this.stopRefreshTimer();
         if (this.queryTimer) { clearTimeout(this.queryTimer); }
@@ -100,6 +111,7 @@ export class HexViewerProvider implements vscode.WebviewViewProvider, vscode.Dis
                 case 'ready':
                     await this.restore();
                     await this.syncSession();
+                    this.applyPendingNavigation();
                     break;
                 case 'visibleRange':
                     if (!this.validVisibleRange(message)) { return; }
@@ -385,6 +397,13 @@ export class HexViewerProvider implements vscode.WebviewViewProvider, vscode.Dis
 
     private post(message: HexViewerHostMessage): void {
         void this.view?.webview.postMessage(message);
+    }
+
+    private applyPendingNavigation(): void {
+        if (!this.view || !this.pendingNavigation) { return; }
+        const navigation = this.pendingNavigation;
+        this.pendingNavigation = undefined;
+        this.post({ type: 'navigate', ...navigation });
     }
 
     private html(webview: vscode.Webview, assetsUri: vscode.Uri): string {

@@ -45,3 +45,22 @@ export function memorySpaceGlobalAddress(space: MemorySpace, offset: number): nu
         : 1 + (space.disk - 1) * RAM_DISK_BANK_COUNT + space.bank;
     return spaceIndex * MEMORY_BANK_SIZE + offset;
 }
+
+export function globalAddressMemoryLocation(globalAddress: number): { space: MemorySpace; offset: number } {
+    const maxAddress = (1 + RAM_DISK_COUNT * RAM_DISK_BANK_COUNT) * MEMORY_BANK_SIZE - 1;
+    if (!Number.isInteger(globalAddress) || globalAddress < 0 || globalAddress > maxAddress) {
+        throw new RangeError('Global address is outside emulator memory');
+    }
+    const spaceIndex = Math.floor(globalAddress / MEMORY_BANK_SIZE);
+    const offset = globalAddress % MEMORY_BANK_SIZE;
+    if (spaceIndex === 0) { return { space: MAIN_MEMORY_SPACE, offset }; }
+    const ramDiskIndex = spaceIndex - 1;
+    return {
+        space: {
+            kind: 'ramDisk',
+            disk: Math.floor(ramDiskIndex / RAM_DISK_BANK_COUNT) + 1,
+            bank: ramDiskIndex % RAM_DISK_BANK_COUNT,
+        },
+        offset,
+    };
+}

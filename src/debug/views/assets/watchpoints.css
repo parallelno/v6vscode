@@ -1,0 +1,23 @@
+* { box-sizing: border-box; }
+body { margin: 0; color: var(--vscode-foreground); background: var(--vscode-sideBar-background); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); }
+#status { min-height: 26px; padding: 6px 8px; color: var(--vscode-descriptionForeground); border-bottom: 1px solid var(--vscode-panel-border); }
+#table { min-width: 900px; }
+.header, .row { display: grid; grid-template-columns: 72px 124px 88px 92px 90px 64px 64px minmax(130px, 1fr); align-items: center; }
+.header { position: sticky; top: 0; z-index: 2; min-height: 28px; background: var(--vscode-sideBar-background); border-bottom: 1px solid var(--vscode-panel-border); color: var(--vscode-descriptionForeground); font-weight: 600; }
+.header span, .cell { min-width: 0; padding: 4px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row { min-height: 34px; border-bottom: 1px solid var(--vscode-panel-border); }
+.row:hover, .row:focus-within { background: var(--vscode-list-hoverBackground); }
+.row.pending { opacity: .65; }
+.cell button { border: 0; color: inherit; background: transparent; padding: 2px; font: inherit; }
+.activity { display: flex; align-items: center; gap: 5px; }
+.activity input { width: auto; }
+input, select { width: 100%; min-height: 26px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); padding: 3px 5px; font: inherit; }
+.address, .value { font-family: var(--vscode-editor-font-family); }
+#empty { padding: 16px 8px; color: var(--vscode-descriptionForeground); }
+#preview { position: fixed; z-index: 15; max-width: min(520px, calc(100vw - 16px)); padding: 6px 8px; color: var(--vscode-editorHoverWidget-foreground); background: var(--vscode-editorHoverWidget-background); border: 1px solid var(--vscode-editorHoverWidget-border); box-shadow: 0 2px 8px var(--vscode-widget-shadow); font-family: var(--vscode-editor-font-family); white-space: pre-wrap; }
+#menu { position: fixed; z-index: 20; min-width: 170px; padding: 3px; color: var(--vscode-menu-foreground); background: var(--vscode-menu-background); border: 1px solid var(--vscode-menu-border); box-shadow: 0 2px 8px var(--vscode-widget-shadow); }
+#menu button { display: block; width: 100%; border: 0; padding: 5px 9px; text-align: left; color: inherit; background: transparent; }
+#menu button:hover, #menu button:focus { color: var(--vscode-menu-selectionForeground); background: var(--vscode-menu-selectionBackground); outline: none; }
+#menu button:disabled { opacity: .5; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+@media (max-width: 760px) { body { overflow-x: auto; } }

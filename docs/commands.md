@@ -31,6 +31,14 @@ Templates live in `src/templates/` and use `{{key}}` placeholder expansion.
 
 Refreshes the currently visible address interval in the selected Hex Viewer memory space. The command is available from the `V6 Hex Viewer` title bar in Run and Debug. It requires an active emulator that advertises `GET_MEM` command 93; hidden views do not poll or refresh.
 
+## V6: Add Watchpoint
+
+Reveals `V6 Watchpoints` in Run and Debug and opens a new editable row. Submitting the row creates a structured backend watchpoint; the backend assigns its stable ID.
+
+## V6: Refresh Watchpoints
+
+Refreshes the authoritative watchpoint snapshot. The panel requires structured watchpoint schema 1, server-allocated IDs, and edit command 94. Row menus provide enable/disable, delete, and Hex Viewer navigation; the empty-area menu provides Add, Disable All, and confirmed global Delete All.
+
 ## FDD Persistence
 
 When the emulator stops (or the panel closes), if the loaded executable is a `.fdd` file:

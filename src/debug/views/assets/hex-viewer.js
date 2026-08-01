@@ -154,7 +154,14 @@
         if (message.type === 'reset') resetSession();
         if (message.type === 'spaces') { document.body.classList.remove('session-empty'); spaces = message.spaces; selectedSpace = message.selected; spaceSelect.replaceChildren(...spaces.map(item => { const option = document.createElement('option'); option.textContent = item.label; return option; })); spaceSelect.selectedIndex = Math.max(0, spaces.findIndex(item => key(item.space) === key(selectedSpace))); lastVisibleKey = ''; render(); }
         if (message.type === 'memory' && key(message.space) === key(selectedSpace)) { if (document.body.classList.contains('session-empty')) return; const bank = bankCache(); bank.values.set(new Uint8Array(message.values), message.offset); bank.valid.set(new Uint8Array(message.valid), message.offset); symbols = message.symbols; sourceAddresses.clear(); message.sourceAddresses.forEach(address => sourceAddresses.add(address)); render(); }
-        if (message.type === 'navigate') { highlightStart = message.start; highlightEnd = message.end; viewport.scrollTop = Math.floor(message.start / 16) * ROW_HEIGHT; lastVisibleKey = ''; render(); }
+        if (message.type === 'navigate') {
+            if (message.space) {
+                selectedSpace = message.space;
+                spaceSelect.value = key(selectedSpace);
+            }
+            highlightStart = message.start; highlightEnd = message.end;
+            viewport.scrollTop = Math.floor(message.start / 16) * ROW_HEIGHT; lastVisibleKey = ''; render();
+        }
         if (message.type === 'clearHighlight') { highlightStart = -1; highlightEnd = -1; render(); }
         if (message.type === 'queryError') { query.classList.toggle('invalid', !!message.message); query.title = message.message || SEARCH_TOOLTIP; }
         if (message.type === 'restored') { selectedSpace = message.space; query.value = message.query; history = message.history; historyIndex = history.length; draft = ''; }

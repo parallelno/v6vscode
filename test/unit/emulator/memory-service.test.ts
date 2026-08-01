@@ -1,6 +1,9 @@
 import { expect } from 'chai';
 import { MemoryService } from '../../../src/emulator/memory/memory-service';
-import { MAIN_MEMORY_SPACE } from '../../../src/emulator/memory/memory-space';
+import {
+    globalAddressMemoryLocation,
+    MAIN_MEMORY_SPACE,
+} from '../../../src/emulator/memory/memory-space';
 import { IpcCommand } from '../../../src/emulator/protocol/ipc-commands';
 
 describe('MemoryService', () => {
@@ -68,5 +71,16 @@ describe('MemoryService', () => {
             { addr: 0x10020, len: 1 },
             { addr: 0x80020, len: 1 },
         ]);
+    });
+
+    it('maps global watchpoint addresses back to typed memory locations', () => {
+        expect(globalAddressMemoryLocation(0xFFFF)).to.deep.equal({ space: { kind: 'main' }, offset: 0xFFFF });
+        expect(globalAddressMemoryLocation(0x10020)).to.deep.equal({
+            space: { kind: 'ramDisk', disk: 1, bank: 0 }, offset: 0x20,
+        });
+        expect(globalAddressMemoryLocation(0x80020)).to.deep.equal({
+            space: { kind: 'ramDisk', disk: 2, bank: 3 }, offset: 0x20,
+        });
+        expect(() => globalAddressMemoryLocation(0x210000)).to.throw('outside emulator memory');
     });
 });

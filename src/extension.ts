@@ -30,6 +30,13 @@ import {
     HEX_VIEWER_VIEW_ID,
     HexViewerProvider,
 } from './debug/views/hex-viewer-provider';
+import { WatchpointService } from './debug/watchpoints/watchpoint-service';
+import {
+    CMD_ADD_WATCHPOINT,
+    CMD_REFRESH_WATCHPOINTS,
+    WATCHPOINTS_VIEW_ID,
+    WatchpointsProvider,
+} from './debug/views/watchpoints-provider';
 
 export function activate(context: vscode.ExtensionContext): void {
     const store = new DisposableStore();
@@ -92,6 +99,17 @@ export function activate(context: vscode.ExtensionContext): void {
     ));
     store.add(vscode.window.registerWebviewViewProvider(HEX_VIEWER_VIEW_ID, hexViewer));
     store.add(vscode.commands.registerCommand(CMD_REFRESH_HEX_VIEWER, () => hexViewer.refresh()));
+    const watchpointService = store.add(new WatchpointService(lifecycle, ipcClient));
+    const watchpoints = store.add(new WatchpointsProvider(
+        context.extensionUri,
+        lifecycle,
+        watchpointService,
+        hexViewer,
+        logger,
+    ));
+    store.add(vscode.window.registerWebviewViewProvider(WATCHPOINTS_VIEW_ID, watchpoints));
+    store.add(vscode.commands.registerCommand(CMD_REFRESH_WATCHPOINTS, () => watchpoints.refresh()));
+    store.add(vscode.commands.registerCommand(CMD_ADD_WATCHPOINT, () => watchpoints.add()));
 
     // Persist FDD images before emulator stops
     const onBeforeStop = async () => {

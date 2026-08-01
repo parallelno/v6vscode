@@ -439,6 +439,8 @@ Add unit tests for flag decoding, register splitting, expression precedence, inv
 
 ### Step 3.13 - Implement watchpoints through DAP data breakpoints [ ]
 
+The authoritative custom panel design and implementation status are recorded in `watchpoints-panel-plan.md`. The panel CRUD workflow is implemented independently of DAP hit attribution.
+
 Implement:
 
 - `dataBreakpointInfo` for address-bearing variables, symbols, and Watch expressions.
@@ -461,7 +463,7 @@ Expose Devector-compatible advanced fields in an optional custom Watchpoints vie
 
 Test boundary-crossing ranges, word accesses split across an instruction, overlapping watchpoints, stable IDs after edits, read-only memory edits, and stop-reason accuracy.
 
-> **Implementation Notes**:
+> **Implementation Notes**: The V6 Watchpoints Run and Debug panel now provides structured schema-1 add, command-94 edit, enable/disable, delete, bulk actions, bounded memory previews, and typed Hex Viewer navigation through a shared `WatchpointService`. DAP `dataBreakpointInfo`, `setDataBreakpoints`, and accurate `stopped` hit attribution remain open because the backend does not expose watchpoint hit identity.
 
 ### Step 3.14 - Implement DAP memory support and the Hex Viewer [ ]
 

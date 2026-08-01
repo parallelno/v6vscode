@@ -19,8 +19,7 @@
   "main": "./out/extension.js",
   "activationEvents": [
     "workspaceContains:**/*.project.json",
-    "onDebugResolve:v6",
-    "onView:v6.hexViewer"
+    "onDebugResolve:v6"
   ],
   "contributes": {
     "commands": [
@@ -45,6 +44,18 @@
         "title": "Refresh Hex Viewer",
         "category": "V6",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "v6.refreshWatchpoints",
+        "title": "Refresh Watchpoints",
+        "category": "V6",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "v6.addWatchpoint",
+        "title": "Add Watchpoint",
+        "category": "V6",
+        "icon": "$(add)"
       }
     ],
     "views": {
@@ -56,6 +67,11 @@
         {
           "id": "v6.hexViewer",
           "name": "V6 Hex Viewer",
+          "type": "webview"
+        },
+        {
+          "id": "v6.watchpoints",
+          "name": "V6 Watchpoints",
           "type": "webview"
         }
       ]
@@ -71,6 +87,16 @@
           "command": "v6.refreshHexViewer",
           "when": "view == v6.hexViewer",
           "group": "navigation"
+        },
+        {
+          "command": "v6.addWatchpoint",
+          "when": "view == v6.watchpoints",
+          "group": "navigation@1"
+        },
+        {
+          "command": "v6.refreshWatchpoints",
+          "when": "view == v6.watchpoints",
+          "group": "navigation@2"
         }
       ]
     },

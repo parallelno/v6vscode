@@ -43,6 +43,12 @@ During a debug launch the panel uses the lifecycle's existing connection. It doe
 
 The view requires `GET_MEM` command `93` in `GET_SERVER_INFO`. Main RAM starts at global address `0x00000`; RAM Disk 1 / Bank 0 starts at `0x10000`, and each subsequent bank occupies the next 64 KiB interval. Without command 93 the view shows an unsupported-backend state and sends no legacy per-byte requests.
 
+## Watchpoints
+
+`V6 Watchpoints` is contributed to the Run and Debug sidebar and shares the lifecycle's IPC connection. It requires watchpoint schema 1, server-allocated IDs, and `DEBUG_WATCHPOINT_EDIT` command 94. Add, edit, activity toggles, delete, Disable All, and Delete All are serialized and reconciled with `DEBUG_WATCHPOINT_GET_ALL` before the UI accepts backend state.
+
+Rows use global numeric addresses covering Main RAM and all RAM-disk banks. Hover or keyboard focus reads at most 16 bytes when `GET_MEM` is available. Find in Hex Viewer converts the global range into a typed memory space, selects that bank, and highlights the inclusive range. Ranges crossing a 64 KiB viewer bank are rejected.
+
 ## FPS Counter
 
 While the emulator is running, a live **FPS counter** appears in the VS Code **status bar** (bottom-right). It shows the actual number of frames rendered per second (e.g., `⟡ 45 fps`). The counter hides automatically when the emulator is paused or stopped.

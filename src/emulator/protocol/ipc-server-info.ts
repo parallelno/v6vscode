@@ -3,6 +3,8 @@ import { GetServerInfoResponse, IpcCommand } from './ipc-commands';
 
 export const SUPPORTED_IPC_PROTOCOL_VERSION = 2;
 export const SUPPORTED_RAW_FRAME_SCHEMA = 1;
+export const SUPPORTED_BREAKPOINT_SCHEMA = 1;
+export const SUPPORTED_WATCHPOINT_SCHEMA = 1;
 
 /** Reads and validates the required server metadata handshake. */
 export async function getServerInfo(client: IpcClient): Promise<GetServerInfoResponse> {
@@ -35,9 +37,37 @@ export async function getServerInfo(client: IpcClient): Promise<GetServerInfoRes
 }
 
 export function validateDebuggerServer(info: GetServerInfoResponse): void {
-    const requiredCommands = [IpcCommand.GET_STACK_SAMPLE, IpcCommand.DEBUG_ATTACH];
+    const requiredCommands = [
+        IpcCommand.GET_STACK_SAMPLE,
+        IpcCommand.DEBUG_ATTACH,
+        IpcCommand.DEBUG_BREAKPOINT_ADD,
+        IpcCommand.DEBUG_BREAKPOINT_DEL,
+        IpcCommand.DEBUG_BREAKPOINT_GET_ALL,
+        IpcCommand.DEBUG_BREAKPOINT_GET_UPDATES,
+    ];
     const missingCommands = requiredCommands.filter(command => !info.commands.includes(command));
-    if (!info.capabilities.debugger || info.capabilities.stackSampleSchema !== 1 || missingCommands.length > 0) {
+    if (!info.capabilities.debugger
+        || info.capabilities.stackSampleSchema !== 1
+        || info.capabilities.breakpointSchema !== SUPPORTED_BREAKPOINT_SCHEMA
+        || missingCommands.length > 0) {
         throw new Error(`v6emul ${info.emulatorVersion} does not provide the required debugger protocol capabilities`);
+    }
+}
+
+export function validateWatchpointServer(info: GetServerInfoResponse): void {
+    const requiredCommands = [
+        IpcCommand.DEBUG_WATCHPOINT_ADD,
+        IpcCommand.DEBUG_WATCHPOINT_EDIT,
+        IpcCommand.DEBUG_WATCHPOINT_DEL_ALL,
+        IpcCommand.DEBUG_WATCHPOINT_DEL,
+        IpcCommand.DEBUG_WATCHPOINT_GET_UPDATES,
+        IpcCommand.DEBUG_WATCHPOINT_GET_ALL,
+    ];
+    const missingCommands = requiredCommands.filter(command => !info.commands.includes(command));
+    if (info.capabilities.watchpointSchema !== SUPPORTED_WATCHPOINT_SCHEMA
+        || info.capabilities.watchpointServerAllocatedIds !== true
+        || info.capabilities.watchpointEdit !== true
+        || missingCommands.length > 0) {
+        throw new Error(`v6emul ${info.emulatorVersion} does not provide the required watchpoint protocol capabilities`);
     }
 }

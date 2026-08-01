@@ -118,6 +118,7 @@ export const enum IpcCommand {
     DEBUG_TRACE_LOG_ENABLE = 89,
     DEBUG_TRACE_LOG_DISABLE = 90,
     LOAD_ROM = 91,
+    DEBUG_WATCHPOINT_EDIT = 94,
 }
 
 // Speed value mapping: user-facing string → IPC integer
@@ -177,6 +178,19 @@ export interface ServerCapabilities {
     rawFrame: boolean;
     rawFrameSchema: number;
     stackSampleSchema: number;
+    breakpointSchema?: number;
+    breakpointLimits?: {
+        mappingPageBits: number;
+        maxCommentBytes: number;
+    };
+    watchpointSchema?: number;
+    watchpointServerAllocatedIds?: boolean;
+    watchpointEdit?: boolean;
+    watchpointMutationsWhileRunning?: boolean;
+    watchpointLimits?: {
+        maxRangeLength: number;
+        maxCommentBytes: number;
+    };
 }
 
 export interface GetServerInfoResponse {
@@ -254,4 +268,10 @@ export interface IpcResponse<T = unknown> {
     data?: T;
     code?: 'decode_error' | 'invalid_request' | 'unknown_command' | 'dispatch_error' | 'internal_error' | string;
     error?: string;
+    details?: {
+        command?: number;
+        field?: string;
+        id?: number;
+        [key: string]: unknown;
+    };
 }

@@ -14,7 +14,7 @@ export type HexViewerHostMessage =
     | { type: 'reset' }
     | { type: 'spaces'; spaces: Array<{ space: MemorySpace; label: string }>; selected: MemorySpace }
     | { type: 'memory'; space: MemorySpace; offset: number; values: Uint8Array; valid: Uint8Array; symbols: Array<{ name: string; address: number; size: number }>; sourceAddresses: number[] }
-    | { type: 'navigate'; start: number; end: number }
+    | { type: 'navigate'; space?: MemorySpace; start: number; end: number }
     | { type: 'clearHighlight' }
     | { type: 'queryError'; message: string }
     | { type: 'restored'; space: MemorySpace; query: string; history: string[] };

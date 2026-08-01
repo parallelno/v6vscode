@@ -1,5 +1,9 @@
 import { expect } from 'chai';
-import { getServerInfo, validateDebuggerServer } from '../../../src/emulator/protocol/ipc-server-info';
+import {
+    getServerInfo,
+    validateDebuggerServer,
+    validateWatchpointServer,
+} from '../../../src/emulator/protocol/ipc-server-info';
 import { IpcCommand, IpcResponse } from '../../../src/emulator/protocol/ipc-commands';
 
 describe('getServerInfo', () => {
@@ -17,7 +21,13 @@ describe('getServerInfo', () => {
             protocolVersion: 2,
             emulatorVersion: '2026.07.30-test',
             commands: [-5, -4, -3, -1, 18, 51],
-            capabilities: { debugger: true, rawFrame: true, rawFrameSchema: 1, stackSampleSchema: 1 },
+            capabilities: {
+                debugger: true,
+                rawFrame: true,
+                rawFrameSchema: 1,
+                stackSampleSchema: 1,
+                breakpointSchema: 1,
+            },
         };
 
         expect(await getServerInfo(makeClient({ ok: true, data }))).to.deep.equal(data);
@@ -108,8 +118,21 @@ describe('validateDebuggerServer', () => {
     const validInfo = {
         protocolVersion: 2,
         emulatorVersion: 'test-build',
-        commands: [IpcCommand.GET_STACK_SAMPLE, IpcCommand.DEBUG_ATTACH],
-        capabilities: { debugger: true, rawFrame: true, rawFrameSchema: 1, stackSampleSchema: 1 },
+        commands: [
+            IpcCommand.GET_STACK_SAMPLE,
+            IpcCommand.DEBUG_ATTACH,
+            IpcCommand.DEBUG_BREAKPOINT_ADD,
+            IpcCommand.DEBUG_BREAKPOINT_DEL,
+            IpcCommand.DEBUG_BREAKPOINT_GET_ALL,
+            IpcCommand.DEBUG_BREAKPOINT_GET_UPDATES,
+        ],
+        capabilities: {
+            debugger: true,
+            rawFrame: true,
+            rawFrameSchema: 1,
+            stackSampleSchema: 1,
+            breakpointSchema: 1,
+        },
     };
 
     it('accepts the required debugger contract', () => {
@@ -119,12 +142,58 @@ describe('validateDebuggerServer', () => {
     it('rejects missing capabilities and commands', () => {
         expect(() => validateDebuggerServer({
             ...validInfo,
-            commands: [IpcCommand.DEBUG_ATTACH],
+            commands: validInfo.commands.filter(command => command !== IpcCommand.DEBUG_BREAKPOINT_ADD),
         })).to.throw('does not provide the required debugger protocol capabilities');
 
         expect(() => validateDebuggerServer({
             ...validInfo,
             capabilities: { ...validInfo.capabilities, stackSampleSchema: 2 },
         })).to.throw('does not provide the required debugger protocol capabilities');
+
+        expect(() => validateDebuggerServer({
+            ...validInfo,
+            capabilities: { ...validInfo.capabilities, breakpointSchema: undefined },
+        })).to.throw('does not provide the required debugger protocol capabilities');
+    });
+});
+
+describe('validateWatchpointServer', () => {
+    const validInfo = {
+        protocolVersion: 2,
+        emulatorVersion: 'test-build',
+        commands: [
+            IpcCommand.DEBUG_WATCHPOINT_ADD,
+            IpcCommand.DEBUG_WATCHPOINT_EDIT,
+            IpcCommand.DEBUG_WATCHPOINT_DEL_ALL,
+            IpcCommand.DEBUG_WATCHPOINT_DEL,
+            IpcCommand.DEBUG_WATCHPOINT_GET_UPDATES,
+            IpcCommand.DEBUG_WATCHPOINT_GET_ALL,
+        ],
+        capabilities: {
+            debugger: true,
+            rawFrame: true,
+            rawFrameSchema: 1,
+            stackSampleSchema: 1,
+            watchpointSchema: 1,
+            watchpointServerAllocatedIds: true,
+            watchpointEdit: true,
+            watchpointMutationsWhileRunning: true,
+        },
+    };
+
+    it('accepts structured watchpoint editing', () => {
+        expect(() => validateWatchpointServer(validInfo)).not.to.throw();
+    });
+
+    it('rejects servers without command 94 or the edit capability', () => {
+        expect(() => validateWatchpointServer({
+            ...validInfo,
+            commands: validInfo.commands.filter(command => command !== IpcCommand.DEBUG_WATCHPOINT_EDIT),
+        })).to.throw('does not provide the required watchpoint protocol capabilities');
+
+        expect(() => validateWatchpointServer({
+            ...validInfo,
+            capabilities: { ...validInfo.capabilities, watchpointEdit: false },
+        })).to.throw('does not provide the required watchpoint protocol capabilities');
     });
 });
