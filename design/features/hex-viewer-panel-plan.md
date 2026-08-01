@@ -120,9 +120,21 @@ Pressing `Enter` commits a valid non-empty query to history. Deduplicate consecu
 - Search range: inclusive range highlight across all visible covered bytes.
 - Current PC: a distinct outline in Main RAM only, when available.
 - Symbol extent: subtle secondary decoration that must not obscure search or PC state.
-- Hover/focus tooltip: bank, 16-bit address, hexadecimal value, decimal value, and associated symbols.
+- Hovering a byte highlights both its table row and that byte. The byte highlight has stronger contrast than the row highlight and must remain distinguishable from search/range, PC, and symbol decorations.
+- The byte hover/focus tooltip uses the text `Address: 0xNNNN, char: C`, with an uppercase zero-padded address. `C` is the printable ASCII character for byte values `0x20..0x7E`; use `.` for non-printable bytes. Escape characters that would otherwise be interpreted as markup.
 
 The grid supports keyboard focus by byte: arrow keys move one byte/row, `PageUp`/`PageDown` move by the visible page, `Home`/`End` move to row or bank boundaries using standard modifier behavior. Use a roving `tabindex`, meaningful ARIA row/column labels, and theme tokens for normal, high-contrast, and reduced-motion environments.
+
+### 3.6 Context Menu and Source Navigation
+
+Right-clicking a byte cell or symbol entry opens a compact context menu anchored to the target. Keyboard users can open the same menu with the Context Menu key or `Shift+F10`. The target remains highlighted while the menu is open.
+
+The menu contains:
+
+- **Copy**: for a byte, copy its displayed uppercase two-digit hexadecimal value without a prefix (for example, `7F`); for a symbol, copy the symbol name exactly as displayed. Perform the clipboard write in the extension host through `vscode.env.clipboard.writeText`, not through browser clipboard permissions.
+- **Find in Source**: resolve the target address through `DebugSymbolService`/`DebugIndex.resolveAddress`. For a symbol, use its start address; for a byte, use the byte address. When a source location exists, open the related source file with `vscode.window.showTextDocument`, reveal the metadata line, and place the editor selection at the metadata column when available. Keep the item visible but disabled with the reason `Source location unavailable` when debug metadata is absent, stale, bank-incompatible, or has no row for the address.
+
+Close the menu on action, `Escape`, focus loss, scrolling, bank change, or session change. Context-menu messages carry the session ID, memory-space identity, address, and optional symbol identity; the extension host validates all fields and re-resolves source metadata rather than trusting a webview-supplied file path or line number. Source navigation is supported only for memory spaces explicitly represented by the loaded debug metadata.
 
 ## 4. Architecture
 
@@ -165,7 +177,7 @@ interface MemoryReadResult {
 
 **`AddressQueryParser`** is pure TypeScript with no VS Code or DOM dependencies. It returns a discriminated result for empty, incomplete, invalid, address, and range input. Symbol resolution is a separate step so parser tests do not require an ELF fixture.
 
-**`HexViewerProvider`** owns webview lifecycle, typed message validation, workspace-state persistence, view visibility, and orchestration. It does not parse protocol payloads or derive global addresses.
+**`HexViewerProvider`** owns webview lifecycle, typed message validation, workspace-state persistence, view visibility, context-menu command handling, clipboard writes, source-document navigation, and orchestration. It does not parse protocol payloads, derive global addresses, or trust source paths supplied by the webview.
 
 **Webview assets** own rendering, focus, keyboard behavior, viewport calculation, and stale-response rejection. Treat every message from the webview as untrusted input and validate its type, bounds, and size in the extension host.
 
@@ -361,6 +373,9 @@ Only after read-only telemetry is stable, consider byte editing while paused. It
 - Virtual windows at first row, middle, final row, resize, and overscan limits.
 - Request-generation rejection after search, bank, session, and visibility changes.
 - Symbol ordering, duplicate addresses, zero-size symbols, and range intersections.
+- Hover row/byte state and printable/non-printable tooltip formatting, including escaped markup characters.
+- Context-menu target retention, byte/symbol Copy payloads, and close conditions.
+- `Find in Source` resolution for exact rows, unavailable metadata, stale sessions, incompatible banks, and metadata columns.
 
 ### Integration Tests
 
@@ -370,6 +385,8 @@ Only after read-only telemetry is stable, consider byte editing while paused. It
 - Pause/continue behavior for coherent and non-coherent backends.
 - Stop/write invalidation and refresh.
 - Artifact reload while the view is open.
+- Clipboard routing and source-file opening from byte and symbol context-menu targets.
+- Rejection of forged source paths, stale session IDs, invalid addresses, and mismatched memory spaces from webview messages.
 - View disposal/recreation and workspace-state restoration.
 - Shared IPC priority under simultaneous frame, debugger, statistics, and memory requests.
 
@@ -393,6 +410,8 @@ Only after read-only telemetry is stable, consider byte editing while paused. It
 - Up/Down history navigation survives view recreation within the workspace.
 - The grid displays `00..0F`, `0000..FFF0`, byte values, and address-associated symbols correctly.
 - Search/range, PC, and symbol decorations remain distinguishable in default dark, default light, and high-contrast themes.
+- Hovering or keyboard-focusing a byte highlights its row and the byte and shows `Address: 0xNNNN, char: C`, using `.` for non-printable values.
+- Right-clicking a byte or symbol exposes **Copy** and **Find in Source**. Copy writes the specified byte value or symbol name; Find in Source opens and selects the metadata-backed source line when available and is visibly disabled otherwise.
 
 ### Performance
 
@@ -413,7 +432,7 @@ Only after read-only telemetry is stable, consider byte editing while paused. It
 
 ### Accessibility
 
-- Search, bank selection, every visible byte, and refresh are usable without a mouse.
+- Search, bank selection, every visible byte, refresh, and byte/symbol context-menu actions are usable without a mouse.
 - Focus is visible and stable through refreshes.
 - Screen readers receive address/value/symbol context without announcing the entire bank.
 - At 200% zoom and the minimum practical sidebar width, controls and bytes do not overlap.
