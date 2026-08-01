@@ -40,6 +40,10 @@
     }
 
     function render() {
+        if (document.body.classList.contains('session-empty')) {
+            rows.replaceChildren();
+            return;
+        }
         const firstVisible = Math.max(0, Math.floor(viewport.scrollTop / ROW_HEIGHT));
         const visibleCount = Math.max(1, Math.ceil(viewport.clientHeight / ROW_HEIGHT));
         const lastVisible = Math.min(ROW_COUNT - 1, firstVisible + visibleCount - 1);
@@ -125,11 +129,31 @@
     new ResizeObserver(render).observe(viewport);
     function persist() { vscode.postMessage({ type: 'persist', space: selectedSpace, query: query.value, history }); }
 
+    function resetSession() {
+        closeMenu();
+        cache.clear();
+        symbols = [];
+        sourceAddresses.clear();
+        spaces = [];
+        highlightStart = -1;
+        highlightEnd = -1;
+        lastVisibleKey = '';
+        rows.replaceChildren();
+        spaceSelect.replaceChildren();
+        document.body.classList.add('session-empty');
+    }
+
     window.addEventListener('message', event => {
         const message = event.data;
-        if (message.type === 'state') status.textContent = message.message;
-        if (message.type === 'spaces') { spaces = message.spaces; selectedSpace = message.selected; spaceSelect.replaceChildren(...spaces.map(item => { const option = document.createElement('option'); option.textContent = item.label; return option; })); spaceSelect.selectedIndex = Math.max(0, spaces.findIndex(item => key(item.space) === key(selectedSpace))); lastVisibleKey = ''; render(); }
-        if (message.type === 'memory' && key(message.space) === key(selectedSpace)) { const bank = bankCache(); bank.values.set(new Uint8Array(message.values), message.offset); bank.valid.set(new Uint8Array(message.valid), message.offset); symbols = message.symbols; sourceAddresses.clear(); message.sourceAddresses.forEach(address => sourceAddresses.add(address)); render(); }
+        if (message.type === 'state') {
+            status.textContent = message.message;
+            if (message.state === 'unsupported' || message.state === 'ready' || message.state === 'running' || message.state === 'stale') {
+                document.body.classList.remove('session-empty');
+            }
+        }
+        if (message.type === 'reset') resetSession();
+        if (message.type === 'spaces') { document.body.classList.remove('session-empty'); spaces = message.spaces; selectedSpace = message.selected; spaceSelect.replaceChildren(...spaces.map(item => { const option = document.createElement('option'); option.textContent = item.label; return option; })); spaceSelect.selectedIndex = Math.max(0, spaces.findIndex(item => key(item.space) === key(selectedSpace))); lastVisibleKey = ''; render(); }
+        if (message.type === 'memory' && key(message.space) === key(selectedSpace)) { if (document.body.classList.contains('session-empty')) return; const bank = bankCache(); bank.values.set(new Uint8Array(message.values), message.offset); bank.valid.set(new Uint8Array(message.valid), message.offset); symbols = message.symbols; sourceAddresses.clear(); message.sourceAddresses.forEach(address => sourceAddresses.add(address)); render(); }
         if (message.type === 'navigate') { highlightStart = message.start; highlightEnd = message.end; viewport.scrollTop = Math.floor(message.start / 16) * ROW_HEIGHT; lastVisibleKey = ''; render(); }
         if (message.type === 'clearHighlight') { highlightStart = -1; highlightEnd = -1; render(); }
         if (message.type === 'queryError') { query.classList.toggle('invalid', !!message.message); query.title = message.message || SEARCH_TOOLTIP; }

@@ -143,6 +143,12 @@ export class HexViewerProvider implements vscode.WebviewViewProvider, vscode.Dis
             this.memory.setCapabilities(undefined);
             this.symbols.clear();
             this.stopRefreshTimer();
+            if (this.queryTimer) {
+                clearTimeout(this.queryTimer);
+                this.queryTimer = undefined;
+            }
+            this.visibleRange = undefined;
+            this.post({ type: 'reset' });
             this.post({ type: 'state', state: 'noSession', message: 'No active emulator session' });
             return;
         }
@@ -161,6 +167,9 @@ export class HexViewerProvider implements vscode.WebviewViewProvider, vscode.Dis
         }
 
         await this.loadSymbols();
+        if (!this.lifecycle.connected || !this.memory.supported) {
+            return;
+        }
         const spaces = allMemorySpaces(capabilities!.ramDiskCount, capabilities!.banksPerRamDisk);
         if (!spaces.some(space => memorySpaceKey(space) === memorySpaceKey(this.selectedSpace))) {
             this.selectedSpace = MAIN_MEMORY_SPACE;
@@ -387,7 +396,7 @@ export class HexViewerProvider implements vscode.WebviewViewProvider, vscode.Dis
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="${cssUri}"><title>V6 Hex Viewer</title></head>
-<body><div class="controls"><input id="query" type="text" aria-label="Address, symbol, or inclusive range" placeholder="Address, symbol, 11-14, or 11..14" title="Enter a decimal address; a hexadecimal address as 0x100, 100h, or $100; a Main RAM symbol; or an inclusive range such as 11-14 or $100..$1FF. Results update while you type.">
+<body class="session-empty"><div class="controls"><input id="query" type="text" aria-label="Address, symbol, or inclusive range" placeholder="Address, symbol, 11-14, or 11..14" title="Enter a decimal address; a hexadecimal address as 0x100, 100h, or $100; a Main RAM symbol; or an inclusive range such as 11-14 or $100..$1FF. Results update while you type.">
 <select id="space" aria-label="Memory bank"><option>Main RAM</option></select></div>
 <div id="status" role="status">No active emulator session</div>
 <div id="header" aria-hidden="true"><span>ADDR</span><span>00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F</span><span>Symbols</span></div>

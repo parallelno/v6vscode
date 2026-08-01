@@ -11,6 +11,7 @@ export type HexViewerWebviewMessage =
 
 export type HexViewerHostMessage =
     | { type: 'state'; state: 'noSession' | 'unsupported' | 'ready' | 'running' | 'stale' | 'error'; message: string }
+    | { type: 'reset' }
     | { type: 'spaces'; spaces: Array<{ space: MemorySpace; label: string }>; selected: MemorySpace }
     | { type: 'memory'; space: MemorySpace; offset: number; values: Uint8Array; valid: Uint8Array; symbols: Array<{ name: string; address: number; size: number }>; sourceAddresses: number[] }
     | { type: 'navigate'; start: number; end: number }

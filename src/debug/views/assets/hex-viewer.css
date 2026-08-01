@@ -1,5 +1,6 @@
 * { box-sizing: border-box; }
 body { margin: 0; height: 100vh; display: flex; flex-direction: column; color: var(--vscode-foreground); background: var(--vscode-sideBar-background); font-family: var(--vscode-font-family); }
+body.session-empty > * { display: none; }
 .controls { display: grid; gap: 4px; padding: 6px; border-bottom: 1px solid var(--vscode-panel-border); }
 input, select { width: 100%; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); padding: 4px 6px; }
 input.invalid { border-color: var(--vscode-inputValidation-errorBorder); }
