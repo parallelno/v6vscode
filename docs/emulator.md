@@ -23,11 +23,13 @@ Launches the `v6emul` backend, communicates over TCP using length-prefixed Messa
 
 ## Panel (`src/emulator/panel/`)
 
-Webview-based display and control surface for the running emulator.
+Webview-based display surface for the running emulator. Execution control remains in VS Code's standard debug toolbar.
 
 - **`emulator-viewmodel.ts`** — Tracks panel state: `running`, `speed`, `viewMode`. Defines three display modes (`full` 768×312, `border` 544×288, `borderless` 512×256) with crop rectangles. Provides `abgrToRgba()` pixel conversion, `cropFrame()` extraction, and `processFrame()` pipeline that crops then converts a raw frame into a `PanelMessage`. Typed message types: `PanelMessage` (extension → webview) and `WebviewMessage` (webview → extension).
 - **`emulator-panel.ts`** — Creates and manages a `vscode.WebviewPanel`. Generates HTML with CSP nonce, routes `WebviewMessage` from the webview to `EmulatorLifecycle`/`IpcClient`, drives a frame polling loop (~50 fps) that calls `GET_FRAME_RAW`, crops/converts via the viewmodel, and posts `PanelMessage` to the webview.
-- **`assets/panel.html`** — Webview shell: header bar (Run/Pause, Reset, Speed dropdown, Display dropdown), canvas viewport, error bar.
+- **`emulator-settings-controller.ts`** — Shared authority for Speed and Display mode validation, emulator IPC updates, and active-project persistence.
+- **`emulator-settings-panel.ts`** — Dedicated Settings editor panel for Speed and Display mode.
+- **`assets/panel.html`** — Display webview shell: canvas viewport and error bar.
 - **`assets/panel.css`** — VS Code themed styles using CSS variables. Pixelated canvas rendering.
 - **`assets/panel.js`** — IIFE webview script. Renders frames to canvas via `putImageData`, forwards keyboard events (keyCode + action) to the extension host, handles control interactions.
 
@@ -39,7 +41,7 @@ During a debug launch the panel uses the lifecycle's existing connection. It doe
 
 ## Hex Viewer
 
-`V6 Hex Viewer` is contributed to the Run and Debug sidebar and uses the lifecycle's shared IPC connection. It provides Main RAM and negotiated RAM-disk banks as separate 64 KiB spaces. The client allocates a complete 33-space cache but reads only the selected bank interval currently visible in the virtualized grid. While running and visible, coherent backends refresh that interval once per second; non-coherent backends retain and label the last paused values.
+`Hex Viewer` is a standalone editor panel opened from the `v6emul` view container or Command Palette and uses the lifecycle's shared IPC connection. It provides Main RAM and negotiated RAM-disk banks as separate 64 KiB spaces. The client allocates a complete 33-space cache but reads only the selected bank interval currently visible in the virtualized grid. While running and visible, coherent backends refresh that interval once per second; non-coherent backends retain and label the last paused values.
 
 The view requires `GET_MEM` command `93` in `GET_SERVER_INFO`. Main RAM starts at global address `0x00000`; RAM Disk 1 / Bank 0 starts at `0x10000`, and each subsequent bank occupies the next 64 KiB interval. Without command 93 the view shows an unsupported-backend state and sends no legacy per-byte requests.
 
@@ -47,7 +49,7 @@ When the server also advertises `SET_BYTE_GLOBAL` command `43`, double-click byt
 
 ## Watchpoints
 
-`V6 Watchpoints` is contributed to the Run and Debug sidebar and shares the lifecycle's IPC connection. It requires watchpoint schema 1, server-allocated IDs, and `DEBUG_WATCHPOINT_EDIT` command 94. Add, edit, activity toggles, delete, Disable All, and Delete All are serialized and reconciled with `DEBUG_WATCHPOINT_GET_ALL` before the UI accepts backend state.
+`Watchpoints` is a standalone editor panel opened from the `v6emul` view container or Command Palette and shares the lifecycle's IPC connection. It requires watchpoint schema 1, server-allocated IDs, and `DEBUG_WATCHPOINT_EDIT` command 94. Add, edit, activity toggles, delete, Disable All, and Delete All are serialized and reconciled with `DEBUG_WATCHPOINT_GET_ALL` before the UI accepts backend state.
 
 Rows use global numeric addresses covering Main RAM and all RAM-disk banks. Hover or keyboard focus reads at most 16 bytes when `GET_MEM` is available. Find in Hex Viewer converts the global range into a typed memory space, selects that bank, and highlights the inclusive range. Ranges crossing a 64 KiB viewer bank are rejected.
 

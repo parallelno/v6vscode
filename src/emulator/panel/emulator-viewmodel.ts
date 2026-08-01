@@ -25,15 +25,9 @@ export function abgrToRgba(abgr: Uint8Array): Uint8Array {
 
 export type PanelMessage =
     | { type: 'frame'; width: number; height: number; pixels: Uint8Array }
-    | { type: 'status'; running: boolean; speed: string; viewMode: DisplayMode }
     | { type: 'error'; message: string };
 
 export type WebviewMessage =
-    | { type: 'run' }
-    | { type: 'pause' }
-    | { type: 'reset' }
-    | { type: 'setSpeed'; value: string }
-    | { type: 'setViewMode'; value: string }
     | { type: 'key'; scancode: number; action: number }
     | { type: 'ready' };
 
@@ -48,17 +42,16 @@ export class EmulatorViewModel {
     get speed(): string { return this._speed; }
     get viewMode(): DisplayMode { return this._viewMode; }
 
-    setRunning(running: boolean): PanelMessage {
+    setRunning(running: boolean): void {
         this._running = running;
-        return this.makeStatusMessage();
     }
 
-    setSpeed(speed: string): PanelMessage | null {
+    setSpeed(speed: string): boolean {
         if (SPEED_VALUES[speed] === undefined) {
-            return null;
+            return false;
         }
         this._speed = speed;
-        return this.makeStatusMessage();
+        return true;
     }
 
     setViewMode(mode: string): boolean {
@@ -77,10 +70,6 @@ export class EmulatorViewModel {
             height: srcHeight,
             pixels: rgbaPixels,
         };
-    }
-
-    makeStatusMessage(): PanelMessage {
-        return { type: 'status', running: this._running, speed: this._speed, viewMode: this._viewMode };
     }
 
     makeErrorMessage(message: string): PanelMessage {

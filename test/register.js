@@ -12,7 +12,28 @@ const mockUri = {
 };
 
 const mockVscode = {
+    EventEmitter: class EventEmitter {
+        constructor() {
+            this.listeners = [];
+            this.event = (listener) => {
+                this.listeners.push(listener);
+                return { dispose: () => { this.listeners = this.listeners.filter(item => item !== listener); } };
+            };
+        }
+        fire(value) { this.listeners.forEach(listener => listener(value)); }
+        dispose() { this.listeners = []; }
+    },
     Uri: mockUri,
+    ThemeIcon: class ThemeIcon {
+        constructor(id) { this.id = id; }
+    },
+    TreeItem: class TreeItem {
+        constructor(label, collapsibleState) {
+            this.label = label;
+            this.collapsibleState = collapsibleState;
+        }
+    },
+    TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
     RelativePattern: class RelativePattern {
         constructor(base, pattern) {
             this.base = base;

@@ -56,23 +56,48 @@
         "title": "Add Watchpoint",
         "category": "V6",
         "icon": "$(add)"
+      },
+      {
+        "command": "v6emul.toggleSettings",
+        "title": "Settings",
+        "category": "v6emul"
+      },
+      {
+        "command": "v6emul.toggleDisplay",
+        "title": "Display",
+        "category": "v6emul"
+      },
+      {
+        "command": "v6emul.toggleHexViewer",
+        "title": "Hex Viewer",
+        "category": "v6emul"
+      },
+      {
+        "command": "v6emul.toggleWatchpoints",
+        "title": "Watchpoints",
+        "category": "v6emul"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "v6emul",
+          "title": "v6emul",
+          "icon": "res/images/icon.png"
+        }
+      ]
+    },
     "views": {
       "debug": [
         {
           "id": "v6.hardwareStatistics",
           "name": "V6 Hardware Statistics"
-        },
+        }
+      ],
+      "v6emul": [
         {
-          "id": "v6.hexViewer",
-          "name": "V6 Hex Viewer",
-          "type": "webview"
-        },
-        {
-          "id": "v6.watchpoints",
-          "name": "V6 Watchpoints",
-          "type": "webview"
+          "id": "v6emul.panels",
+          "name": "Panels"
         }
       ]
     },
@@ -82,20 +107,22 @@
           "command": "v6.refreshHardwareStatistics",
           "when": "view == v6.hardwareStatistics",
           "group": "navigation"
-        },
+        }
+      ],
+      "editor/title": [
         {
           "command": "v6.refreshHexViewer",
-          "when": "view == v6.hexViewer",
+          "when": "activeWebviewPanelId == v6.hexViewer",
           "group": "navigation"
         },
         {
           "command": "v6.addWatchpoint",
-          "when": "view == v6.watchpoints",
+          "when": "activeWebviewPanelId == v6.watchpoints",
           "group": "navigation@1"
         },
         {
           "command": "v6.refreshWatchpoints",
-          "when": "view == v6.watchpoints",
+          "when": "activeWebviewPanelId == v6.watchpoints",
           "group": "navigation@2"
         }
       ]

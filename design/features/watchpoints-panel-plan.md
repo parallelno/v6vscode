@@ -5,6 +5,8 @@
 **Owners:** v6vscode and v6emul maintainers
 **Related work:** `debug-adapter-and-debug-views-plan.md`, Steps 3.3, 3.7, 3.13, 3.14, and 3.16; `hex-viewer-panel-plan.md`
 
+> **Placement update (2026-08-01):** The `views.debug` placement in this document is superseded by `v6emul-menu-and-panels-plan.md`. Watchpoints is now a standalone editor `WebviewPanel` toggled from the `v6emul` view container or Command Palette; its domain and interaction requirements below remain applicable.
+
 ## 1. Objective
 
 Add a **V6 Watchpoints** panel to the built-in Run and Debug container. The panel presents one watchpoint per table row, supports reliable add/edit/enable/disable/delete operations, previews watched memory, and navigates the selected range into V6 Hex Viewer.

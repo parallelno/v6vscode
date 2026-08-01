@@ -61,15 +61,13 @@ describe('EmulatorViewModel', () => {
 
     describe('setRunning', () => {
         it('should return status message with running=true', () => {
-            const msg = vm.setRunning(true);
-            expect(msg).to.deep.equal({ type: 'status', running: true, speed: '100%', viewMode: 'borderless' });
+            vm.setRunning(true);
             expect(vm.running).to.be.true;
         });
 
         it('should return status message with running=false', () => {
             vm.setRunning(true);
-            const msg = vm.setRunning(false);
-            expect(msg).to.deep.equal({ type: 'status', running: false, speed: '100%', viewMode: 'borderless' });
+            vm.setRunning(false);
             expect(vm.running).to.be.false;
         });
     });
@@ -77,16 +75,15 @@ describe('EmulatorViewModel', () => {
     describe('setSpeed', () => {
         it('should accept valid speed values', () => {
             for (const speed of ['1%', '20%', '50%', '100%', '200%', 'max']) {
-                const msg = vm.setSpeed(speed);
-                expect(msg, `speed ${speed}`).to.not.be.null;
-                expect(msg!.type).to.equal('status');
+                const accepted = vm.setSpeed(speed);
+                expect(accepted, `speed ${speed}`).to.be.true;
                 expect(vm.speed).to.equal(speed);
             }
         });
 
         it('should return null for invalid speed', () => {
-            const msg = vm.setSpeed('invalid');
-            expect(msg).to.be.null;
+            const accepted = vm.setSpeed('invalid');
+            expect(accepted).to.be.false;
             expect(vm.speed).to.equal('100%'); // unchanged
         });
     });
@@ -121,15 +118,6 @@ describe('EmulatorViewModel', () => {
                 expect(msg.pixels[2]).to.equal(0xBB);
                 expect(msg.pixels[3]).to.equal(0xAA);
             }
-        });
-    });
-
-    describe('makeStatusMessage', () => {
-        it('should reflect current state', () => {
-            vm.setRunning(true);
-            vm.setSpeed('50%');
-            const msg = vm.makeStatusMessage();
-            expect(msg).to.deep.equal({ type: 'status', running: true, speed: '50%', viewMode: 'borderless' });
         });
     });
 

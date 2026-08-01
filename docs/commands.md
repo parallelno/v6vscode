@@ -27,13 +27,19 @@ Templates live in `src/templates/` and use `{{key}}` placeholder expansion.
 4. If no emulator is running — launches via `EmulatorLifecycle.start()`.
 5. Reveals or creates the emulator webview panel.
 
+## v6emul Panel Toggles
+
+The `v6emul` Activity Bar container, also available through **View > Open View... > v6emul**, contains launchers for Settings, Display, Hex Viewer, and Watchpoints. Each launcher creates an editor panel when closed and disposes it when open. Open panels show a check icon and `Open` state; closing a panel tab clears that state. The same toggle commands remain available in the Command Palette under the `v6emul` category.
+
+VS Code's extension API does not expose the built-in **View** menubar as a menu contribution location. A direct **View > v6emul** submenu cannot be contributed by an extension; `menubar/view` is ignored by the host.
+
 ## V6: Refresh Hex Viewer
 
-Refreshes the currently visible address interval in the selected Hex Viewer memory space. The command is available from the `V6 Hex Viewer` title bar in Run and Debug. It requires an active emulator that advertises `GET_MEM` command 93; hidden views do not poll or refresh.
+Refreshes the currently visible address interval in the standalone Hex Viewer panel. It requires an active emulator that advertises `GET_MEM` command 93; hidden panels do not poll or refresh.
 
 ## V6: Add Watchpoint
 
-Reveals `V6 Watchpoints` in Run and Debug and opens a new editable row. Submitting the row creates a structured backend watchpoint; the backend assigns its stable ID.
+Opens or reveals the standalone Watchpoints panel and creates a backend watchpoint. The backend assigns its stable ID.
 
 ## V6: Refresh Watchpoints
 
@@ -41,7 +47,7 @@ Refreshes the authoritative watchpoint snapshot. The panel requires structured w
 
 ## FDD Persistence
 
-When the emulator stops (or the panel closes), if the loaded executable is a `.fdd` file:
+When the emulator stops, if the loaded executable is a `.fdd` file:
 
 - If `fddReadOnly` is `true` → skip entirely, discard in-memory writes.
 - If `fddReadOnly` is `false` → `GET_FDD_INFO` checks if the drive is mounted and updated → `GET_FDD_IMAGE` exports the disk image → write to disk → `RESET_UPDATE_FDD`.

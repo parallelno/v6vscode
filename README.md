@@ -12,7 +12,10 @@
 - **Include navigation** — Ctrl+click on `.include "..."` directives
 - **V6: Create Project** — scaffolds a new project (source, Makefile, project config) with ASM/C and ROM/FDD options
 - **V6: Run Project** — launches or hot-reloads the emulator, opens the display panel
-- **Emulator panel** — webview with canvas display, Run/Pause, Reset, Speed, Display Mode controls, keyboard forwarding
+- **v6emul tools view** — the `v6emul` Activity Bar container, also available through **View > Open View... > v6emul**, toggles Settings, Display, Hex Viewer, and Watchpoints editor panels
+- **Display panel** — focused canvas display with keyboard forwarding; execution control stays in VS Code's debug toolbar
+- **Emulator Settings panel** — changes and persists Speed and Display mode
+- **Standalone Hex Viewer and Watchpoints** — full-size editor panels for memory inspection and watchpoint management
 - **FPS counter** — live frames-per-second display in the status bar (bottom-right) while the emulator is running
 - **FDD persistence** — automatically saves modified floppy disk images back to disk on stop (unless `fddReadOnly` is set)
 
@@ -48,6 +51,10 @@ After downloading, tell the extension where to find them using **one** of these 
 |---------|-------------|
 | `V6: Create Project` | Scaffold a new Vector-06c project |
 | `V6: Run Project` | Build → launch → display emulator |
+| `v6emul: Settings` | Toggle emulator settings |
+| `v6emul: Display` | Toggle emulator display |
+| `v6emul: Hex Viewer` | Toggle the standalone memory viewer |
+| `v6emul: Watchpoints` | Toggle the standalone watchpoint editor |
 
 ## Settings
 

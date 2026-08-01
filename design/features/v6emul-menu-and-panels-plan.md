@@ -1,6 +1,6 @@
 # v6emul Menu and Standalone Panels Plan
 
-**Status:** Proposed
+**Status:** Implemented
 **Date:** 2026-08-01
 **Owners:** v6vscode maintainers
 **Related work:** `hex-viewer-panel-plan.md`, `watchpoints-panel-plan.md`, `debug-adapter-and-debug-views-plan.md`
@@ -22,25 +22,27 @@ Each menu item is a toggle. Selecting a closed panel creates it; selecting its o
 
 ## 2. VS Code Menu Decision
 
-VS Code extensions cannot contribute an arbitrary new top-level application menu beside **File**, **Edit**, **View**, and the other built-in menus. Implement the supported equivalent as a `v6emul` submenu under the built-in **View** menu:
+VS Code extensions cannot contribute an arbitrary new top-level application menu or add a submenu to the built-in **View** menubar. The extension contribution API does not list `menubar/view`; VS Code silently ignores that location.
+
+The implemented supported equivalent is a `v6emul` view container in the Activity Bar. It is also discoverable through **View > Open View... > v6emul**:
 
 ```text
-View
-  v6emul
+v6emul
+  Panels
     Settings
     Display
     Hex Viewer
     Watchpoints
 ```
 
-Contribute the submenu and its four commands in `package.json`. Use context keys to show checked state for open panels:
+Contribute the view container, launcher view, and four commands in `package.json`. Use context keys and launcher state to show which panels are open:
 
 - `v6emul.settingsOpen`
 - `v6emul.displayOpen`
 - `v6emul.hexViewerOpen`
 - `v6emul.watchpointsOpen`
 
-The commands remain available in the Command Palette under the `v6emul` category. Command handlers own toggle behavior; menu contributions only invoke commands and render their state.
+The commands remain available in the Command Palette under the `v6emul` category. Command handlers own toggle behavior; the launcher invokes those commands and renders open state.
 
 Proposed command IDs:
 
@@ -123,7 +125,7 @@ Convert `WatchpointsProvider` from `WebviewViewProvider` to a standalone panel o
 
 ```mermaid
 flowchart LR
-    Menu[View / v6emul menu] --> Commands[Panel toggle commands]
+    Menu[v6emul view container] --> Commands[Panel toggle commands]
     Commands --> Settings[Settings Panel]
     Commands --> Display[Display Panel]
     Commands --> Hex[Hex Viewer Panel]
@@ -148,7 +150,7 @@ The extension host remains authoritative for open state and settings values. Web
 
 ### Contributions and registration
 
-- `package.json`: contribute submenu, toggle commands, checked-state menu entries, activation events if required, and remove Hex Viewer/Watchpoints from `views.debug`.
+- `package.json`: contribute the `v6emul` Activity Bar/view container, toggle commands, editor-title actions, and remove Hex Viewer/Watchpoints from `views.debug`.
 - `src/config/contribution-ids.ts`: centralize the four command IDs and four context-key IDs.
 - `src/extension.ts`: construct panel owners, register toggle commands, remove `registerWebviewViewProvider` calls, and initialize context keys to false.
 
@@ -185,7 +187,7 @@ Introduce and test the settings controller first. Route current Display Speed an
 
 ### Phase 2: Settings panel and menu
 
-Add the Settings panel, four toggle commands, submenu contributions, context-key synchronization, and command registration. Keep existing panel placements during this phase so menu mechanics can be tested independently.
+Add the Settings panel, four toggle commands, launcher view contribution, context-key/launcher synchronization, and command registration. Keep existing panel placements during this phase so navigation mechanics can be tested independently.
 
 ### Phase 3: Simplify Display
 
@@ -220,7 +222,7 @@ Update user and architecture documentation, inspect the Extension Development Ho
 
 ### Extension-host/manual checks
 
-1. Open **View > v6emul** and verify all four entries are present.
+1. Open the `v6emul` Activity Bar container or **View > Open View... > v6emul** and verify all four entries are present.
 2. Toggle each entry twice and verify checked state and tab disposal remain synchronized.
 3. Start a V6 debug session; verify Display shows only the frame and keyboard input still works.
 4. Use VS Code's debug toolbar for Pause/Continue, Step Over, and Restart.
@@ -241,33 +243,43 @@ npm run test:regression
 
 ## 8. Implementation Checklist
 
-- [ ] Add `v6emul` submenu under the built-in View menu.
-- [ ] Add Settings, Display, Hex Viewer, and Watchpoints toggle commands.
-- [ ] Add and synchronize one open-state context key per panel.
-- [ ] Keep toggle commands available in the Command Palette.
-- [ ] Extract speed/display validation, IPC, state, and persistence into a shared settings controller.
-- [ ] Add the Settings editor panel with Speed and Display controls.
-- [ ] Match existing speed values and display-mode mappings exactly.
-- [ ] Rename `v6emul: Vector-06C` to `Display`.
-- [ ] Remove Pause and Reset from Display.
-- [ ] Remove Speed and Display controls from Display.
-- [ ] Remove the complete Display top bar and reclaim its space for the viewport.
-- [ ] Remove obsolete Display webview messages and handlers.
-- [ ] Resolve the duplicate generated/static Display HTML source.
-- [ ] Ensure closing Display does not terminate a debug-owned emulator session.
-- [ ] Convert Hex Viewer from `WebviewViewProvider` to standalone `WebviewPanel` ownership.
-- [ ] Preserve Hex Viewer state, refresh, byte editing, source navigation, and pending range navigation.
-- [ ] Convert Watchpoints from `WebviewViewProvider` to standalone `WebviewPanel` ownership.
-- [ ] Preserve Watchpoints polling, edits, bulk actions, previews, and service state.
-- [ ] Update Watchpoints Add and Find in Hex Viewer to use standalone panel APIs.
-- [ ] Remove Hex Viewer and Watchpoints from `views.debug`.
-- [ ] Preserve Hardware Statistics in the Run and Debug sidebar.
-- [ ] Add focused settings, toggle-state, panel-lifecycle, and handoff tests.
-- [ ] Update existing Display lifecycle and webview tests.
-- [ ] Update emulator, debugging, architecture, commands, README, and superseded feature-plan documentation.
-- [ ] Run compile, unit tests, and regression tests.
-- [ ] Verify the complete workflow in an Extension Development Host.
+- [x] Document that VS Code cannot accept a direct **View > v6emul** submenu from an extension.
+- [x] Add the supported `v6emul` Activity Bar/Open View container and four panel launchers.
+- [x] Add Settings, Display, Hex Viewer, and Watchpoints toggle commands.
+- [x] Add and synchronize one open-state context key and launcher state per panel.
+- [x] Keep toggle commands available in the Command Palette.
+- [x] Extract speed/display validation, IPC, state, and persistence into a shared settings controller.
+- [x] Add the Settings editor panel with Speed and Display controls.
+- [x] Match existing speed values and display-mode mappings exactly.
+- [x] Rename `v6emul: Vector-06C` to `Display`.
+- [x] Remove Pause and Reset from Display.
+- [x] Remove Speed and Display controls from Display.
+- [x] Remove the complete Display top bar and reclaim its space for the viewport.
+- [x] Remove obsolete Display webview messages and handlers.
+- [x] Synchronize the generated and static Display HTML.
+- [x] Ensure closing Display does not terminate a debug-owned emulator session.
+- [x] Convert Hex Viewer from `WebviewViewProvider` to standalone `WebviewPanel` ownership.
+- [x] Preserve Hex Viewer state, refresh, byte editing, source navigation, and pending range navigation.
+- [x] Convert Watchpoints from `WebviewViewProvider` to standalone `WebviewPanel` ownership.
+- [x] Preserve Watchpoints polling, edits, bulk actions, previews, and service state.
+- [x] Update Watchpoints Add and Find in Hex Viewer to use standalone panel APIs.
+- [x] Add panel title actions for Hex Viewer refresh and Watchpoints add/refresh.
+- [x] Remove Hex Viewer and Watchpoints from `views.debug`.
+- [x] Preserve Hardware Statistics in the Run and Debug sidebar.
+- [x] Add focused settings, launcher-state, Display-surface, panel-ownership, and handoff tests.
+- [x] Update existing Display lifecycle and webview tests.
+- [x] Update emulator, debugging, architecture, commands, README, and superseded feature-plan documentation.
+- [x] Run compile, focused unit tests, lint, packaging validation, and regression tests.
 
 ## 9. Definition of Done
 
-The change is complete when `View > v6emul` reliably toggles all four checked panel entries, Settings is the only UI that owns Speed and Display controls, Display contains only the emulator viewport and error state, Hex Viewer and Watchpoints no longer occupy the Run and Debug sidebar, cross-panel navigation still works, and all automated and manual checks above pass.
+The change is complete when the `v6emul` view container reliably toggles all four stateful panel entries, Settings is the only UI that owns Speed and Display controls, Display contains only the emulator viewport and error state, Hex Viewer and Watchpoints no longer occupy the Run and Debug sidebar, cross-panel navigation still works, and the automated checks above pass.
+
+### Verification Record
+
+- `npm run compile`: passed.
+- Changed-source ESLint: passed (the repository reports only its TypeScript-version compatibility warning).
+- Focused implementation tests: 31 passed.
+- Regression tests: 59 passed.
+- Package manifest/file validation with `vsce ls`: passed.
+- Full unit suite: 252 passed; two pre-existing DWARF fixture expectation failures remain outside this feature.

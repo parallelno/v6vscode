@@ -38,8 +38,8 @@ interface VisibleRange {
     length: number;
 }
 
-export class HexViewerProvider implements vscode.WebviewViewProvider, vscode.Disposable {
-    private view: vscode.WebviewView | undefined;
+export class HexViewerProvider implements vscode.Disposable {
+    private panel: vscode.WebviewPanel | undefined;
     private readonly memory: MemoryService;
     private readonly symbols = new DebugSymbolService();
     private visibleRange: VisibleRange | undefined;
@@ -58,33 +58,59 @@ export class HexViewerProvider implements vscode.WebviewViewProvider, vscode.Dis
         private readonly activeProjectService: ActiveProjectService,
         private readonly workspaceState: vscode.Memento,
         private readonly logger: Logger,
+        private readonly onOpenStateChanged: (open: boolean) => void = () => {},
     ) {
         this.memory = new MemoryService(client, undefined);
         this.stateListener = () => void this.syncSession();
         this.lifecycle.on('stateChange', this.stateListener);
     }
 
-    resolveWebviewView(view: vscode.WebviewView): void {
-        this.view = view;
+    toggle(): void {
+        if (this.panel) {
+            this.panel.dispose();
+        } else {
+            this.open();
+        }
+    }
+
+    isOpen(): boolean {
+        return this.panel !== undefined;
+    }
+
+    close(): void {
+        this.panel?.dispose();
+    }
+
+    open(): void {
+        if (this.panel) {
+            this.panel.reveal();
+            return;
+        }
         const assetsUri = vscode.Uri.joinPath(this.extensionUri, 'src', 'debug', 'views', 'assets');
-        view.webview.options = { enableScripts: true, localResourceRoots: [assetsUri] };
-        view.webview.html = this.html(view.webview, assetsUri);
-        view.webview.onDidReceiveMessage((message: HexViewerWebviewMessage) => void this.handleMessage(message));
-        view.onDidChangeVisibility(() => {
-            if (view.visible) {
+        const panel = vscode.window.createWebviewPanel(
+            'v6.hexViewer', 'Hex Viewer', vscode.ViewColumn.Beside,
+            { enableScripts: true, localResourceRoots: [assetsUri], retainContextWhenHidden: true },
+        );
+        this.panel = panel;
+        panel.webview.html = this.html(panel.webview, assetsUri);
+        panel.webview.onDidReceiveMessage((message: HexViewerWebviewMessage) => void this.handleMessage(message));
+        panel.onDidChangeViewState(event => {
+            if (event.webviewPanel.visible) {
                 void this.syncSession();
             } else {
                 this.stopRefreshTimer();
             }
         });
-        view.onDidDispose(() => {
+        panel.onDidDispose(() => {
             this.stopRefreshTimer();
-            this.view = undefined;
+            this.panel = undefined;
+            this.onOpenStateChanged(false);
         });
+        this.onOpenStateChanged(true);
     }
 
     async refresh(): Promise<void> {
-        if (this.visibleRange && this.view?.visible) {
+        if (this.visibleRange && this.panel?.visible) {
             await this.refreshVisible(this.visibleRange);
         }
     }
@@ -103,6 +129,7 @@ export class HexViewerProvider implements vscode.WebviewViewProvider, vscode.Dis
         this.stopRefreshTimer();
         if (this.queryTimer) { clearTimeout(this.queryTimer); }
         this.lifecycle.removeListener('stateChange', this.stateListener);
+        this.panel?.dispose();
     }
 
     private async handleMessage(message: HexViewerWebviewMessage): Promise<void> {
@@ -154,7 +181,7 @@ export class HexViewerProvider implements vscode.WebviewViewProvider, vscode.Dis
     }
 
     private async syncSession(): Promise<void> {
-        if (!this.view?.visible) { return; }
+        if (!this.panel?.visible) { return; }
         if (!this.lifecycle.connected) {
             this.memory.setCapabilities(undefined);
             this.symbols.clear();
@@ -223,7 +250,7 @@ export class HexViewerProvider implements vscode.WebviewViewProvider, vscode.Dis
     }
 
     private async refreshVisible(range: VisibleRange): Promise<void> {
-        if (!this.view?.visible || !this.lifecycle.connected || !this.memory.supported) { return; }
+        if (!this.panel?.visible || !this.lifecycle.connected || !this.memory.supported) { return; }
         if (this.refreshActive) {
             this.pendingRefresh = range;
             return;
@@ -235,7 +262,7 @@ export class HexViewerProvider implements vscode.WebviewViewProvider, vscode.Dis
             this.refreshActive = false;
             const pending = this.pendingRefresh;
             this.pendingRefresh = undefined;
-            if (pending && this.view?.visible) {
+            if (pending && this.panel?.visible) {
                 void this.refreshVisible(pending);
             }
         }
@@ -409,7 +436,7 @@ export class HexViewerProvider implements vscode.WebviewViewProvider, vscode.Dis
 
     private configureRefreshTimer(): void {
         this.stopRefreshTimer();
-        if (this.lifecycle.running && this.view?.visible) {
+        if (this.lifecycle.running && this.panel?.visible) {
             this.refreshTimer = setInterval(() => void this.refresh(), 1000);
         }
     }
@@ -443,11 +470,11 @@ export class HexViewerProvider implements vscode.WebviewViewProvider, vscode.Dis
     }
 
     private post(message: HexViewerHostMessage): void {
-        void this.view?.webview.postMessage(message);
+        void this.panel?.webview.postMessage(message);
     }
 
     private applyPendingNavigation(): void {
-        if (!this.view || !this.pendingNavigation) { return; }
+        if (!this.panel || !this.pendingNavigation) { return; }
         const navigation = this.pendingNavigation;
         this.pendingNavigation = undefined;
         this.post({ type: 'navigate', ...navigation });
@@ -461,7 +488,7 @@ export class HexViewerProvider implements vscode.WebviewViewProvider, vscode.Dis
 <html lang="en"><head><meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="${cssUri}"><title>V6 Hex Viewer</title></head>
+<link rel="stylesheet" href="${cssUri}"><title>Hex Viewer</title></head>
 <body class="session-empty"><div class="controls"><input id="query" type="text" aria-label="Address expression or inclusive range" placeholder="Symbol + offset, or start..end" title="Address expressions: decimal (256), 0x hex (0x100), $ hex ($100), h suffix (100h), or Main RAM symbols. Operators: +, -, *, unary +/-, and parentheses; multiplication has precedence. Examples: set_palette+1, set_palette+0x10*3. Inclusive ranges use start..end, for example buffer+2..buffer_end-1. Legacy numeric ranges such as 11-14 are also accepted. Bare symbols highlight the complete symbol; expressions highlight one address. Results update while you type.">
 <select id="space" aria-label="Memory bank"><option>Main RAM</option></select></div>
 <div id="status" role="status">No active emulator session</div>

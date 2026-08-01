@@ -9,13 +9,8 @@
     const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById('screen'));
     const ctx = canvas.getContext('2d');
     const viewport = /** @type {HTMLDivElement} */ (document.getElementById('viewport'));
-    const btnRunPause = /** @type {HTMLButtonElement} */ (document.getElementById('btn-run-pause'));
-    const btnReset = /** @type {HTMLButtonElement} */ (document.getElementById('btn-reset'));
-    const selSpeed = /** @type {HTMLSelectElement} */ (document.getElementById('sel-speed'));
-    const selDisplay = /** @type {HTMLSelectElement} */ (document.getElementById('sel-display'));
     const errorBar = /** @type {HTMLDivElement} */ (document.getElementById('error-bar'));
 
-    let isRunning = false;
     let isWebviewFocused = document.hasFocus();
 
     function resizeScreen() {
@@ -38,9 +33,6 @@
             case 'frame':
                 renderFrame(msg.width, msg.height, msg.pixels);
                 break;
-            case 'status':
-                updateStatus(msg.running, msg.speed, msg.viewMode);
-                break;
             case 'error':
                 showError(msg.message);
                 break;
@@ -61,15 +53,6 @@
         hideError();
     }
 
-    // --- Status update ---
-    function updateStatus(running, speed, viewMode) {
-        isRunning = running;
-        btnRunPause.textContent = running ? '\u23F8' : '\u25B6';
-        btnRunPause.title = running ? 'Pause' : 'Run';
-        selSpeed.value = speed;
-        selDisplay.value = viewMode;
-    }
-
     // --- Error display ---
     function showError(message) {
         errorBar.textContent = message;
@@ -79,23 +62,6 @@
     function hideError() {
         errorBar.classList.add('hidden');
     }
-
-    // --- Controls ---
-    btnRunPause.addEventListener('click', () => {
-        vscode.postMessage({ type: isRunning ? 'pause' : 'run' });
-    });
-
-    btnReset.addEventListener('click', () => {
-        vscode.postMessage({ type: 'reset' });
-    });
-
-    selSpeed.addEventListener('change', () => {
-        vscode.postMessage({ type: 'setSpeed', value: selSpeed.value });
-    });
-
-    selDisplay.addEventListener('change', () => {
-        vscode.postMessage({ type: 'setViewMode', value: selDisplay.value });
-    });
 
     window.addEventListener('focus', () => {
         isWebviewFocused = true;

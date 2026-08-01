@@ -145,4 +145,23 @@ describe('Commands and templates regression tests', () => {
             expect(path2).to.include('beta');
         });
     });
+
+    describe('v6emul panel contributions', () => {
+        it('contributes a supported launcher container without large debug sidebar views', () => {
+            const manifest = JSON.parse(fs.readFileSync(path.join(EXTENSION_ROOT, 'package.json'), 'utf8'));
+            const contributes = manifest.contributes;
+            expect(contributes.viewsContainers.activitybar).to.deep.include({
+                id: 'v6emul', title: 'v6emul', icon: 'res/images/icon.png',
+            });
+            expect(contributes.views.v6emul).to.deep.include({ id: 'v6emul.panels', name: 'Panels' });
+            expect(contributes.commands.filter((item: any) => item.category === 'v6emul').map((item: any) => item.command)).to.deep.equal([
+                'v6emul.toggleSettings',
+                'v6emul.toggleDisplay',
+                'v6emul.toggleHexViewer',
+                'v6emul.toggleWatchpoints',
+            ]);
+            expect(contributes.menus['menubar/view']).to.equal(undefined);
+            expect(contributes.views.debug.map((view: any) => view.id)).to.deep.equal(['v6.hardwareStatistics']);
+        });
+    });
 });

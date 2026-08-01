@@ -27,8 +27,8 @@ export const WATCHPOINTS_VIEW_ID = 'v6.watchpoints';
 export const CMD_REFRESH_WATCHPOINTS = 'v6.refreshWatchpoints';
 export const CMD_ADD_WATCHPOINT = 'v6.addWatchpoint';
 
-export class WatchpointsProvider implements vscode.WebviewViewProvider, vscode.Disposable {
-    private view: vscode.WebviewView | undefined;
+export class WatchpointsProvider implements vscode.Disposable {
+    private panel: vscode.WebviewPanel | undefined;
     private readonly memory: MemoryService;
     private readonly symbols = new DebugSymbolService();
     private readonly addressExpressions = new WatchpointExpressionStore();
@@ -43,6 +43,7 @@ export class WatchpointsProvider implements vscode.WebviewViewProvider, vscode.D
         private readonly hexViewer: HexViewerProvider,
         private readonly activeProjectService: ActiveProjectService,
         private readonly logger: Logger,
+        private readonly onOpenStateChanged: (open: boolean) => void = () => {},
     ) {
         this.memory = new MemoryService(lifecycle.ipcClient, undefined);
         this.stateListener = () => void this.syncSession();
@@ -51,14 +52,42 @@ export class WatchpointsProvider implements vscode.WebviewViewProvider, vscode.D
         this.service.on('change', this.changeListener);
     }
 
-    resolveWebviewView(view: vscode.WebviewView): void {
-        this.view = view;
+    toggle(): void {
+        if (this.panel) {
+            this.panel.dispose();
+        } else {
+            this.open();
+        }
+    }
+
+    isOpen(): boolean {
+        return this.panel !== undefined;
+    }
+
+    close(): void {
+        this.panel?.dispose();
+    }
+
+    open(): void {
+        if (this.panel) {
+            this.panel.reveal();
+            return;
+        }
         const assetsUri = vscode.Uri.joinPath(this.extensionUri, 'src', 'debug', 'views', 'assets');
-        view.webview.options = { enableScripts: true, localResourceRoots: [assetsUri] };
-        view.webview.html = this.html(view.webview, assetsUri);
-        view.webview.onDidReceiveMessage((message: WatchpointsWebviewMessage) => void this.handleMessage(message));
-        view.onDidChangeVisibility(() => view.visible ? void this.syncSession() : this.stopPolling());
-        view.onDidDispose(() => { this.stopPolling(); this.view = undefined; });
+        const panel = vscode.window.createWebviewPanel(
+            'v6.watchpoints', 'Watchpoints', vscode.ViewColumn.Beside,
+            { enableScripts: true, localResourceRoots: [assetsUri], retainContextWhenHidden: true },
+        );
+        this.panel = panel;
+        panel.webview.html = this.html(panel.webview, assetsUri);
+        panel.webview.onDidReceiveMessage((message: WatchpointsWebviewMessage) => void this.handleMessage(message));
+        panel.onDidChangeViewState(event => event.webviewPanel.visible ? void this.syncSession() : this.stopPolling());
+        panel.onDidDispose(() => {
+            this.stopPolling();
+            this.panel = undefined;
+            this.onOpenStateChanged(false);
+        });
+        this.onOpenStateChanged(true);
     }
 
     async refresh(): Promise<void> {
@@ -66,7 +95,7 @@ export class WatchpointsProvider implements vscode.WebviewViewProvider, vscode.D
     }
 
     async add(): Promise<void> {
-        await vscode.commands.executeCommand(`${WATCHPOINTS_VIEW_ID}.focus`);
+        this.open();
         await this.runOperation('add', async () => {
             const expression = '0';
             const added = await this.service.add({
@@ -88,6 +117,7 @@ export class WatchpointsProvider implements vscode.WebviewViewProvider, vscode.D
         this.stopPolling();
         this.lifecycle.removeListener('stateChange', this.stateListener);
         this.service.removeListener('change', this.changeListener);
+        this.panel?.dispose();
     }
 
     private async handleMessage(message: WatchpointsWebviewMessage): Promise<void> {
@@ -134,7 +164,7 @@ export class WatchpointsProvider implements vscode.WebviewViewProvider, vscode.D
     }
 
     private async syncSession(): Promise<void> {
-        if (!this.view?.visible) { return; }
+        if (!this.panel?.visible) { return; }
         if (!this.lifecycle.connected) {
             this.stopPolling();
             this.memory.setCapabilities(undefined);
@@ -212,7 +242,7 @@ export class WatchpointsProvider implements vscode.WebviewViewProvider, vscode.D
             throw new Error('Watchpoint range crosses a Hex Viewer memory bank');
         }
         this.hexViewer.revealRange(start.space, start.offset, end.offset);
-        await vscode.commands.executeCommand('v6.hexViewer.focus');
+        this.hexViewer.open();
     }
 
     private findEntry(id: number): WatchpointEntry {
@@ -266,7 +296,7 @@ export class WatchpointsProvider implements vscode.WebviewViewProvider, vscode.D
 
     private startPolling(): void {
         this.stopPolling();
-        if (this.view?.visible) {
+        if (this.panel?.visible) {
             this.pollTimer = setInterval(() => void this.service.refreshIfChanged().catch(error => this.report('refresh', error)), 1000);
         }
     }
@@ -288,7 +318,7 @@ export class WatchpointsProvider implements vscode.WebviewViewProvider, vscode.D
         this.post({ type: 'state', state: 'error', message, canMutate: this.service.available });
     }
 
-    private post(message: WatchpointsHostMessage): void { void this.view?.webview.postMessage(message); }
+    private post(message: WatchpointsHostMessage): void { void this.panel?.webview.postMessage(message); }
 
     private html(webview: vscode.Webview, assetsUri: vscode.Uri): string {
         const nonce = crypto.randomBytes(16).toString('hex');
@@ -296,7 +326,7 @@ export class WatchpointsProvider implements vscode.WebviewViewProvider, vscode.D
         const jsUri = webview.asWebviewUri(vscode.Uri.joinPath(assetsUri, 'watchpoints.js'));
         return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
-<meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${cssUri}"><title>V6 Watchpoints</title></head>
+<meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${cssUri}"><title>Watchpoints</title></head>
 <body><div id="status" role="status">No active emulator session</div><div id="table" role="grid" aria-label="V6 Watchpoints">
 <div class="header" role="row"><span role="columnheader">Activity</span><span role="columnheader">Global Address</span><span role="columnheader">Access</span><span role="columnheader">Condition</span><span role="columnheader">Value</span><span role="columnheader">Type</span><span role="columnheader">Len</span><span role="columnheader">Comment</span></div>
 <div id="rows"></div></div><div id="empty" tabindex="0">No watchpoints</div><div id="preview" role="tooltip" hidden></div><div id="live" class="sr-only" aria-live="polite"></div>

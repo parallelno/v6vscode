@@ -5,7 +5,20 @@ import { PathService } from './platform/files/path-service';
 import { WorkspaceService } from './platform/files/workspace-service';
 import { ProcessRunner } from './platform/process/process-runner';
 import { DisposableStore } from './platform/disposable/lifecycle';
-import { CMD_CREATE_PROJECT, CMD_RUN_PROJECT, OUTPUT_CHANNEL_NAME, SETTING_EMULATOR_PATH } from './config/contribution-ids';
+import {
+    CMD_CREATE_PROJECT,
+    CMD_RUN_PROJECT,
+    CMD_TOGGLE_DISPLAY,
+    CMD_TOGGLE_HEX_VIEWER,
+    CMD_TOGGLE_SETTINGS,
+    CMD_TOGGLE_WATCHPOINTS,
+    CONTEXT_DISPLAY_OPEN,
+    CONTEXT_HEX_VIEWER_OPEN,
+    CONTEXT_SETTINGS_OPEN,
+    CONTEXT_WATCHPOINTS_OPEN,
+    OUTPUT_CHANNEL_NAME,
+    SETTING_EMULATOR_PATH,
+} from './config/contribution-ids';
 import { ProjectDiscovery } from './project/discovery/project-discovery';
 import { ProjectRepository } from './project/persistence/project-repository';
 import { ActiveProjectService } from './project/active/active-project-service';
@@ -15,6 +28,9 @@ import { V6emulLauncher } from './emulator/launcher/v6emul-launcher';
 import { IpcClient } from './emulator/client/ipc-client';
 import { EmulatorLifecycle } from './emulator/lifecycle/emulator-lifecycle';
 import { EmulatorPanel } from './emulator/panel/emulator-panel';
+import { EmulatorSettingsController } from './emulator/panel/emulator-settings-controller';
+import { EmulatorSettingsPanel } from './emulator/panel/emulator-settings-panel';
+import { EmulatorPanelLauncherView } from './emulator/panel/emulator-panel-launcher-view';
 import { RunProjectCommand } from './commands/run-project-command';
 import { CreateProjectCommand } from './commands/create-project-command';
 import { FddPersistence } from './emulator/persistence/fdd-persistence';
@@ -27,14 +43,12 @@ import {
 } from './debug/views/hardware-statistics-view';
 import {
     CMD_REFRESH_HEX_VIEWER,
-    HEX_VIEWER_VIEW_ID,
     HexViewerProvider,
 } from './debug/views/hex-viewer-provider';
 import { WatchpointService } from './debug/watchpoints/watchpoint-service';
 import {
     CMD_ADD_WATCHPOINT,
     CMD_REFRESH_WATCHPOINTS,
-    WATCHPOINTS_VIEW_ID,
     WatchpointsProvider,
 } from './debug/views/watchpoints-provider';
 
@@ -45,6 +59,8 @@ export function activate(context: vscode.ExtensionContext): void {
     const pathService = new PathService(context.extensionUri);
     const workspaceService = new WorkspaceService();
     const processRunner = new ProcessRunner();
+    const panelLauncher = store.add(new EmulatorPanelLauncherView());
+    store.add(vscode.window.registerTreeDataProvider('v6emul.panels', panelLauncher));
 
     const projectDiscovery = new ProjectDiscovery();
     const projectRepository = new ProjectRepository(logger);
@@ -62,26 +78,39 @@ export function activate(context: vscode.ExtensionContext): void {
     const launcher = new V6emulLauncher(processRunner, logger);
     const ipcClient = new IpcClient(logger);
     const lifecycle = new EmulatorLifecycle(locator, launcher, ipcClient, logger, pathService);
+    const loadActiveProject = async () => {
+        const project = activeProjectService.getActiveProject();
+        return project ? projectRepository.load(project.uri) : undefined;
+    };
+    const settingsController = store.add(new EmulatorSettingsController(
+        lifecycle,
+        ipcClient,
+        loadActiveProject,
+        project => projectRepository.save(project),
+    ));
     const emulatorPanel = store.add(new EmulatorPanel(
-        context.extensionUri, lifecycle, ipcClient, logger, async (settings) => {
-            const project = activeProjectService.getActiveProject();
-            if (!project) {
-                return;
-            }
-
-            if (settings.speed) {
-                project.run.speed = settings.speed;
-            }
-            if (settings.viewMode) {
-                project.run.viewMode = settings.viewMode === 'border' ? 'bordered' : settings.viewMode;
-            }
-            await projectRepository.save(project);
-        },
-        async () => {
-            const project = activeProjectService.getActiveProject();
-            return project ? projectRepository.load(project.uri) : undefined;
+        context.extensionUri,
+        lifecycle,
+        ipcClient,
+        logger,
+        settingsController,
+        open => {
+            panelLauncher.setOpen(CMD_TOGGLE_DISPLAY, open);
+            void vscode.commands.executeCommand('setContext', CONTEXT_DISPLAY_OPEN, open);
         },
     ));
+    const settingsPanel = store.add(new EmulatorSettingsPanel(
+        settingsController,
+        logger,
+        open => {
+            panelLauncher.setOpen(CMD_TOGGLE_SETTINGS, open);
+            void vscode.commands.executeCommand('setContext', CONTEXT_SETTINGS_OPEN, open);
+        },
+    ));
+    void vscode.commands.executeCommand('setContext', CONTEXT_DISPLAY_OPEN, false);
+    void vscode.commands.executeCommand('setContext', CONTEXT_SETTINGS_OPEN, false);
+    store.add(vscode.commands.registerCommand(CMD_TOGGLE_DISPLAY, () => emulatorPanel.toggle()));
+    store.add(vscode.commands.registerCommand(CMD_TOGGLE_SETTINGS, () => settingsPanel.toggle()));
     const fddPersistence = new FddPersistence(ipcClient, logger);
     const hardwareStatistics = store.add(new HardwareStatisticsView(lifecycle, ipcClient, logger));
     store.add(vscode.window.registerTreeDataProvider(HARDWARE_STATISTICS_VIEW_ID, hardwareStatistics));
@@ -96,8 +125,13 @@ export function activate(context: vscode.ExtensionContext): void {
         activeProjectService,
         context.workspaceState,
         logger,
+        open => {
+            panelLauncher.setOpen(CMD_TOGGLE_HEX_VIEWER, open);
+            void vscode.commands.executeCommand('setContext', CONTEXT_HEX_VIEWER_OPEN, open);
+        },
     ));
-    store.add(vscode.window.registerWebviewViewProvider(HEX_VIEWER_VIEW_ID, hexViewer));
+    void vscode.commands.executeCommand('setContext', CONTEXT_HEX_VIEWER_OPEN, false);
+    store.add(vscode.commands.registerCommand(CMD_TOGGLE_HEX_VIEWER, () => hexViewer.toggle()));
     store.add(vscode.commands.registerCommand(CMD_REFRESH_HEX_VIEWER, () => hexViewer.refresh()));
     const watchpointService = store.add(new WatchpointService(lifecycle, ipcClient));
     const watchpoints = store.add(new WatchpointsProvider(
@@ -107,8 +141,13 @@ export function activate(context: vscode.ExtensionContext): void {
         hexViewer,
         activeProjectService,
         logger,
+        open => {
+            panelLauncher.setOpen(CMD_TOGGLE_WATCHPOINTS, open);
+            void vscode.commands.executeCommand('setContext', CONTEXT_WATCHPOINTS_OPEN, open);
+        },
     ));
-    store.add(vscode.window.registerWebviewViewProvider(WATCHPOINTS_VIEW_ID, watchpoints));
+    void vscode.commands.executeCommand('setContext', CONTEXT_WATCHPOINTS_OPEN, false);
+    store.add(vscode.commands.registerCommand(CMD_TOGGLE_WATCHPOINTS, () => watchpoints.toggle()));
     store.add(vscode.commands.registerCommand(CMD_REFRESH_WATCHPOINTS, () => watchpoints.refresh()));
     store.add(vscode.commands.registerCommand(CMD_ADD_WATCHPOINT, () => watchpoints.add()));
 

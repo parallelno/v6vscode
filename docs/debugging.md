@@ -43,8 +43,8 @@ Closing the display panel terminates the active debug launch and closes the Run 
 - Registers, flags, and a raw stack sample in Variables.
 - Register names and numeric literals in Watch/evaluate.
 - V6 Hardware Statistics in the Run and Debug sidebar.
-- A read-only V6 Hex Viewer with numeric, symbol, and inclusive-range navigation when the backend advertises `GET_MEM` command 93. Inclusive ranges accept `11-14` and `11..14`. Clearing the search clears its highlight; clicking a visible symbol selects its range without scrolling.
-- A V6 Watchpoints panel with structured add, edit, enable/disable, delete, bulk actions, bounded memory previews, and Hex Viewer navigation when the backend advertises watchpoint schema 1 and edit command 94.
+- A standalone Hex Viewer editor panel with numeric, symbol, and inclusive-range navigation when the backend advertises `GET_MEM` command 93. Inclusive ranges accept `11-14` and `11..14`. Clearing the search clears its highlight; clicking a visible symbol selects its range without scrolling.
+- A standalone Watchpoints editor panel with structured add, edit, enable/disable, delete, bulk actions, bounded memory previews, and Hex Viewer navigation when the backend advertises watchpoint schema 1 and edit command 94.
 - The Hex Viewer clears all cached bytes and becomes an empty panel when the emulator session stops.
 - Double-clicking a Hex Viewer byte opens an expression editor. Enter or focus loss submits; Escape cancels. Literals, symbols, `+`, `-`, `*`, unary signs, and parentheses are supported, and the final value must fit in one byte.
 

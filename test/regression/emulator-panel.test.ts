@@ -20,14 +20,10 @@ describe('Emulator panel regression tests', () => {
             expect(vm.speed).to.equal('200%');
             expect(vm.viewMode).to.equal('border');
 
-            // On "reopen", extension sends a fresh status message via makeStatusMessage
-            const statusMsg = vm.makeStatusMessage();
-            expect(statusMsg).to.deep.equal({
-                type: 'status',
-                running: true,
-                speed: '200%',
-                viewMode: 'border',
-            });
+            // Reopening preserves extension-host state even though Display no longer renders controls.
+            expect(vm.running).to.equal(true);
+            expect(vm.speed).to.equal('200%');
+            expect(vm.viewMode).to.equal('border');
         });
 
         it('should still process frames after simulated close/reopen cycle', () => {

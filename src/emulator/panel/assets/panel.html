@@ -6,28 +6,9 @@
           content="default-src 'none'; style-src {{cspSource}} 'nonce-{{nonce}}'; script-src 'nonce-{{nonce}}';">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="{{cssUri}}">
-    <title>Vector-06C Emulator</title>
+    <title>Display</title>
 </head>
 <body>
-    <div id="header">
-        <button id="btn-run-pause" title="Run / Pause">&#9654;</button>
-        <button id="btn-reset" title="Reset">&#8634;</button>
-        <label for="sel-speed">Speed:</label>
-        <select id="sel-speed">
-            <option value="1%">1%</option>
-            <option value="20%">20%</option>
-            <option value="50%">50%</option>
-            <option value="100%" selected>100%</option>
-            <option value="200%">200%</option>
-            <option value="max">Max</option>
-        </select>
-        <label for="sel-display">Display:</label>
-        <select id="sel-display">
-            <option value="borderless" selected>Borderless</option>
-            <option value="border">Border</option>
-            <option value="full">Full</option>
-        </select>
-    </div>
     <div id="viewport">
         <canvas id="screen"></canvas>
     </div>

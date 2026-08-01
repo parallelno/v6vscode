@@ -5,6 +5,8 @@
 **Owners:** v6vscode and v6emul maintainers
 **Related work:** `debug-adapter-and-debug-views-plan.md`, Step 3.14
 
+> **Placement update (2026-08-01):** The `views.debug` placement in this document is superseded by `v6emul-menu-and-panels-plan.md`. Hex Viewer is now a standalone editor `WebviewPanel` toggled from the `v6emul` view container or Command Palette; its domain and interaction requirements below remain applicable.
+
 ## 1. Objective
 
 Add a responsive, read-only Hex Viewer for the active emulator session. The viewer must cover Main RAM and every supported RAM-disk bank, navigate by address or debug symbol, highlight ranges, and remain useful during both Run Project and debug sessions.
