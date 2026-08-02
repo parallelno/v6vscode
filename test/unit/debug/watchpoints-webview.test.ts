@@ -24,4 +24,9 @@ describe('Watchpoints webview editing', () => {
         expect(source).to.include("!event.target.closest('.row')) openMenu(event, null);");
         expect(source).to.include("row.addEventListener('contextmenu', event => openMenu(event, entry.id))");
     });
+
+    it('disables bulk mutation actions when there are no watchpoints', () => {
+        expect(source).to.include('const noEntries = entries.length === 0;');
+        expect(source).to.include("id === null && noEntries && ['disableAll', 'deleteAll'].includes(action)");
+    });
 });

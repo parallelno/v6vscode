@@ -163,11 +163,12 @@
         rows.querySelectorAll('[aria-describedby="preview"]').forEach(row => row.removeAttribute('aria-describedby'));
     }
     function openMenu(event, id) {
-        event.preventDefault(); menuId = id; const entry = entries.find(item => item.id === id);
+        event.preventDefault(); menuId = id; const entry = entries.find(item => item.id === id); const noEntries = entries.length === 0;
         menu.querySelectorAll('button').forEach(button => {
             const action = button.dataset.action;
             button.hidden = id === null ? ['reveal', 'toggle', 'delete'].includes(action) : ['add', 'disableAll', 'deleteAll'].includes(action);
-            button.disabled = !canMutate && action !== 'reveal';
+            button.disabled = (!canMutate && action !== 'reveal')
+                || (id === null && noEntries && ['disableAll', 'deleteAll'].includes(action));
             if (action === 'toggle' && entry) button.textContent = entry.active ? 'Disable' : 'Enable';
         });
         menu.hidden = false; menu.style.left = `${event.clientX}px`; menu.style.top = `${event.clientY}px`; menu.querySelector('button:not([hidden])')?.focus();
