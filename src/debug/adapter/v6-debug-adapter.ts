@@ -105,6 +105,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private nextBpId = 1;
     private bpAddrToId = new Map<number, number>();
     private bpIdToAddr = new Map<number, number>();
+    private sourceBpAddresses = new Map<string, Set<number>>();
+    private instructionBpAddresses = new Set<number>();
     private watchpointIdToDapId = new Map<number, number>();
     private dapWatchpointIds = new Set<number>();
 
@@ -614,9 +616,27 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
         if (!this.client) { this.sendResponseBody(req, { breakpoints: [] }); return; }
 
+        const sourceKey = process.platform === 'win32'
+            ? path.normalize(source).toLowerCase()
+            : path.normalize(source);
+        const resolvedBreakpoints = sourceBreakpoints.map(bp => ({
+            requested: bp,
+            resolved: this.debugIndex!.resolveBreakpoint(source, bp.line),
+        }));
+        const previousAddresses = this.sourceBpAddresses.get(sourceKey) ?? new Set<number>();
+        const desiredAddresses = new Set(
+            resolvedBreakpoints.flatMap(bp => bp.resolved ? [bp.resolved.address] : []),
+        );
+        this.sourceBpAddresses.set(sourceKey, desiredAddresses);
+
+        for (const addr of previousAddresses) {
+            if (!desiredAddresses.has(addr) && !this.isBreakpointAddressReferenced(addr)) {
+                await this.deleteBackendBreakpoint(addr);
+            }
+        }
+
         const result: any[] = [];
-        for (const bp of sourceBreakpoints) {
-            const resolved = this.debugIndex.resolveBreakpoint(source, bp.line);
+        for (const { requested: bp, resolved } of resolvedBreakpoints) {
             if (!resolved) {
                 result.push({
                     id: this.nextBpId++,
@@ -626,6 +646,18 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                 });
                 continue;
             }
+            const existingId = this.bpAddrToId.get(resolved.address);
+            if (existingId !== undefined) {
+                result.push({
+                    id: existingId,
+                    verified: true,
+                    line: resolved.verifiedLine,
+                    instructionReference: hex4(resolved.address),
+                    message: `CPU address: ${hex4(resolved.address)}`,
+                });
+                continue;
+            }
+
             const id = this.nextBpId++;
             const addResp = await this.client.send(
                 IpcCommand.DEBUG_BREAKPOINT_ADD,
@@ -643,8 +675,12 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                     message: `CPU address: ${hex4(resolved.address)}`,
                 });
             } else {
+                desiredAddresses.delete(resolved.address);
                 result.push({ id, verified: false, message: 'Backend rejected breakpoint', line: bp.line });
             }
+        }
+        if (desiredAddresses.size === 0) {
+            this.sourceBpAddresses.delete(sourceKey);
         }
         this.sendResponseBody(req, { breakpoints: result });
     }
@@ -665,14 +701,12 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             return parseInt(ref, 16) & 0xFFFF;
         });
 
-        // Remove breakpoints that are no longer desired
-        const current = new Set(this.bpAddrToId.keys());
-        for (const addr of current) {
-            if (!desired.includes(addr)) {
-                await this.client.send(IpcCommand.DEBUG_BREAKPOINT_DEL, { addr }).catch(() => {});
-                const id = this.bpAddrToId.get(addr)!;
-                this.bpAddrToId.delete(addr);
-                this.bpIdToAddr.delete(id);
+        // Remove instruction breakpoints that are no longer desired and are not source-owned.
+        const previousAddresses = this.instructionBpAddresses;
+        this.instructionBpAddresses = new Set(desired);
+        for (const addr of previousAddresses) {
+            if (!this.instructionBpAddresses.has(addr) && !this.isBreakpointAddressReferenced(addr)) {
+                await this.deleteBackendBreakpoint(addr);
             }
         }
 
@@ -692,6 +726,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                     this.bpIdToAddr.set(id, addr);
                     result.push({ id, verified: true, instructionReference: hex4(addr) });
                 } else {
+                    this.instructionBpAddresses.delete(addr);
                     result.push({
                         id,
                         verified: false,
@@ -705,6 +740,18 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         }
 
         this.sendResponseBody(req, { breakpoints: result });
+    }
+
+    private isBreakpointAddressReferenced(addr: number): boolean {
+        if (this.instructionBpAddresses.has(addr)) { return true; }
+        return [...this.sourceBpAddresses.values()].some(addresses => addresses.has(addr));
+    }
+
+    private async deleteBackendBreakpoint(addr: number): Promise<void> {
+        await this.client?.send(IpcCommand.DEBUG_BREAKPOINT_DEL, { addr }).catch(() => {});
+        const id = this.bpAddrToId.get(addr);
+        this.bpAddrToId.delete(addr);
+        if (id !== undefined) { this.bpIdToAddr.delete(id); }
     }
 
     private async onDataBreakpointInfo(req: any): Promise<void> {
@@ -1117,6 +1164,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
         this.bpAddrToId.clear();
         this.bpIdToAddr.clear();
+        this.sourceBpAddresses.clear();
+        this.instructionBpAddresses.clear();
         this.watchpointIdToDapId.clear();
         this.dapWatchpointIds.clear();
         this.client = null;

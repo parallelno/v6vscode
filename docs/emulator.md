@@ -37,7 +37,11 @@ During a debug launch the panel uses the lifecycle's existing connection. It doe
 
 ## Hardware Statistics
 
-`V6 Hardware Statistics` is contributed to the Run and Debug sidebar. It refreshes registers, flags, execution counters, and display state whenever the shared session pauses. While running it keeps the last snapshot and reports that values refresh on pause. The view title provides a manual refresh command. Pausing no longer opens a CPU-statistics editor tab.
+`V6 Hardware Statistics` is a webview contributed to the Run and Debug sidebar. From one coherent paused-state snapshot it displays timing, raster/display state, the 16-color hardware palette, RAM-disk mapping, and all four FDD drives. Last Run is normalized from consecutive total-cycle snapshots so debugger instruction steps are included. Palette swatches support Copy, inline Edit, and Paste through host-side byte validation. Drive menus support mount, replace, and dismount, including Save/Discard/Cancel handling for dirty images.
+
+In/Out port tables are fetched only while their disclosure is expanded and the view is visible and stopped. Each command returns `{ bytes }` as a 256-byte MessagePack binary payload. The extension validates the complete payload before displaying the 16 by 16 table.
+
+The panel requires hardware-statistics schema 1, commands `96..98`, and the corresponding palette/FDD capabilities. It refreshes on pause and by the view-title Refresh command. While running it retains the last snapshot and reports that values refresh on pause.
 
 ## Hex Viewer
 

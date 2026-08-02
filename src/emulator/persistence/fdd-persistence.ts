@@ -41,7 +41,7 @@ export class FddPersistence {
         }
 
         try {
-            await this.persistDrive(0, executablePath);
+            await this.persistDriveIfNeeded(0, executablePath);
         } catch (err) {
             this.logger.error(
                 `fdd-persistence: failed to persist drive 0: ${err instanceof Error ? err.message : String(err)}`,
@@ -49,25 +49,27 @@ export class FddPersistence {
         }
     }
 
-    private async persistDrive(driveIdx: number, filePath: string): Promise<void> {
+    async persistDriveIfNeeded(driveIdx: number, filePath: string): Promise<boolean> {
+        if (!Number.isInteger(driveIdx) || driveIdx < 0 || driveIdx > 3) {
+            throw new RangeError('Drive index must be in the range 0..3');
+        }
         const infoResp = await this.client.send<GetFddInfoResponse>(
             IpcCommand.GET_FDD_INFO,
             { driveIdx },
         );
 
         if (!infoResp.ok || !infoResp.data) {
-            this.logger.debug(`fdd-persistence: drive ${driveIdx} info not available`);
-            return;
+            throw new Error(`drive ${driveIdx} info not available`);
         }
 
         if (!infoResp.data.mounted) {
             this.logger.debug(`fdd-persistence: drive ${driveIdx} not mounted`);
-            return;
+            return false;
         }
 
         if (!infoResp.data.updated) {
             this.logger.debug(`fdd-persistence: drive ${driveIdx} not modified`);
-            return;
+            return false;
         }
 
         this.logger.info(`fdd-persistence: drive ${driveIdx} has unsaved writes, exporting...`);
@@ -78,15 +80,18 @@ export class FddPersistence {
         );
 
         if (!imageResp.ok || !imageResp.data) {
-            this.logger.error(`fdd-persistence: failed to export drive ${driveIdx} image`);
-            return;
+            throw new Error(`Failed to export drive ${driveIdx} image`);
         }
 
         const imageBuffer = Buffer.from(imageResp.data.data);
         fs.writeFileSync(filePath, imageBuffer);
         this.logger.info(`fdd-persistence: drive ${driveIdx} saved to "${filePath}" (${imageBuffer.length} bytes)`);
 
-        await this.client.send(IpcCommand.RESET_UPDATE_FDD, { driveIdx });
+        const resetResponse = await this.client.send(IpcCommand.RESET_UPDATE_FDD, { driveIdx });
+        if (!resetResponse.ok) {
+            throw new Error(`Failed to clear drive ${driveIdx} dirty state`);
+        }
         this.logger.debug(`fdd-persistence: drive ${driveIdx} dirty flag cleared`);
+        return true;
     }
 }

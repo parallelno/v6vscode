@@ -37,8 +37,9 @@ import { registerDebugAdapter } from './debug/adapter/v6-debug-adapter-factory';
 import {
     CMD_REFRESH_HARDWARE_STATISTICS,
     HARDWARE_STATISTICS_VIEW_ID,
-    HardwareStatisticsView,
-} from './debug/views/hardware-statistics-view';
+    HardwareStatisticsProvider,
+} from './debug/views/hardware-statistics-provider';
+import { HardwareStatisticsService } from './debug/hardware-statistics/hardware-statistics-service';
 import {
     CMD_REFRESH_HEX_VIEWER,
     HexViewerProvider,
@@ -108,8 +109,15 @@ export function activate(context: vscode.ExtensionContext): void {
     store.add(vscode.commands.registerCommand(CMD_TOGGLE_DISPLAY, () => emulatorPanel.toggle()));
     store.add(vscode.commands.registerCommand(CMD_TOGGLE_SETTINGS, () => settingsPanel.toggle()));
     const fddPersistence = new FddPersistence(ipcClient, logger);
-    const hardwareStatistics = store.add(new HardwareStatisticsView(lifecycle, ipcClient, logger));
-    store.add(vscode.window.registerTreeDataProvider(HARDWARE_STATISTICS_VIEW_ID, hardwareStatistics));
+    const hardwareStatisticsService = store.add(new HardwareStatisticsService(lifecycle, ipcClient));
+    const hardwareStatistics = store.add(new HardwareStatisticsProvider(
+        context.extensionUri, lifecycle, hardwareStatisticsService, fddPersistence, logger,
+    ));
+    store.add(vscode.window.registerWebviewViewProvider(
+        HARDWARE_STATISTICS_VIEW_ID,
+        hardwareStatistics,
+        { webviewOptions: { retainContextWhenHidden: true } },
+    ));
     store.add(vscode.commands.registerCommand(
         CMD_REFRESH_HARDWARE_STATISTICS,
         () => hardwareStatistics.refresh(),

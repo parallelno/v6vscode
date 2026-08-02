@@ -6,6 +6,7 @@ export const SUPPORTED_RAW_FRAME_SCHEMA = 1;
 export const SUPPORTED_BREAKPOINT_SCHEMA = 1;
 export const SUPPORTED_WATCHPOINT_SCHEMA = 1;
 export const SUPPORTED_STOP_RECORD_SCHEMA = 1;
+export const SUPPORTED_HARDWARE_STATS_SCHEMA = 1;
 
 /** Reads and validates the required server metadata handshake. */
 export async function getServerInfo(client: IpcClient): Promise<GetServerInfoResponse> {
@@ -76,4 +77,19 @@ export function validateWatchpointServer(info: GetServerInfoResponse): void {
 export function supportsStopRecords(info: GetServerInfoResponse): boolean {
     return info.capabilities.stopRecordSchema === SUPPORTED_STOP_RECORD_SCHEMA
         && info.commands.includes(IpcCommand.GET_STOP_RECORD);
+}
+
+export function validateHardwareStatisticsServer(info: GetServerInfoResponse): void {
+    const requiredCommands = [
+        IpcCommand.GET_HARDWARE_STATS,
+        IpcCommand.SET_IO_PALETTE_ENTRY,
+        IpcCommand.DISMOUNT_FDD,
+        IpcCommand.MOUNT_FDD,
+    ];
+    if (info.capabilities.hardwareStatsSchema !== SUPPORTED_HARDWARE_STATS_SCHEMA
+        || info.capabilities.paletteEntryMutation !== true
+        || info.capabilities.fddDismount !== true
+        || requiredCommands.some(command => !info.commands.includes(command))) {
+        throw new Error(`v6emul ${info.emulatorVersion} does not provide hardware statistics schema 1`);
+    }
 }

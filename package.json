@@ -19,7 +19,8 @@
   "main": "./out/extension.js",
   "activationEvents": [
     "workspaceContains:**/*.project.json",
-    "onDebugResolve:v6"
+    "onDebugResolve:v6",
+    "onView:v6.hardwareStatistics"
   ],
   "contributes": {
     "commands": [
@@ -91,7 +92,8 @@
       "debug": [
         {
           "id": "v6.hardwareStatistics",
-          "name": "V6 Hardware Statistics"
+          "name": "V6 Hardware Statistics",
+          "type": "webview"
         }
       ],
       "v6emul": [

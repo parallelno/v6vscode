@@ -120,6 +120,9 @@ export const enum IpcCommand {
     LOAD_ROM = 91,
     DEBUG_WATCHPOINT_EDIT = 94,
     GET_STOP_RECORD = 95,
+    GET_HARDWARE_STATS = 96,
+    SET_IO_PALETTE_ENTRY = 97,
+    DISMOUNT_FDD = 98,
 }
 
 // Speed value mapping: user-facing string → IPC integer
@@ -193,6 +196,11 @@ export interface ServerCapabilities {
         maxCommentBytes: number;
     };
     stopRecordSchema?: number;
+    hardwareStatsSchema?: number;
+    hardwareStatsWhileRunning?: boolean;
+    paletteEntryMutation?: boolean;
+    fddDismount?: boolean;
+    runningHardwareMutations?: boolean;
 }
 
 export interface GetServerInfoResponse {

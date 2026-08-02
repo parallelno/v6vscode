@@ -3,6 +3,7 @@ import {
     getServerInfo,
     supportsStopRecords,
     validateDebuggerServer,
+    validateHardwareStatisticsServer,
     validateWatchpointServer,
 } from '../../../src/emulator/protocol/ipc-server-info';
 import { IpcCommand, IpcResponse } from '../../../src/emulator/protocol/ipc-commands';
@@ -219,5 +220,44 @@ describe('validateWatchpointServer', () => {
             ...validInfo,
             capabilities: { ...validInfo.capabilities, watchpointEdit: false },
         })).to.throw('does not provide the required watchpoint protocol capabilities');
+    });
+});
+
+describe('validateHardwareStatisticsServer', () => {
+    const validInfo = {
+        protocolVersion: 2,
+        emulatorVersion: 'test-build',
+        commands: [
+            IpcCommand.GET_HARDWARE_STATS,
+            IpcCommand.SET_IO_PALETTE_ENTRY,
+            IpcCommand.DISMOUNT_FDD,
+            IpcCommand.MOUNT_FDD,
+        ],
+        capabilities: {
+            debugger: true,
+            rawFrame: true,
+            rawFrameSchema: 1,
+            stackSampleSchema: 1,
+            hardwareStatsSchema: 1,
+            hardwareStatsWhileRunning: true,
+            paletteEntryMutation: true,
+            fddDismount: true,
+            runningHardwareMutations: false,
+        },
+    };
+
+    it('accepts commands 96..98 and hardware statistics schema 1', () => {
+        expect(() => validateHardwareStatisticsServer(validInfo)).not.to.throw();
+    });
+
+    it('rejects missing commands and mutation capabilities', () => {
+        expect(() => validateHardwareStatisticsServer({
+            ...validInfo,
+            commands: validInfo.commands.filter(command => command !== IpcCommand.DISMOUNT_FDD),
+        })).to.throw('hardware statistics schema 1');
+        expect(() => validateHardwareStatisticsServer({
+            ...validInfo,
+            capabilities: { ...validInfo.capabilities, paletteEntryMutation: false },
+        })).to.throw('hardware statistics schema 1');
     });
 });
