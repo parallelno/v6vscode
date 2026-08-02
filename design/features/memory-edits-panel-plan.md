@@ -11,7 +11,7 @@
 
 Hex Viewer can write one byte through `SET_BYTE_GLOBAL`, but the write is transient and is represented only in Hex Viewer's local cache. The extension does not retain the byte's original value, expose a list of edits, restore an edit, or make an edited value persistent when the emulated program writes to the same address.
 
-The server exposes `DEBUG_MEMORY_EDIT_ADD`, `DEBUG_MEMORY_EDIT_DEL_ALL`, `DEBUG_MEMORY_EDIT_DEL`, `DEBUG_MEMORY_EDIT_GET`, and `DEBUG_MEMORY_EDIT_EXISTS`. A memory-edit record contains `globalAddr`, `value`, `readonly`, `active`, and `comment`. The extension does not currently use these requests when Hex Viewer changes a byte, so those changes are not represented as memory-edit entries.
+The server exposes `DEBUG_MEMORY_EDIT_ADD`, `DEBUG_MEMORY_EDIT_DEL_ALL`, `DEBUG_MEMORY_EDIT_DEL`, `DEBUG_MEMORY_EDIT_GET`, and `DEBUG_MEMORY_EDIT_EXISTS`. The current record contains `globalAddr`, `value`, `readonly`, `active`, and `comment`. This interface can create, delete, fetch, and test one known address, but it does not provide the complete collection, a change revision, a versioned capability, acknowledged resulting values, restore operations, or a precise client-facing definition of auto-update behavior.
 
 ### Desired behavior
 
@@ -23,47 +23,52 @@ The panel lists every byte edit made through Hex Viewer during the active emulat
 - Original value captured before the first edit at that address.
 - Entered value requested by the user.
 - Current value read from emulator memory.
-- Read-only state, `On` or `Off`.
+- Auto-update state, `On` or `Off`.
 
-Users can filter rows by current byte value, edit the entered value and read-only state by double-clicking, copy values, navigate to Hex Viewer, restore the original byte, delete tracking, or delete and restore. Read-only maps directly to the server record's `readonly` field.
+Users can filter rows by current byte value, edit the entered value and auto-update state by double-clicking, copy values, navigate to Hex Viewer, restore the original byte, delete tracking, or delete and restore. Auto-update makes the entered byte persistent against later emulated writes.
 
 ### Root cause
 
-Hex Viewer sends `SET_BYTE_GLOBAL` directly and updates only its own cache. It does not capture the original value, retain a session list of changes, or create/update the corresponding server memory-edit record through `DEBUG_MEMORY_EDIT_ADD`.
+Hex Viewer owns byte writes directly through a private `MemoryService`. There is no shared session-scoped memory-edit authority, and the legacy emulator memory-edit commands do not expose a complete, versioned, reconcilable contract suitable for this panel.
 
 ## 2. Strategy
 
-### Approach: shared client-side memory-edit service
+### Approach: shared edit service backed by a schema-1 emulator contract
 
-Introduce one session-scoped `MemoryEditService` in the extension host and inject it into Hex Viewer and the new panel. Route every successful Hex Viewer byte edit through this service. The service captures the original byte once, retains entries created by this client, sends the existing server requests, reads current values, and maps typed memory spaces to global addresses.
+Introduce one `MemoryEditService` in the extension host and inject it into Hex Viewer and the new panel. Route every successful Hex Viewer byte edit through this service. The service captures the original byte once, serializes mutations, owns immutable acknowledged snapshots, reads current values, and maps typed memory spaces to global addresses.
 
-Use a client model that augments the existing server record with the values needed by the panel:
+Complete the server interface before relying on the existing memory-edit requests. Advertise `memoryEditSchema: 1` and define an authoritative record keyed by global address:
 
 ```ts
-interface ClientMemoryEditEntry {
+interface MemoryEditEntry {
     globalAddr: number;
-    originalValue: number;
     enteredValue: number;
-    currentValue?: number;
-    readonly: boolean;
+    autoUpdate: boolean;
+}
+
+interface MemoryEditSnapshot {
+    updates: number;
+    edits: MemoryEditEntry[];
 }
 ```
 
-`originalValue` is the byte read immediately before this client first edits an address in the active session. `enteredValue` is the last value successfully written by this client. `currentValue` is refreshed through `GET_MEM`. `readonly` is sent to and read from the existing server memory-edit record.
+The protocol contract must guarantee that, while `autoUpdate` is on, reads after a completed memory-changing operation return `enteredValue`. Add one apply/update request that changes the record and byte as a single acknowledged server operation, so the client never has to compose several requests with an observable intermediate state.
+
+Keep `originalValue` in `MemoryEditService`: it is the value observed immediately before this extension first edits an address in the current session. The emulator's collection remains authoritative for enforcement and entered/auto-update state; the extension snapshot augments it with original and current values.
 
 ### Why this works
 
 - Hex Viewer and Memory Edits cannot diverge because both mutate through one service.
-- The service exists for the emulator session rather than the panel lifetime, so closing the panel does not lose entries.
-- The server supports one client; all entries created through this extension are already known locally.
-- Existing named requests are sufficient for the single-client workflow.
+- The server contract remains effective while the panel is hidden or closed and does not depend on client polling timing.
+- Single-operation mutations prevent client-visible intermediate states.
+- A complete snapshot and update counter allow reconnect/reconciliation and detect changes from another client.
 - Typed `MemorySpace` conversion preserves Main RAM and all RAM-disk bank identities.
 - Original values remain tied to the session in which they were observed, avoiding restoration into a different program after reconnect.
 
 ### Summary of changes
 
 - Add the Memory Edits launcher/toggle contribution and standalone panel.
-- Add typed models for the existing memory-edit request and response fields.
+- Add typed memory-edit protocol models, runtime validation, and capability checks.
 - Add a session-scoped `MemoryEditService` shared with Hex Viewer.
 - Replace Hex Viewer's direct byte-write request with the shared service.
 - Add search parsing, row editing, accessible context actions, refresh, and Hex Viewer navigation.
@@ -96,16 +101,16 @@ Use:
 - Tab title: `Memory Edits`.
 - `ViewColumn.Beside` and `retainContextWhenHidden: true`.
 
-Maintain at most one panel instance. `open()` reveals an existing panel, the toggle closes an open panel, and direct tab disposal clears launcher/context state. Closing the panel stops UI refresh work but does not delete edits or change their read-only state.
+Maintain at most one panel instance. `open()` reveals an existing panel, the toggle closes an open panel, and direct tab disposal clears launcher/context state. Closing the panel stops UI refresh work but does not delete edits or disable backend auto-update.
 
 Session states are:
 
 - **No session:** empty list and `No active emulator session`.
 - **Synchronizing:** retain the previous same-session snapshot and disable mutations.
-- **Ready/paused:** current session rows.
+- **Ready/paused:** current acknowledged rows.
 - **Running:** current values refresh once per second while visible when coherent reads are supported.
-- **Unsupported backend:** identify any missing required memory-edit request.
-- **Read failure:** retain session rows, mark current values stale, and expose Refresh.
+- **Unsupported backend:** identify the missing memory-edit schema/commands.
+- **Read failure:** retain acknowledged rows, mark current values stale, and expose Refresh.
 - **Disconnected:** clear entries and original values; never carry them into another emulator session.
 
 ### 3.2 Layout and values
@@ -124,11 +129,11 @@ Columns are ordered exactly:
 | Original | `0xNN` | Read-only |
 | Entered | `0xNN` | Double-click text input |
 | Current | `0xNN`, or `--` when unavailable | Read-only |
-| Read-only | `On` or `Off` with an accessible state | Double-click toggle/checkbox |
+| Auto-update | `On` or `Off` with an accessible state | Double-click toggle/checkbox |
 
 Sort rows by ascending global address. Use a sticky header and stable compact columns; allow horizontal scrolling at narrow widths instead of converting rows to cards. Preserve focus and selection by global address after snapshot replacement.
 
-Update a row only after each required server request succeeds. Values are uppercase and zero-padded. Render text with `textContent` or form values, never `innerHTML`.
+All accepted mutations update the row only after backend acknowledgement and reconciliation. Values are uppercase and zero-padded. Render text with `textContent` or form values, never `innerHTML`.
 
 ### 3.3 Search
 
@@ -141,7 +146,7 @@ Search is a byte-value filter over the **Current** column. An empty input shows 
 
 Bare digits are decimal. Whitespace around the value is allowed. Reject fractions, signs, expressions, multiple values, malformed digits, and values outside `0..255`.
 
-Filtering updates on every input event without requiring Enter. Invalid input retains the last valid result set, applies VS Code error styling, and sends no emulator request. Search is local to the panel snapshot and never drives memory reads.
+Filtering updates on every input event without requiring Enter. Invalid input retains the last valid result set, applies VS Code error styling, and sends no emulator request. Search is local to the acknowledged panel snapshot and never drives memory reads.
 
 The search tooltip must state the matching field, decimal rule, accepted hexadecimal forms, valid range, and examples. Use this exact semantic content:
 
@@ -157,21 +162,26 @@ A Hex Viewer edit follows one service transaction:
 
 1. Validate session, memory space, address, expression, and byte range in the extension host.
 2. If the address is not tracked, read its current byte and retain it as `originalValue`.
-3. Write `enteredValue` through `SET_BYTE_GLOBAL`.
-4. Create or replace the server record through `DEBUG_MEMORY_EDIT_ADD` with `readonly: false`, `active: true`, and an empty comment.
-5. Publish the client entry consumed by both panels; Hex Viewer updates its cache only after both requests succeed.
+3. Atomically apply `enteredValue` and create/update the backend memory-edit record. New entries default auto-update to `Off`.
+4. Fetch/reconcile the authoritative record and current byte.
+5. Publish one service snapshot consumed by both panels; Hex Viewer updates its cache only after success.
 
 Repeated edits at the same global address retain the first original value and replace the entered value. There is one row per global address.
 
 Double-clicking Entered opens an inline editor accepting the same byte literal forms as search. `Enter` or focus loss submits; `Escape` cancels. Invalid input keeps the editor open with an associated error and sends no mutation.
 
-Double-clicking Read-only toggles a checkbox/control. Send `DEBUG_MEMORY_EDIT_ADD` with the same address, value, active state, and comment, changing only `readonly`. Toggling the field does not itself change the current byte. Webview messages carry only the global address and candidate state; the host resolves the local entry and builds the complete server record.
+Double-clicking Auto-update toggles a checkbox/control. Turning it on sends one request that reapplies the entered value and enables the server's advertised auto-update contract. Turning it off disables auto-update without changing current memory. Webview messages carry only global address and candidate input/state; the host re-resolves the acknowledged entry.
 
-### 3.5 Read-only semantics
+### 3.5 Auto-update semantics
 
-Read-only `On` maps to server field `readonly: true`; Read-only `Off` maps to `readonly: false`. The extension does not implement this behavior by periodically rewriting memory.
+Auto-update `On` means the server guarantees that the current byte at the tracked global address remains equal to `enteredValue` after a completed memory-changing operation. It does not mean periodic client-side rewriting. The guarantee applies while running, while the panel is hidden, and while no webview exists.
 
-When Entered is changed, send `SET_BYTE_GLOBAL` with the new value and then replace the server record through `DEBUG_MEMORY_EDIT_ADD`, preserving the current read-only state. If either request fails, refresh the current byte and keep the entry visible with an operation error.
+Direct debugger/IPC mutations must have defined behavior:
+
+- Updating the same memory-edit record atomically changes and reapplies the entered value.
+- Restore Original is allowed to bypass enforcement as one service operation and turns auto-update off.
+- Delete and Restore atomically disables/removes enforcement and writes the captured original value.
+- Unrelated `SET_BYTE_GLOBAL` writes to an auto-updated address are rejected or finish with the enforced entered value; the protocol response must make the resulting value unambiguous.
 
 ### 3.6 Context menu
 
@@ -189,11 +199,11 @@ Copy actions write canonical `0xNN` text through `vscode.env.clipboard.writeText
 
 **Find in Hex Viewer** converts the global address with `globalAddressMemoryLocation`, calls `HexViewerProvider.revealRange(space, offset, offset)`, then opens/reveals Hex Viewer. The handoff must work while Hex Viewer is closed or not ready and must select the correct RAM-disk bank.
 
-**Restore Original** writes `originalValue` through `SET_BYTE_GLOBAL`, sets Read-only to `Off` through `DEBUG_MEMORY_EDIT_ADD`, and retains the row and its entered value.
+**Restore Original** writes `originalValue`, turns auto-update off, and retains the row and its entered value. This allows the user to compare or re-enable the intended patch later.
 
 **Delete Entry** removes the server edit record and the panel row but leaves the current memory byte unchanged.
 
-**Delete and Restore** writes `originalValue` through `SET_BYTE_GLOBAL`, then removes the server record through `DEBUG_MEMORY_EDIT_DEL`, then removes the local row. If restoration fails, retain the entry and report the failure. If deletion fails after restoration, retain the entry, refresh its current value, and report the deletion failure.
+**Delete and Restore** asks the server to remove the edit record and write `originalValue` as one operation. If restoration fails, keep/reconcile the entry and report the failure rather than claiming it was deleted.
 
 Close the menu on action, Escape, outside click, scroll, edit start, snapshot replacement, session change, panel hide, or disposal. Return focus to the row when it still exists, otherwise to the table.
 
@@ -209,28 +219,28 @@ flowchart LR
     Service --> Client[IpcClient]
     Service --> Lifecycle[EmulatorLifecycle]
     Service --> Hex
-    Client --> Emulator[v6emul memory-edit requests]
+    Client --> Emulator[v6emul memory-edit schema 1]
 ```
 
 ### 4.1 Ownership
 
-**MemoryEditService** owns session generation, original values, local entries, serialized request sequences, current-value reads, and change events. It exposes operations such as `apply`, `setReadonly`, `restore`, `delete`, `deleteAndRestore`, `refresh`, and `snapshot`.
+**MemoryEditService** owns capability checks, session generation, original values, immutable snapshots, serialized mutations, current-value reads, backend reconciliation, and change events. It exposes operations such as `apply`, `setAutoUpdate`, `restore`, `delete`, `deleteAndRestore`, `refresh`, and `snapshot`.
 
 **MemoryEditsPanel** owns `WebviewPanel` lifecycle, visibility-based refresh, persisted search text, validated host/webview messages, clipboard access, and Hex Viewer handoff. It never invokes emulator IPC directly.
 
-**HexViewerProvider** continues to own grid rendering, expression evaluation, and visible memory caching, but delegates accepted writes to `MemoryEditService`. Service change events update or invalidate the matching Hex Viewer cache byte so both panels show the successful result.
+**HexViewerProvider** continues to own grid rendering, expression evaluation, and visible memory caching, but delegates accepted writes to `MemoryEditService`. Service change events update or invalidate the matching Hex Viewer cache byte so both panels show the acknowledged result.
 
-**v6emul** is authoritative for the stored memory-edit record and current memory byte. The extension owns the session list of addresses it edited and the original value observed before its first edit at each address.
+**v6emul** is authoritative for the registered entered value, auto-update state, and current byte reported by the server contract. The extension is authoritative only for the original value it observed before its first edit in the active session.
 
 ### 4.2 Server Interface Requirements
 
-#### Problem: Register and manage Hex Viewer edits
+#### Problem: Global Memory Access
 
-The client must record each successful Hex Viewer byte change, show its original, entered, and current values, expose the server's Read-only field, and support restore and delete actions. Addresses must cover Main RAM and every RAM-disk bank.
+The client must present one authoritative list of memory edits, keep it synchronized with the server, show the current byte, update an entered value or auto-update state, restore the original byte, and distinguish deletion from deletion with restoration. It must do this for Main RAM and every RAM-disk bank without depending on server implementation details or composing request sequences that expose partial results.
 
-#### Current solution from server
+#### Current: I have this solution from server; it is not enough because
 
-The server exposes the required primitives:
+The server currently exposes these requests:
 
 - `DEBUG_MEMORY_EDIT_ADD`: accepts the legacy record fields `globalAddr`, `value`, `readonly`, `active`, and `comment`; address and value are formatted hexadecimal strings rather than numeric wire values.
 - `DEBUG_MEMORY_EDIT_DEL_ALL`: deletes all records.
@@ -240,34 +250,76 @@ The server exposes the required primitives:
 - `GET_MEM`: reads current bytes.
 - `SET_BYTE_GLOBAL`: writes one current byte.
 
-The server interface is sufficient because it accepts one client and the extension knows every address it adds during the active session. Restore operations can be composed from `SET_BYTE_GLOBAL`, `DEBUG_MEMORY_EDIT_ADD`, and `DEBUG_MEMORY_EDIT_DEL`.
+This is not enough for the panel because:
 
-It is not enough by itself because Hex Viewer does not call the memory-edit requests or retain the additional Original and Current values required by the panel. The missing work is in the extension.
+- The client cannot discover the full collection without already knowing every address.
+- The client cannot cheaply determine whether another client changed the collection.
+- `GET_SERVER_INFO` does not advertise a memory-edit schema, so the client cannot distinguish legacy and supported contracts.
+- The legacy names `value`, `readonly`, and `active` do not define the requested `enteredValue` and `autoUpdate` behavior precisely.
+- Mutation responses do not provide one authoritative resulting record and current value for reconciliation.
+- There is no server request for Restore Original or Delete and Restore as one operation.
+- The interface does not state whether records survive reset/restart, program reload, reconnect, or a new server session.
+- The interface does not define structured field errors for malformed addresses, values, booleans, or unknown fields.
 
 #### Needed: I need this; I recommend this
 
-No new server request is required. Use the existing request names and record shape:
+Advertise `capabilities.memoryEditSchema: 1` from `GET_SERVER_INFO`. The extension must require this capability and the complete request set; it must not infer support from the presence of legacy request names alone.
+
+Use numeric wire values rather than formatted hexadecimal strings:
 
 ```ts
-interface ServerMemoryEditRecord {
-    globalAddr: string; // canonical 0xNNNNNN
-    value: string;      // canonical 0xNN
-    readonly: boolean;
-    active: boolean;
-    comment: string;
+interface MemoryEditEntry {
+    globalAddr: number;
+    enteredValue: number;
+    autoUpdate: boolean;
+}
+
+interface MemoryEditMutationResult {
+    edit?: MemoryEditEntry;
+    currentValue: number;
+    updates: number;
 }
 ```
 
-I recommend documenting and testing these existing client-visible contracts:
+I recommend the following named requests:
 
-- `DEBUG_MEMORY_EDIT_ADD` creates or replaces the record identified by `globalAddr` and accepts addresses across the complete global-memory range.
-- `DEBUG_MEMORY_EDIT_GET`, `DEBUG_MEMORY_EDIT_EXISTS`, and `DEBUG_MEMORY_EDIT_DEL` use `{ addr }`, where `addr` is a numeric global address across the same range.
-- `DEBUG_MEMORY_EDIT_GET` returns `{ data: ServerMemoryEditRecord }` when the record exists.
-- `DEBUG_MEMORY_EDIT_EXISTS` returns `{ data: boolean }`.
-- Add and delete requests use the standard IPC success/error envelope; no additional response data is needed.
-- `GET_MEM` and `SET_BYTE_GLOBAL` accept the same global-address range.
+- `DEBUG_MEMORY_EDIT_APPLY`
+  - Request: `{ globalAddr, enteredValue, autoUpdate }`.
+  - Creates or replaces the record and applies `enteredValue` as one server operation.
+  - Response: `MemoryEditMutationResult` containing the acknowledged record, current byte, and collection revision.
+- `DEBUG_MEMORY_EDIT_GET_ALL`
+  - Request: no data.
+  - Response: `{ edits: MemoryEditEntry[], updates }`, sorted by `globalAddr` with no duplicate addresses.
+- `DEBUG_MEMORY_EDIT_GET_UPDATES`
+  - Request: no data.
+  - Response: `{ updates }`, a non-consuming unsigned revision that changes after every effective collection mutation.
+- `DEBUG_MEMORY_EDIT_DEL`
+  - Request: `{ globalAddr }`.
+  - Idempotently removes one record and leaves the current byte unchanged.
+  - Response: `MemoryEditMutationResult` without `edit`.
+- `DEBUG_MEMORY_EDIT_RESTORE`
+  - Request: `{ globalAddr, originalValue }`.
+  - Retains the record, sets `autoUpdate` to `false`, and writes `originalValue` as one server operation.
+  - Response: `MemoryEditMutationResult` containing the retained record.
+- `DEBUG_MEMORY_EDIT_DEL_RESTORE`
+  - Request: `{ globalAddr, originalValue }`.
+  - Removes the record and writes `originalValue` as one server operation.
+  - Response: `MemoryEditMutationResult` without `edit`.
+- `DEBUG_MEMORY_EDIT_DEL_ALL`
+  - Request: no data.
+  - Deletes all records without changing current bytes and returns the resulting revision.
 
-The only server-side dependency is confirming that every memory-edit request accepts full global addresses, not only Main RAM addresses. If that contract already holds, the feature requires no server-interface change.
+The schema must also guarantee:
+
+- `globalAddr` is an integer within advertised global-memory bounds, including RAM-disk addresses.
+- `enteredValue`, `originalValue`, and `currentValue` are integers in `0..255`.
+- Auto-update `On` means subsequent reads return `enteredValue` after completed memory-changing operations until the record is updated, restored, or deleted.
+- Every response belongs to the active server session and stale responses can be rejected by the client session generation.
+- Records survive reset/restart within one server session and are cleared when that session ends. If a different lifetime is intended, advertise it explicitly as a capability rather than leaving it implicit.
+- Invalid requests return structured `invalid_request` errors with `details.command` and `details.field`.
+- Unknown fields are rejected, mutation results are authoritative, and no successful response represents a partial operation.
+
+If `DEBUG_MEMORY_EDIT_RESTORE` and `DEBUG_MEMORY_EDIT_DEL_RESTORE` are unavailable, the client may support those actions only while paused by composing existing requests and then reconciling with `DEBUG_MEMORY_EDIT_GET_ALL`. The actions must be disabled while running because the interface cannot guarantee an indivisible result.
 
 Suggested extension layout:
 
@@ -289,29 +341,29 @@ src/
 
 ## 5. Implementation Steps
 
-### Step 5.1 - Verify the existing server contract [ ]
+### Step 5.1 - Finalize and test the emulator contract [ ]
 
-Confirm the named memory-edit requests and their existing fields, responses, replacement behavior, and full global-address range. Add focused server-interface tests only where that observable contract is not already covered.
+Define memory-edit schema 1, the named snapshot/update/apply/restore requests, capability advertisement, structured validation errors, and protocol tests. Confirm the interface accepts Main RAM and all RAM-disk global addresses.
 
-> **Design Notes:** Use the existing server requests without extending the protocol.
+> **Design Notes:** Legacy requests may remain available, but the extension uses only the schema-1 field names and request contracts.
 >
 > **Implementation Notes:**
 
 ### Step 5.2 - Add extension protocol models and validation [ ]
 
-Add typed request/response models and formatting/parsing helpers for the existing record. Detect required request support through the names advertised by `GET_SERVER_INFO`. Cover malformed records, byte/global bounds, and missing requests.
+Add capability fields, typed request/response models, runtime codecs, and `validateMemoryEditServer`. Cover malformed records, duplicate addresses, ordering, byte/global bounds, missing commands, and unsupported schemas.
 
 > **Implementation Notes:**
 
 ### Step 5.3 - Implement MemoryEditService [ ]
 
-Add session lifecycle handling, first-original capture, local snapshots, serialized request sequences, current-value refresh, and change events. Group adjacent current-value reads into bounded `GET_MEM` ranges instead of issuing one request per row. Reject stale responses after session changes.
+Add session lifecycle handling, first-original capture, immutable snapshots, mutation serialization, server-snapshot reconciliation, current-value refresh, and change events. Group adjacent current-value reads into bounded `GET_MEM` ranges instead of issuing one request per row. Reject stale responses after session changes.
 
 > **Implementation Notes:**
 
 ### Step 5.4 - Route Hex Viewer writes through the service [ ]
 
-Inject the shared service into Hex Viewer, preserve existing expression validation, call `SET_BYTE_GLOBAL` and `DEBUG_MEMORY_EDIT_ADD`, and keep the Hex Viewer cache synchronized after success. Add regression coverage proving repeated edits retain the first original value.
+Inject the shared service into Hex Viewer, preserve existing expression validation, create/update entries only after successful transactions, and keep the Hex Viewer cache synchronized with acknowledged service values. Add regression coverage proving repeated edits retain the first original value.
 
 > **Implementation Notes:**
 
@@ -327,9 +379,9 @@ Add the pure byte-query parser, exact tooltip, workspace search persistence, cur
 
 > **Implementation Notes:**
 
-### Step 5.7 - Implement inline edits and Read-only [ ]
+### Step 5.7 - Implement inline edits and auto-update [ ]
 
-Add double-click Entered and Read-only controls, Enter/blur/Escape behavior, immediate webview validation, authoritative host validation, disabled in-flight actions, server request handling, and error recovery.
+Add double-click Entered and Auto-update controls, Enter/blur/Escape behavior, immediate webview validation, authoritative host validation, disabled in-flight actions, backend acknowledgement, and error recovery.
 
 > **Implementation Notes:**
 
@@ -361,7 +413,7 @@ npm run test:regression
 
 ### Step 5.11 - Complete Extension Development Host verification [ ]
 
-Exercise panel toggling/direct close, Main RAM and RAM-disk edits, search forms and errors, every context action, Read-only On/Off, reset/restart, disconnect, unsupported servers, and closed-Hex-Viewer navigation.
+Exercise panel toggling/direct close, Main RAM and RAM-disk edits, search forms and errors, every context action, running auto-update, reset/restart, disconnect, unsupported backend, and closed-Hex-Viewer navigation.
 
 > **Implementation Notes:**
 
@@ -373,34 +425,36 @@ Exercise panel toggling/direct close, Main RAM and RAM-disk edits, search forms 
 - Filter only by current value; empty input shows all rows and invalid input retains the prior valid result set.
 - First edit captures original once; later edits at the same global address preserve it.
 - Main RAM and every RAM-disk bank map to unique global addresses and back.
-- Apply/update, Read-only toggle, restore, delete, and delete-and-restore send the expected existing request sequences.
-- Failed writes do not create entries or change successful local values.
-- Restore retains entered value and row while turning Read-only off.
+- Apply/update, auto-update toggle, restore, delete, and delete-and-restore serialize and reconcile correctly.
+- Failed writes do not create entries or change acknowledged values.
+- Restore retains entered value and row while turning auto-update off.
 - Delete leaves current memory unchanged; delete-and-restore writes original before removing the row.
 - Stale responses from a previous session are discarded and disconnect clears original values.
 - Current-value refresh coalesces adjacent addresses and respects negotiated read limits.
-- Malformed `DEBUG_MEMORY_EDIT_GET` records and out-of-range addresses/values are rejected at the client boundary.
+- Backend snapshots reject duplicate, unsorted/malformed, out-of-range, and schema-mismatched data.
 
 ### Panel and integration tests
 
 - Toggle/open/direct-dispose operations synchronize `v6emul.memoryEditsOpen` and launcher state.
 - Memory Edits appears immediately after Hex Viewer in launcher/manifest tests.
-- Hidden/closed panels stop current-value polling without changing server Read-only records.
-- Hex Viewer edits create rows and successful value changes update both surfaces.
+- Hidden/closed panels stop current-value polling without disabling backend auto-update.
+- Hex Viewer edits create rows and acknowledged value changes update both surfaces.
 - Double-click controls commit/cancel correctly and expose accessible errors.
 - Clipboard actions write exact canonical values.
 - Find in Hex Viewer opens a closed panel, selects the correct bank, and reveals one address.
 - Context menu ordering, disabled states, keyboard operation, closure, and focus restoration match the contract.
 - Unsupported/no-session/read-failure states never send invalid mutations.
 
-### Server interface checks
+### Emulator tests
 
-- `DEBUG_MEMORY_EDIT_ADD` creates or replaces the record at a known global address.
-- `DEBUG_MEMORY_EDIT_GET` returns the expected record for that known address.
-- `DEBUG_MEMORY_EDIT_EXISTS` reflects add and delete operations.
-- `DEBUG_MEMORY_EDIT_DEL` and `DEBUG_MEMORY_EDIT_DEL_ALL` remove the expected records.
-- All memory-edit requests accept Main RAM and RAM-disk global addresses.
-- `GET_MEM` and `SET_BYTE_GLOBAL` accept the same global-address range used by memory-edit records.
+- Auto-update off permits later emulated writes to change current memory.
+- Auto-update on leaves memory equal to entered value after byte, word, and overlapping writes.
+- Updating an enforced value atomically changes both record and memory.
+- Restore and delete-and-restore are atomic while execution is running.
+- Duplicate add/update is keyed by global address and does not create duplicate records.
+- Snapshot ordering and update-counter behavior are deterministic, including wraparound.
+- Malformed payloads, unknown addresses, boundary addresses, and all memory banks return structured errors without terminating emulation.
+- Records survive reset/restart in one session and clear on session termination.
 
 ### Manual acceptance checks
 
@@ -409,9 +463,9 @@ Exercise panel toggling/direct close, Main RAM and RAM-disk edits, search forms 
 3. Edit the same byte again and verify original remains unchanged.
 4. Repeat in at least two RAM-disk banks and verify addresses do not collide.
 5. Exercise decimal and all three hexadecimal search forms and inspect the full tooltip.
-6. Double-click Entered and Read-only with mouse and keyboard.
-7. With Read-only off, let the program overwrite the byte and verify Current changes.
-8. With Read-only on, let the program attempt to overwrite the byte and verify the server's existing Read-only behavior while the panel is hidden.
+6. Double-click Entered and Auto-update with mouse and keyboard.
+7. With auto-update off, let the program overwrite the byte and verify Current changes.
+8. With auto-update on, let the program overwrite the byte and verify the entered value persists while the panel is hidden.
 9. Exercise every context action, including Find in Hex Viewer while Hex Viewer is closed.
 10. Verify Restore Original retains the row, Delete Entry leaves memory unchanged, and Delete and Restore removes the row only after restoration.
 11. Reset/restart within the session, then disconnect and start a different program; verify session clearing rules.
@@ -423,13 +477,13 @@ Exercise panel toggling/direct close, Main RAM and RAM-disk edits, search forms 
 
 Every successful Hex Viewer byte edit becomes a traceable session entry with the first observed value, requested value, and live result.
 
-### Read-only memory edits
+### Reliable persistent patches
 
-The panel exposes the server's existing Read-only state directly and retains that state when the panel is hidden or closed.
+The server's auto-update contract keeps patches effective while code runs and regardless of panel visibility.
 
 ### Reversible experimentation
 
-Users can temporarily restore, stop tracking without changing memory, or remove and restore without guessing the original byte.
+Users can temporarily restore, stop tracking without changing memory, or atomically remove and restore without guessing the original byte.
 
 ### Bank-correct navigation
 
@@ -439,40 +493,43 @@ Global addresses remain unambiguous across Main RAM and 32 RAM-disk banks, and a
 
 | Risk | Mitigation |
 |---|---|
-| A multi-request operation partially fails | Keep the row, refresh Current through `GET_MEM`, and report which action failed. |
+| Legacy fields do not define the requested auto-update contract | Gate the panel on schema 1 and test only the observable `enteredValue` guarantee. |
+| Composed client requests expose intermediate results | Use one acknowledged server operation; restrict fallback restoration to paused execution. |
 | Original values become invalid after reconnect or loading another program | Keep originals session-scoped and clear them on disconnect/session generation change. |
+| Another client changes backend edits | Reconcile complete snapshots using a non-consuming update counter. |
 | Large edit collections cause excessive reads | Group adjacent addresses into bounded bulk reads and poll only while visible. |
-| Hex Viewer and panel caches disagree | Route all writes through one service and notify Hex Viewer after successful requests. |
-| Restore fails before deletion | Send `SET_BYTE_GLOBAL` first and do not send `DEBUG_MEMORY_EDIT_DEL` when restoration fails. |
+| Hex Viewer and panel caches disagree | Route all writes through one service and notify Hex Viewer from acknowledged service snapshots. |
+| Restore fails after deletion | Prefer atomic delete-and-restore; otherwise never remove local/backend tracking before restoration succeeds. |
 | Search syntax is mistaken for address search | Label and tooltip it explicitly as a current-byte-value filter and keep parsing in a focused pure module. |
 
 ## 9. Implementation Checklist
 
-- [ ] Verify the existing named memory-edit requests and record fields.
-- [ ] Verify every memory-edit request accepts Main RAM and RAM-disk global addresses.
-- [ ] Add focused server-interface coverage only for missing observable contract tests.
-- [ ] Add extension models and parsers for the existing memory-edit record.
-- [ ] Implement session-scoped `MemoryEditService` with serialized request sequences.
+- [ ] Define and advertise v6emul memory-edit schema 1.
+- [ ] Guarantee backend auto-update enforces the acknowledged entered value.
+- [ ] Add authoritative Get All/update-counter and atomic restore operations.
+- [ ] Add server-interface tests for request validation, bounds, banks, revisions, lifecycle, and observable results.
+- [ ] Add extension memory-edit models, codecs, capability checks, and malformed-data tests.
+- [ ] Implement session-scoped `MemoryEditService` with serialized mutations and reconciliation.
 - [ ] Capture the original byte once before the first successful edit at each address.
 - [ ] Clear entries/originals on session end and reject stale asynchronous results.
 - [ ] Route all Hex Viewer byte edits through `MemoryEditService`.
-- [ ] Synchronize successful changes back into Hex Viewer cache/rendering.
+- [ ] Synchronize acknowledged changes back into Hex Viewer cache/rendering.
 - [ ] Add `v6emul.toggleMemoryEdits` and `v6emul.memoryEditsOpen`.
 - [ ] Add Memory Edits after Hex Viewer in the launcher and Command Palette.
 - [ ] Implement one standalone `WebviewPanel` with toggle/reveal/direct-close synchronization.
 - [ ] Implement no-session, synchronizing, ready, running, unsupported, stale, and disconnected states.
-- [ ] Render Address, Original, Entered, Current, and Read-only columns in global-address order.
+- [ ] Render Address, Original, Entered, Current, and Auto-update columns in global-address order.
 - [ ] Add the current-value byte filter with decimal, `$NN`, `0xNN`, and `NNh` syntax.
 - [ ] Add the required search tooltip, validation state, and workspace search persistence.
 - [ ] Implement double-click Entered editing with Enter/blur/Escape behavior.
-- [ ] Implement double-click Read-only toggling through `DEBUG_MEMORY_EDIT_ADD`.
+- [ ] Implement double-click Auto-update toggling with acknowledged backend state.
 - [ ] Implement Copy Original, Entered, and Current through the extension-host clipboard.
 - [ ] Implement Find in Hex Viewer with typed bank/address navigation and closed-panel handoff.
 - [ ] Implement Restore Original while retaining the row and entered value.
 - [ ] Implement Delete Entry without changing current memory.
-- [ ] Implement Delete and Restore through `SET_BYTE_GLOBAL`, then `DEBUG_MEMORY_EDIT_DEL`.
+- [ ] Implement atomic Delete and Restore.
 - [ ] Add accessible mouse/keyboard context-menu behavior and focus restoration.
-- [ ] Stop UI polling while hidden without changing server Read-only records.
+- [ ] Stop UI polling while hidden without changing the server's auto-update state.
 - [ ] Add focused parser, service, Hex Viewer integration, panel lifecycle, and action tests.
 - [ ] Update manifest/launcher regression tests and user/architecture documentation.
 - [ ] Run compile, lint, unit, and regression suites.
