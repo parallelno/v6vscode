@@ -1,5 +1,9 @@
 import { expect } from 'chai';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { EmulatorLifecycle } from '../../../src/emulator/lifecycle/emulator-lifecycle';
+import { IpcCommand } from '../../../src/emulator/protocol/ipc-commands';
 
 describe('EmulatorLifecycle session ownership', () => {
     function makeLifecycle(): EmulatorLifecycle {
@@ -45,5 +49,105 @@ describe('EmulatorLifecycle session ownership', () => {
         lifecycle.setExecutionRunning(false);
 
         expect(states).to.deep.equal(['running', 'connected']);
+    });
+
+    it('starts a debug server without loading the program', async () => {
+        let launchRequest: any;
+        const serverInfo = {
+            protocolVersion: 2,
+            emulatorVersion: 'test-build',
+            commands: [
+                IpcCommand.GET_FRAME_RAW,
+                IpcCommand.GET_STACK_SAMPLE,
+                IpcCommand.DEBUG_ATTACH,
+                IpcCommand.DEBUG_BREAKPOINT_ADD,
+                IpcCommand.DEBUG_BREAKPOINT_DEL,
+                IpcCommand.DEBUG_BREAKPOINT_GET_ALL,
+                IpcCommand.DEBUG_BREAKPOINT_GET_UPDATES,
+            ],
+            capabilities: {
+                debugger: true,
+                rawFrame: true,
+                rawFrameSchema: 1,
+                stackSampleSchema: 1,
+                breakpointSchema: 1,
+            },
+        };
+        const client = {
+            connected: true,
+            connect: async () => {},
+            disconnect: () => {},
+            send: async (command: IpcCommand) => command === IpcCommand.GET_SERVER_INFO
+                ? { ok: true, data: serverInfo }
+                : { ok: true },
+        };
+        const lifecycle = new EmulatorLifecycle(
+            { resolve: () => 'v6emul' } as any,
+            {
+                launch: (request: any) => {
+                    launchRequest = request;
+                    return {
+                        port: request.tcpPort,
+                        spawnResult: { process: {}, exitPromise: new Promise(() => {}) },
+                    };
+                },
+            } as any,
+            client as any,
+            { info: () => {}, error: () => {}, debug: () => {} } as any,
+            {} as any,
+        );
+        (lifecycle as any).findFreePort = async () => 4321;
+
+        await lifecycle.startDebug({
+            program: 'test.rom',
+            bootRomPath: 'boot.bin',
+            loadAddr: '0x100',
+        });
+
+        expect(launchRequest).to.include({
+            emulatorPath: 'v6emul',
+            tcpPort: 4321,
+            bootRomPath: 'boot.bin',
+        });
+        expect(launchRequest).not.to.have.property('romPath');
+        expect(launchRequest).not.to.have.property('fddPath');
+        expect(launchRequest).not.to.have.property('loadAddr');
+    });
+
+    it('loads the debug ROM paused after breakpoint configuration', async () => {
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v6-debug-'));
+        const romPath = path.join(tempDir, 'test.rom');
+        fs.writeFileSync(romPath, Buffer.from([0x00, 0x76]));
+        const requests: Array<{ command: IpcCommand; data: any }> = [];
+        const lifecycle = new EmulatorLifecycle(
+            {} as any,
+            {} as any,
+            {
+                connected: true,
+                disconnect: () => {},
+                send: async (command: IpcCommand, data: any) => {
+                    requests.push({ command, data });
+                    return { ok: true };
+                },
+            } as any,
+            { info: () => {}, error: () => {} } as any,
+            {} as any,
+        );
+        (lifecycle as any)._state = 'connected';
+
+        try {
+            await lifecycle.loadDebugProgram({
+                program: romPath,
+                bootRomPath: 'boot.bin',
+                loadAddr: '0x200',
+            });
+        } finally {
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+
+        expect(requests).to.deep.equal([{
+            command: IpcCommand.LOAD_ROM,
+            data: { data: [0x00, 0x76], addr: 0x200, autorun: false },
+        }]);
     });
 });

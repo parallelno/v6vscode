@@ -119,6 +119,7 @@ export const enum IpcCommand {
     DEBUG_TRACE_LOG_DISABLE = 90,
     LOAD_ROM = 91,
     DEBUG_WATCHPOINT_EDIT = 94,
+    GET_STOP_RECORD = 95,
 }
 
 // Speed value mapping: user-facing string → IPC integer
@@ -191,6 +192,7 @@ export interface ServerCapabilities {
         maxRangeLength: number;
         maxCommentBytes: number;
     };
+    stopRecordSchema?: number;
 }
 
 export interface GetServerInfoResponse {

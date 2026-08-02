@@ -52,7 +52,7 @@ This prevents repeatable end-to-end verification of Raw Stack, execution control
 
 ### Multiple Binaries Make Validation Ambiguous
 
-Development can involve debug and release binaries from the `v6emul` repository as well as the extension's bundled binary. Without an exposed build identity and protocol version, it is easy to test an older or incompatible executable.
+Development can involve debug and release binaries from the `v6emul` repository selected through `V6EMUL`. Without an exposed build identity and protocol version, it is easy to test an older or incompatible executable.
 
 ## Recommended Improvements
 

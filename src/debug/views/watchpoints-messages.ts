@@ -18,5 +18,6 @@ export type WatchpointsWebviewMessage =
 export type WatchpointsHostMessage =
     | { type: 'state'; state: 'noSession' | 'unsupported' | 'loading' | 'ready' | 'running' | 'error'; message: string; canMutate: boolean }
     | { type: 'snapshot'; generation: number; entries: readonly WatchpointViewEntry[] }
+    | { type: 'stop'; ids: readonly number[] }
     | { type: 'operation'; operation: string; ok: boolean; message: string; field?: string }
     | { type: 'preview'; id: number; text: string };

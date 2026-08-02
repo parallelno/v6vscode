@@ -200,15 +200,10 @@ export class EmulatorLifecycle extends EventEmitter {
 
         try {
             const port = await this.findFreePort();
-            const isRom = !request.program.toLowerCase().endsWith('.fdd');
             this.emulatorProcess = this.launcher.launch({
                 emulatorPath: this.locator.resolve(),
                 tcpPort: port,
                 bootRomPath: request.bootRomPath,
-                romPath: isRom ? request.program : undefined,
-                loadAddr: request.loadAddr,
-                fddPath: isRom ? undefined : request.program,
-                fddAutoboot: isRom ? undefined : true,
                 speed: request.speed ?? '100%',
             });
             const process = this.emulatorProcess;
@@ -235,6 +230,33 @@ export class EmulatorLifecycle extends EventEmitter {
             this.setState('stopped');
             throw err;
         }
+    }
+
+    async loadDebugProgram(request: DebugLaunchRequest): Promise<void> {
+        if (!this.connected) {
+            throw new V6Error(ErrorCode.EMULATOR_LAUNCH_FAILED, 'Debug emulator is not connected');
+        }
+
+        if (request.program.toLowerCase().endsWith('.fdd')) {
+            const fddData = Array.from(fs.readFileSync(request.program));
+            await this.client.send(IpcCommand.MOUNT_FDD, {
+                data: fddData,
+                driveIdx: 0,
+                path: request.program,
+                autoBoot: true,
+            });
+            this.logger.info(`v6emul: debug FDD mounted from "${request.program}"`);
+            return;
+        }
+
+        const romData = Array.from(fs.readFileSync(request.program));
+        const addr = request.loadAddr ? parseInt(request.loadAddr, 16) : 0x100;
+        await this.client.send(IpcCommand.LOAD_ROM, {
+            data: romData,
+            addr,
+            autorun: false,
+        });
+        this.logger.info(`v6emul: debug ROM loaded at 0x${addr.toString(16)}`);
     }
 
     setExecutionRunning(running: boolean): void {

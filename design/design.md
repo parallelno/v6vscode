@@ -189,11 +189,11 @@ The generated project file uses sensible defaults (`speed: "100%"`, `viewMode: "
 
 ## 6. External Tools
 
-### 6.1 `v6emul` — Emulator Backend (Extension-Managed)
+### 6.1 `v6emul` — External Emulator Backend
 
 The extension directly manages only the emulator backend.
 
-- Location: `res/v6emul/` (bundled with the extension).
+- Location: external executable identified by `V6EMUL`.
 - Purpose: Headless Vector-06C emulator. Runs as a TCP IPC server.
 - CLI: `v6emul --serve [--rom <path>] [--load-addr <addr>] [--boot-rom <path>] [--speed <speed>] [--tcp-port <port>]`
 - `--boot-rom` loads the boot ROM (e.g. `res/boot/boots.bin`) that the hardware executes before handing off to the user program.
@@ -201,11 +201,7 @@ The extension directly manages only the emulator backend.
 
 ### 6.2 Emulator Discovery
 
-Resolution order:
-
-1. Explicit path from extension settings (if configured by the user).
-2. Bundled path under `res/v6emul/` inside the extension.
-3. User `PATH` fallback.
+The extension resolves `v6emul` exclusively from `V6EMUL`. It does not discover or invoke `v6asm` or `v6fdd`; those remain user-side build tools.
 
 The extension should validate emulator presence early and produce actionable error messages.
 
@@ -480,7 +476,7 @@ When `fddReadOnly` is `false` (default):
 
 Global extension settings cover environment-level configuration only:
 
-1. Optional override path for `v6emul`.
+1. Tool environment variables supply executable paths, with extension settings as fallbacks.
 2. Logging verbosity.
 3. Default emulator preferences that are not project-specific.
 

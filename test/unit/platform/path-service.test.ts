@@ -22,8 +22,8 @@ describe('PathService', () => {
         });
 
         it('should handle nested paths', () => {
-            const result = pathService.resolveExtensionPath('res/v6emul/v6emul.exe');
-            expect(result).to.equal(path.join(extensionRoot, 'res', 'v6emul', 'v6emul.exe'));
+            const result = pathService.resolveExtensionPath('res/images/icon.png');
+            expect(result).to.equal(path.join(extensionRoot, 'res', 'images', 'icon.png'));
         });
     });
 

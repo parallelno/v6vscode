@@ -5,6 +5,8 @@ import { Logger } from '../../platform/logging/logger';
 import { PathService } from '../../platform/files/path-service';
 import { V6DebugAdapter } from './v6-debug-adapter';
 import { V6_DEBUG_TYPE } from '../configuration/debug-configuration-provider';
+import { WatchpointService } from '../watchpoints/watchpoint-service';
+import { WatchpointsProvider } from '../views/watchpoints-provider';
 
 /**
  * Creates a new in-process V6DebugAdapter for each debug session.
@@ -16,6 +18,8 @@ export class V6DebugAdapterFactory implements vscode.DebugAdapterDescriptorFacto
         private readonly logger: Logger,
         private readonly pathService: PathService,
         private readonly getConfiguration: (s: string) => vscode.WorkspaceConfiguration,
+        private readonly watchpointService: WatchpointService,
+        private readonly watchpointsProvider: WatchpointsProvider,
     ) {}
 
     createDebugAdapterDescriptor(
@@ -27,6 +31,8 @@ export class V6DebugAdapterFactory implements vscode.DebugAdapterDescriptorFacto
             this.logger,
             this.pathService,
             this.getConfiguration,
+            this.watchpointService,
+            this.watchpointsProvider,
         );
         return new vscode.DebugAdapterInlineImplementation(adapter);
     }
@@ -44,8 +50,12 @@ export function registerDebugAdapter(
     pathService: PathService,
     getConfiguration: (s: string) => vscode.WorkspaceConfiguration,
     configProvider: vscode.DebugConfigurationProvider,
+    watchpointService: WatchpointService,
+    watchpointsProvider: WatchpointsProvider,
 ): void {
-    const factory = new V6DebugAdapterFactory(lifecycle, emulatorPanel, logger, pathService, getConfiguration);
+    const factory = new V6DebugAdapterFactory(
+        lifecycle, emulatorPanel, logger, pathService, getConfiguration, watchpointService, watchpointsProvider,
+    );
 
     context.subscriptions.push(
         vscode.debug.registerDebugAdapterDescriptorFactory(V6_DEBUG_TYPE, factory),

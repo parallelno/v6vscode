@@ -113,6 +113,17 @@ export class WatchpointsProvider implements vscode.Disposable {
         });
     }
 
+    showStop(ids: readonly number[], globalAddress?: number): void {
+        this.post({ type: 'stop', ids: [...ids] });
+        if (globalAddress === undefined) { return; }
+        try {
+            const location = globalAddressMemoryLocation(globalAddress);
+            this.hexViewer.revealRange(location.space, location.offset, location.offset);
+        } catch (error) {
+            this.logger.debug(`watchpoints: stop address unavailable: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
     dispose(): void {
         this.stopPolling();
         this.lifecycle.removeListener('stateChange', this.stateListener);

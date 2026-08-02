@@ -39,11 +39,9 @@ The extension no longer bundles any binary. The following tools must be installe
 | `v6fdd` | FDD image builder | [Releases](https://github.com/parallelno/v6asm/releases) |
 | `v6c` | C compiler (optional) | [Releases](https://github.com/parallelno/v6c/releases) |
 
-After downloading, tell the extension where to find them using **one** of these methods (checked in order):
+Set `V6EMUL` to the full path of the emulator executable. This is the extension's only external-tool configuration. Restart VS Code after changing a persistent environment variable.
 
-1. **VS Code setting** — set `v6.emulatorPath`, `v6.assemblerPath`, and `v6.fddToolPath` in workspace or user settings.
-2. **Environment variable** — set `V6EMUL`, `V6ASM`, and `V6FDD`. `V6ASM`/`V6FDD` also control `make` because generated Makefiles use `V6ASM ?= v6asm`.
-3. **PATH** — add the tools to your system `PATH` so they can be found automatically.
+The extension does not invoke `v6asm` or `v6fdd`. Generated Makefiles use the commands from `PATH` by default and accept optional `V6ASM` and `V6FDD` overrides in the build environment.
 
 ## Commands
 
@@ -60,9 +58,6 @@ After downloading, tell the extension where to find them using **one** of these 
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `v6.emulatorPath` | string | `""` | Path to `v6emul` (overrides `V6EMUL` env var and PATH) |
-| `v6.assemblerPath` | string | `""` | Path to `v6asm` (overrides `V6ASM` env var and PATH) |
-| `v6.fddToolPath` | string | `""` | Path to `v6fdd` (overrides `V6FDD` env var and PATH) |
 | `v6.logLevel` | enum | `"info"` | Logging level: error, warn, info, debug |
 
 ## Project File

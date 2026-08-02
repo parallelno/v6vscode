@@ -6,8 +6,8 @@ These checks complement the fast Mocha suite with real artifact and emulator wor
 
 - Node.js and project dependencies (`npm install`).
 - PowerShell 7 or Windows PowerShell 5.1.
-- A debug-enabled `v6emul` available through `v6.emulatorPath`, `V6EMUL`, or `PATH` for the real-emulator scenario.
-- `v6asm` available through `V6ASM` or `PATH` when rebuilding metadata fixtures.
+- A debug-enabled `v6emul` executable specified by `V6EMUL` for every real-emulator test. Tests do not read VS Code settings or search `PATH`.
+- `v6asm` available through `V6ASM` when rebuilding metadata fixtures.
 
 ## Debug metadata
 
@@ -34,6 +34,14 @@ Run:
 $env:V6EMUL = 'C:\path\to\v6emul.exe'
 npm run test:feature:debug
 ```
+
+On Windows, persist the variable for future VS Code and terminal processes with:
+
+```powershell
+[Environment]::SetEnvironmentVariable('V6EMUL', 'C:\path\to\v6emul.exe', 'User')
+```
+
+Restart VS Code after changing a persistent environment variable because an existing extension host retains the environment with which it was started.
 
 This scenario is reserved for end-to-end launch, breakpoint, stepping, display coexistence, and cleanup checks. It must fail explicitly when the emulator or fixture is unavailable. A successful run writes `test/features/debug-adapter/result.txt`; failed or partial runs must not update that file.
 

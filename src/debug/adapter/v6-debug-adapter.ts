@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { IpcClient } from '../../emulator/client/ipc-client';
 import { EmulatorProcess } from '../../emulator/launcher/v6emul-launcher';
-import { EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
+import { DebugLaunchRequest, EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
 import { EmulatorPanel } from '../../emulator/panel/emulator-panel';
 import {
     IpcCommand,
@@ -12,15 +12,20 @@ import {
 } from '../../emulator/protocol/ipc-commands';
 import {
     makeBreakpointAdd,
+    decodeStopRecord,
     GetStepOverAddrResponse,
     GetStackSampleResponse,
+    StopRecord,
     StopReason,
 } from '../../emulator/protocol/debug-models';
 import { loadDebugArtifact } from '../metadata/debug-artifact-loader';
 import { DebugIndex } from '../metadata/debug-index';
 import { Logger } from '../../platform/logging/logger';
 import { PathService } from '../../platform/files/path-service';
-import { getServerInfo, validateDebuggerServer } from '../../emulator/protocol/ipc-server-info';
+import { getServerInfo, supportsStopRecords, validateDebuggerServer } from '../../emulator/protocol/ipc-server-info';
+import { WatchpointService } from '../watchpoints/watchpoint-service';
+import { evaluateSymbolExpression } from '../utilities/symbol-expression';
+import { WatchpointsProvider } from '../views/watchpoints-provider';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -62,7 +67,7 @@ function flag(f: number, bit: number): string { return (f >> bit & 1) ? '1' : '0
  *   - setInstructionBreakpoints (direct address, working backend protocol)
  *   - setBreakpoints (returned as unverified — ELF/DWARF not yet consumed)
  *   - evaluate (register names and hex literals)
- *   - IS_RUNNING poll → StoppedEvent (Step 3.3 stop-info will refine reasons)
+ *   - authoritative stop-record polling with IS_RUNNING fallback
  */
 export class V6DebugAdapter implements vscode.DebugAdapter {
     private readonly _onDidSendMessage = new vscode.EventEmitter<vscode.DebugProtocolMessage>();
@@ -86,6 +91,11 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private pendingStepOverAddr: number | undefined;
     private terminationEmitted = false;
     private terminationRequested = false;
+    private launchRequest: DebugLaunchRequest | null = null;
+    private stopOnEntry = false;
+    private stopRecordsSupported = false;
+    private lastStopSequence: number | undefined;
+    private lastExceptionRecord: StopRecord | undefined;
 
     // IS_RUNNING poll
     private pollTimer: NodeJS.Timeout | null = null;
@@ -95,6 +105,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private nextBpId = 1;
     private bpAddrToId = new Map<number, number>();
     private bpIdToAddr = new Map<number, number>();
+    private watchpointIdToDapId = new Map<number, number>();
+    private dapWatchpointIds = new Set<number>();
 
     // Frame-level cache — refreshed on each pause
     private cachedRegs: GetRegsResponse | null = null;
@@ -105,6 +117,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         private readonly logger: Logger,
         private readonly pathService: PathService,
         private readonly getConfiguration: (s: string) => vscode.WorkspaceConfiguration,
+        private readonly watchpointService?: WatchpointService,
+        private readonly watchpointsProvider?: WatchpointsProvider,
     ) {}
 
     // -----------------------------------------------------------------------
@@ -145,6 +159,9 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             case 'stepIn':               await this.onStepIn(req); break;
             case 'setBreakpoints':       await this.onSetBreakpoints(req); break;
             case 'setInstructionBreakpoints': await this.onSetInstructionBreakpoints(req); break;
+            case 'dataBreakpointInfo':  await this.onDataBreakpointInfo(req); break;
+            case 'setDataBreakpoints':  await this.onSetDataBreakpoints(req); break;
+            case 'exceptionInfo':       await this.onExceptionInfo(req); break;
             case 'evaluate':             await this.onEvaluate(req); break;
             case 'restart':              await this.onRestart(req); break;
             case 'disconnect':           await this.onDisconnect(req); break;
@@ -188,15 +205,20 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                 ? String(args.bootRom)
                 : this.pathService.resolveExtensionPath('res/boot/boots.bin');
 
-            const launch = await this.lifecycle.startDebug({
+            this.launchRequest = {
                 program: String(args.program),
                 bootRomPath,
                 loadAddr: args.loadAddress ? String(args.loadAddress) : undefined,
                 speed: args.speed ?? '100%',
-            });
+            };
+            this.stopOnEntry = Boolean(args.stopOnEntry);
+            const launch = await this.lifecycle.startDebug(this.launchRequest);
             const { client, process, port } = launch;
             this.client = client;
             this.emulatorProcess = process;
+            this.stopRecordsSupported = this.lifecycle.serverInfo !== undefined
+                && supportsStopRecords(this.lifecycle.serverInfo);
+            this.publishDynamicCapabilities();
             process.spawnResult.exitPromise.then(code => {
                 this.logger.info(`v6emul exited with code ${code}`);
                 if (!this.terminationRequested) {
@@ -259,6 +281,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
             const serverInfo = await getServerInfo(client);
             validateDebuggerServer(serverInfo);
+            this.stopRecordsSupported = supportsStopRecords(serverInfo);
+            this.publishDynamicCapabilities();
 
             const ping = await client.send<PingResponse>(IpcCommand.PING);
             if (!ping.ok) {
@@ -281,17 +305,22 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // -----------------------------------------------------------------------
 
     private async onConfigurationDone(req: any): Promise<void> {
-        this.sendResponseBody(req, {});
+        try {
+            if (this.launchRequest) {
+                await this.lifecycle.loadDebugProgram(this.launchRequest);
+            }
+            this.sendResponseBody(req, {});
 
-        // stopOnEntry: remain paused and emit stopped event
-        // otherwise start running
-        const launchArgs = (this as any)._lastLaunchArgs ?? {};
-        if (launchArgs.stopOnEntry) {
-            this.stopReason = 'entry';
-            await this.refreshRegs();
-            this.emitStopped('entry');
-        } else {
-            await this.run();
+            if (this.stopOnEntry) {
+                this.stopReason = 'entry';
+                await this.refreshRegs();
+                this.emitStopped('entry');
+            } else {
+                await this.run();
+            }
+        } catch (err: any) {
+            this.sendResponse(req, false, `Could not load debug program: ${err.message}`);
+            this.cleanup(true);
         }
     }
 
@@ -467,6 +496,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
     private async run(): Promise<void> {
         if (!this.client) { return; }
+        await this.captureStopBaseline();
+        this.watchpointsProvider?.showStop([]);
         this.cachedRegs = null;
         this.pendingPause = false;
         this.pendingStep = false;
@@ -533,6 +564,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
     private async singleStep(): Promise<void> {
         if (!this.client) { return; }
+        await this.captureStopBaseline();
         this.sessionState = 'running';
         this.lifecycle.setExecutionRunning(true);
         this.sendEvent('continued', { threadId: THREAD_ID, allThreadsContinued: true });
@@ -540,7 +572,13 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         // EXECUTE_INSTR keeps the emulator paused — read stop state immediately
         this.sessionState = 'paused';
         this.lifecycle.setExecutionRunning(false);
-        await this.onStop();
+        const record = this.stopRecordsSupported ? await this.readStopRecord() : undefined;
+        if (record && record.sequence !== this.lastStopSequence) {
+            this.lastStopSequence = record.sequence;
+            await this.onStop(record);
+        } else if (!this.stopRecordsSupported) {
+            await this.onStop();
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -669,6 +707,92 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         this.sendResponseBody(req, { breakpoints: result });
     }
 
+    private async onDataBreakpointInfo(req: any): Promise<void> {
+        if (!this.dataBreakpointsSupported()) {
+            this.sendResponseBody(req, { dataId: null, description: 'Data breakpoints are unavailable' });
+            return;
+        }
+        const expression = String(req.arguments?.name ?? '').trim();
+        try {
+            const address = evaluateSymbolExpression(expression, name => {
+                const symbol = this.debugIndex?.symbol(name);
+                if (!symbol) { throw new Error(`Unknown symbol: ${name}`); }
+                return symbol.address;
+            });
+            if (!Number.isSafeInteger(address) || address < 0 || address > 0x20FFFF) {
+                throw new Error('Address is outside global memory');
+            }
+            this.sendResponseBody(req, {
+                dataId: `v6:${address}`,
+                description: `Memory at 0x${address.toString(16).toUpperCase().padStart(5, '0')}`,
+                accessTypes: ['read', 'write', 'readWrite'],
+                canPersist: true,
+            });
+        } catch (error) {
+            this.sendResponseBody(req, {
+                dataId: null,
+                description: error instanceof Error ? error.message : String(error),
+            });
+        }
+    }
+
+    private async onSetDataBreakpoints(req: any): Promise<void> {
+        if (!this.dataBreakpointsSupported() || !this.watchpointService) {
+            this.sendResponse(req, false, 'The active emulator does not support data breakpoints');
+            return;
+        }
+        try {
+            for (const id of this.dapWatchpointIds) {
+                await this.watchpointService.delete(id);
+            }
+            this.dapWatchpointIds.clear();
+            this.watchpointIdToDapId.clear();
+
+            const result: any[] = [];
+            for (const requested of req.arguments?.breakpoints ?? []) {
+                const match = /^v6:(\d+)$/.exec(String(requested.dataId ?? ''));
+                if (!match) {
+                    result.push({ verified: false, message: 'Invalid V6 data breakpoint identity' });
+                    continue;
+                }
+                const address = Number(match[1]);
+                const access = requested.accessType === 'read' ? 'R'
+                    : requested.accessType === 'write' ? 'W' : 'RW';
+                const entry = await this.watchpointService.add({
+                    globalAddr: address,
+                    len: 1,
+                    value: 0,
+                    access,
+                    condition: 'ANY',
+                    type: 'LEN',
+                    active: true,
+                    comment: `DAP data breakpoint at 0x${address.toString(16).toUpperCase()}`,
+                });
+                const dapId = this.nextBpId++;
+                this.dapWatchpointIds.add(entry.id);
+                this.watchpointIdToDapId.set(entry.id, dapId);
+                result.push({ id: dapId, verified: true });
+            }
+            this.sendResponseBody(req, { breakpoints: result });
+        } catch (error) {
+            this.sendResponse(req, false, error instanceof Error ? error.message : String(error));
+        }
+    }
+
+    private async onExceptionInfo(req: any): Promise<void> {
+        const record = this.lastExceptionRecord;
+        if (!record) {
+            this.sendResponse(req, false, 'No exception stop information is available');
+            return;
+        }
+        this.sendResponseBody(req, {
+            exceptionId: String(record.exceptionCode ?? 'v6.exception'),
+            description: record.description,
+            breakMode: 'always',
+            details: record.description ? { message: record.description } : undefined,
+        });
+    }
+
     // -----------------------------------------------------------------------
     // evaluate — register names and hex literals
     // -----------------------------------------------------------------------
@@ -740,9 +864,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             if (resume) {
                 await this.run();
             } else {
-                this.stopReason = 'entry';
                 await this.refreshRegs();
-                this.emitStopped('entry');
             }
             this.sendResponseBody(req, {});
         } catch (error) {
@@ -770,7 +892,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     }
 
     // -----------------------------------------------------------------------
-    // IS_RUNNING poll
+    // Stop polling
     // -----------------------------------------------------------------------
 
     private startPoll(): void {
@@ -779,13 +901,19 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         const poll = async () => {
             if (!this.pollingActive || !this.client) { return; }
             try {
-                const resp = await this.client.send<IsRunningResponse>(IpcCommand.IS_RUNNING, undefined, 5000, 'critical');
-                if (resp.ok && resp.data && !resp.data.isRunning) {
+                const stopped = await this.isStopped();
+                if (stopped) {
+                    const record = this.stopRecordsSupported ? await this.readStopRecord() : undefined;
+                    if (record && record.sequence === this.lastStopSequence) {
+                        this.pollTimer = setTimeout(poll, POLL_INTERVAL_MS);
+                        return;
+                    }
                     this.pollingActive = false;
                     this.pollTimer = null;
                     this.sessionState = 'paused';
                     this.lifecycle.setExecutionRunning(false);
-                    await this.onStop();
+                    if (record) { this.lastStopSequence = record.sequence; }
+                    await this.onStop(record);
                     return;
                 }
             } catch {
@@ -812,7 +940,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // Stop handling
     // -----------------------------------------------------------------------
 
-    private async onStop(): Promise<void> {
+    private async onStop(record?: StopRecord): Promise<void> {
         // Clean up any pending step-over breakpoint that was not auto-deleted
         if (this.pendingStepOverAddr !== undefined) {
             await this.client?.send(IpcCommand.DEBUG_BREAKPOINT_DEL, {
@@ -822,6 +950,23 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         }
 
         await this.refreshRegs();
+        if (record) {
+            this.pendingStep = false;
+            this.pendingPause = false;
+            const reason = mapStopReason(record.reason);
+            const hitBreakpointIds = this.mapHitBreakpointIds(record);
+            this.stopReason = reason;
+            this.lastExceptionRecord = record.reason === 'exception' ? record : undefined;
+            if (record.reason === 'watchpoint') {
+                this.emitWatchpointOutput(record);
+                this.watchpointsProvider?.showStop(
+                    record.watchpointIds ?? [], record.accessedGlobalAddress,
+                );
+            }
+            this.emitStopped(reason, hitBreakpointIds, record.description);
+            return;
+        }
+
         const pc = this.cachedRegs?.pc;
         let reason: StopReason = 'pause';
         let hitBreakpointIds: number[] | undefined;
@@ -844,12 +989,80 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         this.emitStopped(reason, hitBreakpointIds);
     }
 
-    private emitStopped(reason: StopReason, hitBreakpointIds?: number[]): void {
+    private emitStopped(reason: StopReason, hitBreakpointIds?: number[], description?: string): void {
         this.sendEvent('stopped', {
             reason,
+            description,
             threadId: THREAD_ID,
             allThreadsStopped: true,
             hitBreakpointIds,
+        });
+    }
+
+    private async captureStopBaseline(): Promise<void> {
+        this.lastExceptionRecord = undefined;
+        if (!this.stopRecordsSupported) { return; }
+        const record = await this.readStopRecord();
+        this.lastStopSequence = record.sequence;
+    }
+
+    private async readStopRecord(): Promise<StopRecord> {
+        const response = await this.client!.send<unknown>(
+            IpcCommand.GET_STOP_RECORD, undefined, 5000, 'critical',
+        );
+        if (!response.ok || response.data === undefined) {
+            throw new Error(response.error ?? 'Unable to read emulator stop record');
+        }
+        return decodeStopRecord(response.data);
+    }
+
+    private async isStopped(): Promise<boolean> {
+        const response = await this.client!.send<IsRunningResponse>(
+            IpcCommand.IS_RUNNING, undefined, 5000, 'critical',
+        );
+        return response.ok && response.data?.isRunning === false;
+    }
+
+    private mapHitBreakpointIds(record: StopRecord): number[] | undefined {
+        if (record.reason === 'breakpoint') {
+            const addresses = [record.breakpointAddress, ...(record.breakpointIds ?? [])]
+                .filter((value): value is number => value !== undefined);
+            const ids = addresses.map(address => this.bpAddrToId.get(address))
+                .filter((value): value is number => value !== undefined);
+            return ids.length ? [...new Set(ids)] : undefined;
+        }
+        return record.reason === 'watchpoint' && record.watchpointIds?.length
+            ? record.watchpointIds.map(id => this.watchpointIdToDapId.get(id))
+                .filter((id): id is number => id !== undefined)
+            : undefined;
+    }
+
+    private dataBreakpointsSupported(): boolean {
+        return this.stopRecordsSupported && this.watchpointService?.available === true;
+    }
+
+    private publishDynamicCapabilities(): void {
+        if (!this.stopRecordsSupported) { return; }
+        this.sendEvent('capabilities', {
+            capabilities: {
+                supportsDataBreakpoints: this.dataBreakpointsSupported(),
+                supportsExceptionInfoRequest: true,
+            },
+        });
+    }
+
+    private emitWatchpointOutput(record: StopRecord): void {
+        const ids = record.watchpointIds?.join(', ') ?? 'unknown';
+        const access = record.access ?? 'access';
+        const address = record.accessedGlobalAddress === undefined
+            ? 'unknown address'
+            : `0x${record.accessedGlobalAddress.toString(16).toUpperCase().padStart(5, '0')}`;
+        const values = record.oldValue !== undefined && record.newValue !== undefined
+            ? `, ${hex2(record.oldValue)} -> ${hex2(record.newValue)}`
+            : record.observedValue !== undefined ? `, value ${hex2(record.observedValue)}` : '';
+        this.sendEvent('output', {
+            category: 'console',
+            output: `V6: Watchpoint ${ids}: ${access} at ${address}${values}, stopped at PC ${hex4(record.pc)}\n`,
         });
     }
 
@@ -881,6 +1094,11 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
         // Remove all DAP-owned breakpoints
         if (this.client?.connected) {
+            if (this.watchpointService?.available) {
+                for (const id of this.dapWatchpointIds) {
+                    await this.watchpointService.delete(id).catch(() => {});
+                }
+            }
             for (const addr of this.bpAddrToId.keys()) {
                 await this.client.send(IpcCommand.DEBUG_BREAKPOINT_DEL, { addr }).catch(() => {});
             }
@@ -899,9 +1117,14 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
         this.bpAddrToId.clear();
         this.bpIdToAddr.clear();
+        this.watchpointIdToDapId.clear();
+        this.dapWatchpointIds.clear();
         this.client = null;
         this.emulatorProcess = null;
         this.cachedRegs = null;
+        this.stopRecordsSupported = false;
+        this.lastStopSequence = undefined;
+        this.lastExceptionRecord = undefined;
     }
 
     private emitTerminated(exitCode?: number): void {
@@ -957,4 +1180,17 @@ function mkVar(name: string, value: string, variablesReference: number, presenta
     const v: any = { name, value, variablesReference };
     if (presentationHint) { v.presentationHint = { kind: presentationHint }; }
     return v;
+}
+
+function mapStopReason(reason: StopRecord['reason']): StopReason {
+    switch (reason) {
+        case 'breakpoint': return 'breakpoint';
+        case 'watchpoint': return 'data breakpoint';
+        case 'step':
+        case 'next':
+        case 'frameStep': return 'step';
+        case 'exception': return 'exception';
+        case 'unknown': return 'unknown';
+        default: return 'pause';
+    }
 }

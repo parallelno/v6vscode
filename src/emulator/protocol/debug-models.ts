@@ -89,12 +89,108 @@ export interface WatchpointDelRequest {
 // Stop detection
 // ---------------------------------------------------------------------------
 
-/**
- * Stop reason classification.
- * The current backend (Step 3.2) only exposes IS_RUNNING transitions.
- * Structured stop info (Step 3.3) will make this more precise.
- */
-export type StopReason = 'pause' | 'breakpoint' | 'step' | 'entry' | 'unknown';
+export type StopReason = 'pause' | 'breakpoint' | 'data breakpoint' | 'step' | 'entry' | 'exception' | 'unknown';
+export type EmulatorStopReason = 'pause' | 'breakpoint' | 'watchpoint' | 'step' | 'next' | 'frameStep'
+    | 'exception' | 'unknown';
+export type StopRecordAccess = 'read' | 'write';
+
+export interface StopRecord {
+    sequence: number;
+    reason: EmulatorStopReason;
+    pc: number;
+    globalInstructionAddress: number;
+    breakpointIds?: number[];
+    breakpointAddress?: number;
+    watchpointIds?: number[];
+    access?: StopRecordAccess;
+    accessedGlobalAddress?: number;
+    observedValue?: number;
+    oldValue?: number;
+    newValue?: number;
+    exceptionCode?: number | string;
+    description?: string;
+}
+
+export function decodeStopRecord(value: unknown): StopRecord {
+    if (!isObject(value)) { throw new Error('Invalid stop record: expected an object'); }
+    const reason = value.reason;
+    const reasons: EmulatorStopReason[] = [
+        'pause', 'breakpoint', 'watchpoint', 'step', 'next', 'frameStep', 'exception', 'unknown',
+    ];
+    if (typeof reason !== 'string' || !reasons.includes(reason as EmulatorStopReason)) {
+        throw new Error('Invalid stop record: reason is invalid');
+    }
+
+    const record: StopRecord = {
+        sequence: requiredInteger(value, 'sequence', 0, Number.MAX_SAFE_INTEGER),
+        reason: reason as EmulatorStopReason,
+        pc: requiredInteger(value, 'pc', 0, 0xFFFF),
+        globalInstructionAddress: requiredInteger(value, 'globalInstructionAddress', 0, Number.MAX_SAFE_INTEGER),
+    };
+    assignIntegerArray(value, record, 'breakpointIds');
+    assignOptionalInteger(value, record, 'breakpointAddress');
+    assignIntegerArray(value, record, 'watchpointIds');
+    if (value.access !== undefined) {
+        if (value.access !== 'read' && value.access !== 'write') {
+            throw new Error('Invalid stop record: access is invalid');
+        }
+        record.access = value.access;
+    }
+    for (const field of ['accessedGlobalAddress', 'observedValue', 'oldValue', 'newValue'] as const) {
+        assignOptionalInteger(value, record, field);
+    }
+    if (value.exceptionCode !== undefined) {
+        if ((typeof value.exceptionCode !== 'string' || value.exceptionCode.length > 256)
+            && !isIntegerInRange(value.exceptionCode, 0, Number.MAX_SAFE_INTEGER)) {
+            throw new Error('Invalid stop record: exceptionCode is invalid');
+        }
+        record.exceptionCode = value.exceptionCode as number | string;
+    }
+    if (value.description !== undefined) {
+        if (typeof value.description !== 'string' || value.description.length > 4096) {
+            throw new Error('Invalid stop record: description is invalid');
+        }
+        record.description = value.description;
+    }
+    return record;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isIntegerInRange(value: unknown, min: number, max: number): value is number {
+    return Number.isSafeInteger(value) && (value as number) >= min && (value as number) <= max;
+}
+
+function requiredInteger(value: Record<string, unknown>, field: string, min: number, max: number): number {
+    if (!isIntegerInRange(value[field], min, max)) {
+        throw new Error(`Invalid stop record: ${field} is invalid`);
+    }
+    return value[field];
+}
+
+function assignOptionalInteger<K extends keyof StopRecord>(
+    source: Record<string, unknown>, target: StopRecord, field: K,
+): void {
+    const value = source[field as string];
+    if (value === undefined) { return; }
+    if (!isIntegerInRange(value, 0, Number.MAX_SAFE_INTEGER)) {
+        throw new Error(`Invalid stop record: ${String(field)} is invalid`);
+    }
+    (target as any)[field] = value;
+}
+
+function assignIntegerArray<K extends 'breakpointIds' | 'watchpointIds'>(
+    source: Record<string, unknown>, target: StopRecord, field: K,
+): void {
+    const value = source[field];
+    if (value === undefined) { return; }
+    if (!Array.isArray(value) || !value.every(item => isIntegerInRange(item, 0, Number.MAX_SAFE_INTEGER))) {
+        throw new Error(`Invalid stop record: ${field} is invalid`);
+    }
+    target[field] = [...value];
+}
 
 /** IS_RUNNING (command 3) response. */
 export interface IsRunningResponse {

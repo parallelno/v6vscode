@@ -1,6 +1,6 @@
 import { expect } from 'chai';
-import * as path from 'path';
 import * as fs from 'fs';
+import * as path from 'path';
 import { ErrorCode } from '../../src/platform/errors/error-codes';
 import { V6Error } from '../../src/platform/errors/v6-error';
 import { V6emulLocator, V6emulLocatorDeps } from '../../src/emulator/launcher/v6emul-locator';
@@ -21,46 +21,38 @@ const EXTENSION_ROOT = path.resolve(__dirname, '..', '..');
 
 describe('Settings and error UX regression tests', () => {
 
-    describe('v6.emulatorPath setting validation', () => {
-        it('should warn when setting path does not exist but still try fallbacks', () => {
+    describe('V6EMUL validation', () => {
+        it('should warn and fail when V6EMUL does not exist', () => {
             const logger = makeLogger();
             const deps: V6emulLocatorDeps = {
                 logger,
-                getConfiguration: () => ({ get: () => '/nonexistent/fake/v6emul' }),
-                getEnv: () => undefined,
-                which: () => undefined,
+                getEnv: () => '/nonexistent/fake/v6emul',
             };
             const locator = new V6emulLocator(deps);
             expect(() => locator.resolve()).to.throw(V6Error);
-            // Verify the locator logged a warning about the setting path
             const warnLogs = logger.logs.filter((l: string) => l.startsWith('warn:'));
             expect(warnLogs.some((l: string) => l.includes('does not exist'))).to.be.true;
         });
 
-        it('should accept empty emulator path and skip to environment/PATH lookup', () => {
+        it('should fail without warning when V6EMUL is absent', () => {
             const logger = makeLogger();
             const deps: V6emulLocatorDeps = {
                 logger,
-                getConfiguration: () => ({ get: () => '' }),
-            getEnv: () => undefined,
-                which: () => undefined,
+                getEnv: () => undefined,
             };
             const locator = new V6emulLocator(deps);
-            // Should not warn about empty path — just skip to next tier
             expect(() => locator.resolve()).to.throw(V6Error);
             const warnLogs = logger.logs.filter((l: string) => l.startsWith('warn:'));
             expect(warnLogs.some((l: string) => l.includes('does not exist'))).to.be.false;
         });
 
-        it('should use setting path when file exists', () => {
+        it('should use V6EMUL when the file exists', () => {
             const logger = makeLogger();
             // Use package.json as a stand-in for an existing file
             const existingFile = path.join(EXTENSION_ROOT, 'package.json');
             const deps: V6emulLocatorDeps = {
                 logger,
-                getConfiguration: () => ({ get: () => existingFile }),
-                getEnv: () => undefined,
-                which: () => undefined,
+                getEnv: () => existingFile,
             };
             const locator = new V6emulLocator(deps);
             const result = locator.resolve();
@@ -69,13 +61,13 @@ describe('Settings and error UX regression tests', () => {
     });
 
     describe('Error codes produce actionable messages', () => {
-        it('EMULATOR_NOT_FOUND message should suggest setting path', () => {
+        it('EMULATOR_NOT_FOUND message should require V6EMUL', () => {
             const err = new V6Error(
                 ErrorCode.EMULATOR_NOT_FOUND,
-                'Could not locate v6emul. Set v6.emulatorPath in settings or add v6emul to PATH.',
+                'Could not locate v6emul. Set V6EMUL to the full path of the v6emul executable.',
             );
-            expect(err.message).to.include('v6.emulatorPath');
-            expect(err.message).to.include('PATH');
+            expect(err.message).to.include('V6EMUL');
+            expect(err.message).not.to.include('PATH');
         });
 
         it('EXECUTABLE_NOT_FOUND message should suggest building', () => {
@@ -131,6 +123,15 @@ describe('Settings and error UX regression tests', () => {
     });
 
     describe('package.json packaging fields', () => {
+        it('should not contribute executable path settings', () => {
+            const packageJsonPath = path.join(EXTENSION_ROOT, 'package.json');
+            const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+            const properties = pkg.contributes.configuration.properties;
+            expect(properties).not.to.have.property('v6.emulatorPath');
+            expect(properties).not.to.have.property('v6.assemblerPath');
+            expect(properties).not.to.have.property('v6.fddToolPath');
+        });
+
         it('should have a package script', () => {
             const packageJsonPath = path.join(EXTENSION_ROOT, 'package.json');
             const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));

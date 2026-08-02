@@ -1,8 +1,0 @@
-{
-    // External build tools — not bundled with the extension.
-    // Download from https://github.com/parallelno/v6asm/releases and update these paths.
-    // Alternatively, set the V6ASM / V6FDD environment variables (also used by make).
-    "v6.emulatorPath": "C:/Work/Programming/v6emul/build/release/app/Release/v6emul.exe",
-    "v6.assemblerPath": "C:/Work/Programming/v6asm/target/release/v6asm.exe",
-    "v6.fddToolPath": "C:/Work/Programming/v6asm/target/release/v6fdd.exe"
-}

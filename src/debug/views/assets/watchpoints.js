@@ -24,6 +24,7 @@
     let menuId = null;
     let previewTimer = 0;
     let previewId = null;
+    let stoppedIds = new Set();
 
     function post(message) { vscode.postMessage({ generation, ...message }); }
     function hex(value, width) { return `0x${Number(value).toString(16).toUpperCase().padStart(width, '0')}`; }
@@ -39,6 +40,7 @@
     }
     function displayRow(entry) {
         const row = document.createElement('div'); row.className = 'row'; row.setAttribute('role', 'row'); row.tabIndex = 0; row.dataset.id = String(entry.id);
+        if (stoppedIds.has(entry.id)) { row.classList.add('stopped'); row.setAttribute('aria-label', `Triggered watchpoint ${entry.id}`); }
         const activity = cell('activity');
         const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = entry.active; checkbox.disabled = !canMutate; checkbox.setAttribute('aria-label', entry.active ? 'Enabled' : 'Disabled');
         checkbox.addEventListener('change', () => post({ type: 'edit', candidate: { ...entry, active: checkbox.checked } })); activity.append(checkbox, document.createTextNode(entry.active ? 'Enabled' : 'Disabled'));
@@ -205,6 +207,15 @@
             else if (editingId !== null && editingId !== 'new' && !entries.some(entry => entry.id === editingId)) { editingId = null; }
             // Editors survive background polling refreshes; only re-render when idle.
             if (editingId === null) render();
+        }
+        if (message.type === 'stop') {
+            stoppedIds = new Set(message.ids);
+            render();
+            const first = rows.querySelector('.row.stopped');
+            first?.scrollIntoView({ block: 'nearest' });
+            announce(message.ids.length === 1
+                ? `Watchpoint ${message.ids[0]} triggered`
+                : `Watchpoints ${message.ids.join(', ')} triggered`);
         }
         if (message.type === 'operation') {
             if (message.operation === 'beginAdd') { editingId = 'new'; render(); }

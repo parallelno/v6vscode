@@ -201,15 +201,15 @@ Add malformed-request tests, bounds tests, reconnect tests, and compatibility te
 
 1. Build `v6emul` with the debugger-enabled server changes.
 2. Add a command/capability smoke check to the extension startup path.
-3. Update the bundled binary under `res/v6emul` using the repository's established packaging process.
+3. Verify the external emulator identified by `V6EMUL` using the repository's smoke-test process.
 4. Record the required minimum emulator protocol and binary version.
-5. Fail debug launch with an actionable message when an overridden `v6.emulatorPath` is older or lacks required capabilities.
+5. Fail debug launch with an actionable message when the emulator identified by `V6EMUL` is older or lacks required capabilities.
 6. Keep ordinary Run Project behavior available when only non-debug capabilities are present.
 
 Acceptance gate:
 
-- Packaged VSIX contains the verified debugger-capable emulator.
-- Bundled and configured external binaries produce deterministic compatibility messages.
+- Packaged VSIX resolves a verified external debugger-capable emulator through `V6EMUL`.
+- External binaries produce deterministic compatibility messages.
 
 > **Implementation Notes**:
 
@@ -748,7 +748,7 @@ Do not mark this step complete until the packaged VSIX, not only the source chec
 
 ### Example 1 - Native ASM debugging
 
-A user presses F5 on an ASM project. VS Code launches the bundled emulator, verifies protocol capabilities, loads the ROM and metadata, stops on entry, highlights the current source line, and displays registers and flags in Variables. Gutter breakpoints become verified and stop at mapped addresses.
+A user presses F5 on an ASM project. VS Code launches the emulator identified by `V6EMUL`, verifies protocol capabilities, loads the ROM and metadata, stops on entry, highlights the current source line, and displays registers and flags in Variables. Gutter breakpoints become verified and stop at mapped addresses.
 
 ### Example 2 - Deterministic stepping
 

@@ -5,6 +5,7 @@ export const SUPPORTED_IPC_PROTOCOL_VERSION = 2;
 export const SUPPORTED_RAW_FRAME_SCHEMA = 1;
 export const SUPPORTED_BREAKPOINT_SCHEMA = 1;
 export const SUPPORTED_WATCHPOINT_SCHEMA = 1;
+export const SUPPORTED_STOP_RECORD_SCHEMA = 1;
 
 /** Reads and validates the required server metadata handshake. */
 export async function getServerInfo(client: IpcClient): Promise<GetServerInfoResponse> {
@@ -70,4 +71,9 @@ export function validateWatchpointServer(info: GetServerInfoResponse): void {
         || missingCommands.length > 0) {
         throw new Error(`v6emul ${info.emulatorVersion} does not provide the required watchpoint protocol capabilities`);
     }
+}
+
+export function supportsStopRecords(info: GetServerInfoResponse): boolean {
+    return info.capabilities.stopRecordSchema === SUPPORTED_STOP_RECORD_SCHEMA
+        && info.commands.includes(IpcCommand.GET_STOP_RECORD);
 }

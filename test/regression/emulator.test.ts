@@ -17,20 +17,16 @@ describe('Emulator regression tests', () => {
         it('should throw EMULATOR_NOT_FOUND when no resolution succeeds', () => {
             const deps: V6emulLocatorDeps = {
                 logger: makeLogger(),
-                getConfiguration: () => ({ get: () => '' }),
                 getEnv: () => undefined,
-                which: () => undefined,
             };
             const locator = new V6emulLocator(deps);
             expect(() => locator.resolve()).to.throw(V6Error).with.property('code', ErrorCode.EMULATOR_NOT_FOUND);
         });
 
-        it('should throw EMULATOR_NOT_FOUND when setting path is invalid', () => {
+        it('should throw EMULATOR_NOT_FOUND when V6EMUL is invalid', () => {
             const deps: V6emulLocatorDeps = {
                 logger: makeLogger(),
-                getConfiguration: () => ({ get: () => '/totally/invalid/path/v6emul' }),
-                getEnv: () => undefined,
-                which: () => undefined,
+                getEnv: () => '/totally/invalid/path/v6emul',
             };
             const locator = new V6emulLocator(deps);
             expect(() => locator.resolve()).to.throw(V6Error).with.property('code', ErrorCode.EMULATOR_NOT_FOUND);

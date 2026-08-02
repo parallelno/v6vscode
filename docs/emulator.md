@@ -4,7 +4,7 @@ Launches the `v6emul` backend, communicates over TCP using length-prefixed Messa
 
 ## Launcher (`src/emulator/launcher/`)
 
-- **`v6emul-locator.ts`** — Three-tier binary resolution: (1) `v6.emulatorPath` setting, (2) bundled `res/v6emul/v6emul`, (3) PATH lookup. Throws `V6Error(EMULATOR_NOT_FOUND)` if all fail.
+- **`v6emul-locator.ts`** — Resolves the emulator exclusively from `V6EMUL` and validates that it names an existing file. Throws `V6Error(EMULATOR_NOT_FOUND)` otherwise.
 - **`v6emul-launcher.ts`** — Builds CLI arguments from a `LaunchRequest` and spawns the process via `ProcessRunner`. Always passes `--serve` and `--tcp-port`. Supports `--boot-rom`, `--rom`, `--load-addr`, `--fdd`, `--fdd-drive`, `--fdd-autoboot`, `--speed`.
 
 ## Protocol (`src/emulator/protocol/`)

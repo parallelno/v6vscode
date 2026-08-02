@@ -79,7 +79,6 @@ v6vscode/
     fdd/rds308.fdd
     images/icon.png
     syntaxes/devector_8080.tmLanguage.json
-    v6emul/                             # Bundled emulator backend
   language-configuration.json
   tsconfig.json
   package.json
@@ -99,7 +98,7 @@ v6vscode/
 - `activationEvents`: `workspaceContains:**/*.project.json`, `onCommand:v6.createProject`, `onCommand:v6.runProject`.
 - `contributes.commands`: `v6.createProject`, `v6.runProject`.
 - `contributes.languages`: language id `v6asm`, file extensions `.asm`, `.inc`, grammar path `res/syntaxes/devector_8080.tmLanguage.json`.
-- `contributes.configuration`: `v6.emulatorPath` (string, optional), `v6.logLevel` (enum: error/warn/info/debug).
+- `contributes.configuration`: `v6.logLevel` (enum: error/warn/info/debug).
 - `contributes.jsonValidation`: glob `*.project.json` → bundled `v6.project.schema.json`.
 
 **`extension.ts`** (`activate`):
@@ -165,7 +164,7 @@ interface V6Project {
 
 ### 2.5 Emulator Launcher
 
-**`v6emul-locator.ts`** — Resolves path in order: (1) `v6.emulatorPath` setting, (2) `res/v6emul/v6emul` bundled path, (3) `which`/`where` lookup on PATH. Validates the resolved file exists and is executable. Returns absolute path or throws `V6Error(EMULATOR_NOT_FOUND)`.
+**`v6emul-locator.ts`** — Resolves and validates the emulator exclusively from `V6EMUL`. The extension does not locate `v6asm` or `v6fdd`.
 
 **`v6emul-launcher.ts`** — Builds CLI args from `LaunchRequest`:
 ```ts
@@ -402,7 +401,7 @@ No other runtime dependencies. Keep the dependency tree minimal.
 **Goal:** Extension is ready for `.vsix` packaging and end-to-end use.
 
 - [x] **7.1 `.vscodeignore`** — exclude `test/`, `design/`, `temp/`, `docs/`, source maps in release builds.
-- [x] **7.2 Extension settings** — `v6.emulatorPath`, `v6.logLevel` wired and validated.
+- [x] **7.2 Extension settings** — `v6.logLevel`; external emulator discovery uses `V6EMUL` only.
 - [x] **7.3 Error UX** — all `V6Error` codes surface as user-friendly notifications with suggested actions.
 - [x] **7.4 README** — user-facing documentation: install, create project, build, run.
 - [x] **7.5 CI script** — `npm run test` runs unit + integration + regression. `npm run package` produces `.vsix`.

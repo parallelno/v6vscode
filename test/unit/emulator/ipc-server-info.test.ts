@@ -1,6 +1,7 @@
 import { expect } from 'chai';
 import {
     getServerInfo,
+    supportsStopRecords,
     validateDebuggerServer,
     validateWatchpointServer,
 } from '../../../src/emulator/protocol/ipc-server-info';
@@ -154,6 +155,29 @@ describe('validateDebuggerServer', () => {
             ...validInfo,
             capabilities: { ...validInfo.capabilities, breakpointSchema: undefined },
         })).to.throw('does not provide the required debugger protocol capabilities');
+    });
+});
+
+describe('supportsStopRecords', () => {
+    const info = {
+        protocolVersion: 2,
+        emulatorVersion: 'test-build',
+        commands: [IpcCommand.GET_STOP_RECORD],
+        capabilities: {
+            debugger: true,
+            rawFrame: true,
+            rawFrameSchema: 1,
+            stackSampleSchema: 1,
+            stopRecordSchema: 1,
+        },
+    };
+
+    it('requires both command 95 and schema 1', () => {
+        expect(supportsStopRecords(info)).to.equal(true);
+        expect(supportsStopRecords({ ...info, commands: [] })).to.equal(false);
+        expect(supportsStopRecords({
+            ...info, capabilities: { ...info.capabilities, stopRecordSchema: undefined },
+        })).to.equal(false);
     });
 });
 
