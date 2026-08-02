@@ -1,7 +1,7 @@
 * { box-sizing: border-box; }
 body { margin: 0; color: var(--vscode-foreground); background: var(--vscode-sideBar-background); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); }
 #status { min-height: 26px; padding: 6px 8px; color: var(--vscode-descriptionForeground); border-bottom: 1px solid var(--vscode-panel-border); }
-#table { min-width: 900px; }
+#table { min-width: 900px; min-height: calc(100vh - 26px); }
 .header, .row { display: grid; grid-template-columns: 72px 124px 88px 92px 90px 64px 64px minmax(130px, 1fr); align-items: center; }
 .header { position: sticky; top: 0; z-index: 2; min-height: 28px; background: var(--vscode-sideBar-background); border-bottom: 1px solid var(--vscode-panel-border); color: var(--vscode-descriptionForeground); font-weight: 600; }
 .header span, .cell { min-width: 0; padding: 4px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

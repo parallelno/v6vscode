@@ -18,4 +18,10 @@ describe('Watchpoints webview editing', () => {
         expect(source).not.to.include('address.title = entry.globalAddr');
         expect(source).to.include("row.addEventListener('mouseenter', event => schedulePreview");
     });
+
+    it('opens bulk actions from empty table space without replacing row menus', () => {
+        expect(source).to.include("table.addEventListener('contextmenu'");
+        expect(source).to.include("!event.target.closest('.row')) openMenu(event, null);");
+        expect(source).to.include("row.addEventListener('contextmenu', event => openMenu(event, entry.id))");
+    });
 });

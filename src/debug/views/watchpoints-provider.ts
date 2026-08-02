@@ -342,7 +342,7 @@ export class WatchpointsProvider implements vscode.Disposable {
 <meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${cssUri}"><title>Watchpoints</title></head>
 <body><div id="status" role="status">No active emulator session</div><div id="table" role="grid" aria-label="V6 Watchpoints">
 <div class="header" role="row"><span role="columnheader">Activity</span><span role="columnheader">Global Address</span><span role="columnheader">Access</span><span role="columnheader">Condition</span><span role="columnheader">Value</span><span role="columnheader">Type</span><span role="columnheader">Len</span><span role="columnheader">Comment</span></div>
-<div id="rows"></div></div><div id="empty" tabindex="0">No watchpoints</div><div id="preview" role="tooltip" hidden></div><div id="live" class="sr-only" aria-live="polite"></div>
+<div id="rows"></div><div id="empty" tabindex="0">No watchpoints</div></div><div id="preview" role="tooltip" hidden></div><div id="live" class="sr-only" aria-live="polite"></div>
 <div id="menu" role="menu" hidden><button role="menuitem" data-action="add">Add</button><button role="menuitem" data-action="reveal">Find in Hex Viewer</button><button role="menuitem" data-action="toggle">Enable</button><button role="menuitem" data-action="delete">Delete</button><button role="menuitem" data-action="disableAll">Disable All</button><button role="menuitem" data-action="deleteAll">Delete All</button></div>
 <script nonce="${nonce}" src="${jsUri}"></script></body></html>`;
     }

@@ -3,6 +3,7 @@
     // @ts-ignore
     const vscode = acquireVsCodeApi();
     const status = document.getElementById('status');
+    const table = /** @type {HTMLDivElement} */ (document.getElementById('table'));
     const rows = document.getElementById('rows');
     const empty = document.getElementById('empty');
     const live = document.getElementById('live');
@@ -182,7 +183,9 @@
         if (action === 'deleteAll') post({ type: 'deleteAll' });
     });
     menu.addEventListener('keydown', event => { if (event.key === 'Escape') closeMenu(); });
-    empty.addEventListener('contextmenu', event => openMenu(event, null));
+    table.addEventListener('contextmenu', event => {
+        if (!(event.target instanceof Element) || !event.target.closest('.row')) openMenu(event, null);
+    });
     empty.addEventListener('keydown', event => { if (event.key === 'Enter' && canMutate) { editingId = 'new'; render(); } });
     document.addEventListener('click', event => {
         if (!menu.contains(event.target)) closeMenu();
