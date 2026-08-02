@@ -110,4 +110,40 @@ describe('V6DebugAdapter stop records', () => {
         ]);
         expect(messages.filter(message => message.event === 'stopped')).to.have.length(1);
     });
+
+    it('detaches lifecycle ownership when the debug session disconnects without terminating', async () => {
+        let detached = 0;
+        let stopped = 0;
+        const lifecycle = Object.assign(new EventEmitter(), {
+            serverInfo: undefined,
+            connected: true,
+            owner: 'debug',
+            disconnect: () => { detached++; },
+            stop: async () => { stopped++; },
+            setExecutionRunning: () => {},
+        });
+        const adapter = new V6DebugAdapter(
+            lifecycle as any,
+            {} as any,
+            { debug: () => {}, error: () => {} } as any,
+            {} as any,
+            () => ({} as any),
+        );
+        const messages: any[] = [];
+        adapter.onDidSendMessage(message => messages.push(message));
+        (adapter as any).client = {
+            connected: true,
+            send: async () => ({ ok: true }),
+        };
+
+        adapter.handleMessage({
+            type: 'request', seq: 12, command: 'disconnect', arguments: { terminateDebuggee: false },
+        } as any);
+        await new Promise(resolve => setImmediate(resolve));
+
+        expect(detached).to.equal(1);
+        expect(stopped).to.equal(0);
+        expect(messages.find(message => message.command === 'disconnect')?.success).to.equal(true);
+        expect(messages.some(message => message.event === 'terminated')).to.equal(true);
+    });
 });

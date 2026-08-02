@@ -35,7 +35,7 @@ Use the established panel mechanism:
 - Create beside the active editor with `ViewColumn.Beside` and `retainContextWhenHidden: true`.
 - Maintain at most one instance. Toggle closes an open panel and opens a closed panel; `open()` reveals an existing instance.
 - Direct tab disposal clears the context key and launcher checked state.
-- Hiding or closing Symbols does not dispose shared debug metadata, the emulator session, or Hex Viewer.
+- Hiding or closing Symbols does not dispose shared debug metadata, the emulator session, or Hex Viewer. Stopping or disconnecting the emulator session clears shared debug metadata and the retained Symbols webview state.
 
 Add a Symbols launcher item using the VS Code `symbol-variable` theme icon. Keep the toggle command available in the Command Palette under the `v6emul` category.
 
@@ -57,10 +57,11 @@ Each result is one focusable symbol-label button. Preserve deterministic order b
 
 ### 3.2 Data and Panel States
 
-Symbols come from the active project's validated `run.debugArtifact`. The panel does not require an active emulator connection to browse symbols or open source.
+Symbols come from the active project's validated `run.debugArtifact` while an emulator session is active. Ending the session clears loaded symbols and leaves the table empty even though the artifact remains configured.
 
 Explicit states are:
 
+- **No active session:** `No active emulator session` and an empty list.
 - **No active project:** `No active V6 project` and an empty list.
 - **No debug artifact configured:** `No debug artifact configured for the active project`.
 - **Loading:** retain the previous list but disable actions until the new artifact is accepted.

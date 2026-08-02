@@ -18,6 +18,37 @@ describe('Standalone emulator panels', () => {
         }
     });
 
+    it('clears every session-backed panel when the emulator lifecycle stops', () => {
+        const displayProvider = read('src/emulator/panel/emulator-panel.ts');
+        const displayScript = read('src/emulator/panel/assets/panel.js');
+        expect(displayProvider).to.include('this.postMessage(this.viewModel.makeResetMessage())');
+        expect(displayScript).to.include("case 'reset':");
+        expect(displayScript).to.include('ctx.clearRect(0, 0, canvas.width, canvas.height)');
+
+        for (const provider of [
+            'src/debug/views/hex-viewer-provider.ts',
+            'src/debug/views/ports-provider.ts',
+            'src/debug/views/hardware-statistics-provider.ts',
+            'src/debug/views/watchpoints-provider.ts',
+            'src/debug/views/symbols-panel.ts',
+        ]) {
+            const source = read(provider);
+            const disconnected = source.indexOf('if (!this.lifecycle.connected)');
+            const panelVisibility = source.indexOf('if (!this.panel?.visible)', disconnected);
+            const viewVisibility = source.indexOf('if (!this.view?.visible)', disconnected);
+            const visibility = panelVisibility >= 0 ? panelVisibility : viewVisibility;
+            expect(disconnected, `${provider} has a disconnected-session branch`).to.be.at.least(0);
+            expect(visibility, `${provider} clears before its visibility guard`).to.be.greaterThan(disconnected);
+        }
+
+        const symbols = read('src/debug/views/symbols-panel.ts');
+        expect(symbols).to.include("if (state === 'stopped') { this.clearSession(); }");
+        expect(symbols).to.include('this.symbols.clear();');
+
+        const adapter = read('src/debug/adapter/v6-debug-adapter.ts');
+        expect(adapter).to.include('this.lifecycle.disconnect();');
+    });
+
     it('owns Hex Viewer, Symbols, Ports, and Watchpoints as WebviewPanels with complete panel APIs', () => {
         for (const provider of ['src/debug/views/hex-viewer-provider.ts', 'src/debug/views/symbols-panel.ts', 'src/debug/views/ports-provider.ts', 'src/debug/views/watchpoints-provider.ts']) {
             const source = read(provider);

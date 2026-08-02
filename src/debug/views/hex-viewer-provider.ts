@@ -217,7 +217,10 @@ export class HexViewerProvider implements vscode.Disposable {
                 clearTimeout(this.queryTimer);
                 this.queryTimer = undefined;
             }
+            this.pendingNavigation = undefined;
+            this.pendingRefresh = undefined;
             this.visibleRange = undefined;
+            this.selectedSpace = MAIN_MEMORY_SPACE;
             this.post({ type: 'reset' });
             this.post({ type: 'state', state: 'noSession', message: 'No active emulator session' });
             return;
