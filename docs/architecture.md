@@ -34,6 +34,9 @@ flowchart LR
 	Ports[Ports] --> PortsService[Ports Service]
 	PortsService --> Lifecycle
 	Hex[Hex Viewer] --> Lifecycle
+	Symbols[Symbols] --> SymbolService[Debug Symbol Service]
+	Hex --> SymbolService
+	Symbols --> Hex
 	Watch[Watchpoints] --> WatchService[Watchpoint Service]
 	WatchService --> Lifecycle
 	Watch --> Hex
@@ -43,9 +46,11 @@ flowchart LR
 	Client --> Emulator[v6emul single-client server]
 ```
 
-Source debugging loads a final companion ELF through `debug-artifact-loader.ts`. The immutable debug index maps source lines to CPU addresses and CPU addresses back to source locations. ROM/ELF byte mismatches fail metadata loading before source breakpoints can be verified.
+Source debugging loads a final companion ELF through `debug-artifact-loader.ts`. The immutable debug index maps source lines to CPU addresses and CPU addresses back to source locations. A shared debug-source path resolver maps relative and single-rooted DWARF paths against the active project/workspace root for Symbols, Hex Viewer, and DAP stack frames. Shared source navigation reuses visible or inactive open text tabs before creating a preview. ROM/ELF byte mismatches fail metadata loading before source breakpoints can be verified.
 
 The Hex Viewer is a standalone editor `WebviewPanel` opened from the `v6emul` view container or Command Palette. `MemoryService` validates negotiated bank-aware read capabilities, owns a complete validity-tracked cache for Main RAM and 32 RAM-disk banks, and requests only the selected bank's visible interval. `DebugSymbolService` exposes validated metadata for symbol search and exact source navigation without coupling the panel to the DAP adapter. `HexViewerProvider` owns session orchestration, persistence, clipboard access, and webview message validation; browser assets own virtualization and keyboard interaction.
+
+The Symbols tool is a standalone editor `WebviewPanel` backed by the same `DebugSymbolService` as Hex Viewer. Its pure query module unions configurable name matching with exact expression-value matches while preserving duplicate symbols through generation-scoped IDs. The provider owns artifact loading, clipboard/source actions, persistence, and typed Hex Viewer handoff; its webview owns history, incremental list rendering, and accessible menus.
 
 The Watchpoints tool is another standalone editor `WebviewPanel`. A session-scoped `WatchpointService` validates schema-1 payloads, serializes mutations, and reconciles every mutation with the backend's authoritative ID-ordered snapshot. The provider validates webview messages, performs bounded memory previews, and hands typed ranges to Hex Viewer. Accurate DAP data-breakpoint stop attribution remains disabled until v6emul exposes watchpoint hit identity.
 

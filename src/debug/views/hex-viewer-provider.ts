@@ -1,4 +1,5 @@
 import * as crypto from 'crypto';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { ActiveProjectService } from '../../project/active/active-project-service';
 import { EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
@@ -20,6 +21,7 @@ import { evaluateSymbolExpression } from '../utilities/symbol-expression';
 import { Logger } from '../../platform/logging/logger';
 import { parseHexQuery, ParsedLocation } from './hex-viewer-query';
 import { HexViewerHostMessage, HexViewerWebviewMessage } from './hex-viewer-messages';
+import { revealDebugSource } from './debug-source-navigation';
 
 export const HEX_VIEWER_VIEW_ID = 'v6.hexViewer';
 export const CMD_REFRESH_HEX_VIEWER = 'v6.refreshHexViewer';
@@ -41,7 +43,6 @@ interface VisibleRange {
 export class HexViewerProvider implements vscode.Disposable {
     private panel: vscode.WebviewPanel | undefined;
     private readonly memory: MemoryService;
-    private readonly symbols = new DebugSymbolService();
     private visibleRange: VisibleRange | undefined;
     private selectedSpace: MemorySpace = MAIN_MEMORY_SPACE;
     private refreshTimer: ReturnType<typeof setInterval> | undefined;
@@ -49,7 +50,14 @@ export class HexViewerProvider implements vscode.Disposable {
     private refreshActive = false;
     private pendingRefresh: VisibleRange | undefined;
     private readonly stateListener: () => void;
-    private pendingNavigation: { space: MemorySpace; start: number; end: number } | undefined;
+    private pendingNavigation: {
+        space: MemorySpace;
+        start: number;
+        end: number;
+        query?: string;
+        commitHistory?: boolean;
+    } | undefined;
+    private webviewReady = false;
 
     constructor(
         private readonly extensionUri: vscode.Uri,
@@ -59,6 +67,7 @@ export class HexViewerProvider implements vscode.Disposable {
         private readonly workspaceState: vscode.Memento,
         private readonly logger: Logger,
         private readonly onOpenStateChanged: (open: boolean) => void = () => {},
+        private readonly symbols: DebugSymbolService = new DebugSymbolService(),
     ) {
         this.memory = new MemoryService(client, undefined);
         this.stateListener = () => void this.syncSession();
@@ -92,6 +101,7 @@ export class HexViewerProvider implements vscode.Disposable {
             { enableScripts: true, localResourceRoots: [assetsUri], retainContextWhenHidden: true },
         );
         this.panel = panel;
+        this.webviewReady = false;
         panel.webview.html = this.html(panel.webview, assetsUri);
         panel.webview.onDidReceiveMessage((message: HexViewerWebviewMessage) => void this.handleMessage(message));
         panel.onDidChangeViewState(event => {
@@ -104,6 +114,7 @@ export class HexViewerProvider implements vscode.Disposable {
         panel.onDidDispose(() => {
             this.stopRefreshTimer();
             this.panel = undefined;
+            this.webviewReady = false;
             this.onOpenStateChanged(false);
         });
         this.onOpenStateChanged(true);
@@ -125,6 +136,23 @@ export class HexViewerProvider implements vscode.Disposable {
         this.applyPendingNavigation();
     }
 
+    revealSymbol(name: string, start: number, end: number): void {
+        if (!name || !Number.isInteger(start) || !Number.isInteger(end)
+            || start < 0 || end < start || end >= MEMORY_BANK_SIZE) {
+            throw new RangeError('Hex Viewer symbol navigation is invalid');
+        }
+        this.selectedSpace = MAIN_MEMORY_SPACE;
+        this.pendingNavigation = {
+            space: MAIN_MEMORY_SPACE,
+            start,
+            end,
+            query: name.slice(0, 256),
+            commitHistory: true,
+        };
+        this.open();
+        this.applyPendingNavigation();
+    }
+
     dispose(): void {
         this.stopRefreshTimer();
         if (this.queryTimer) { clearTimeout(this.queryTimer); }
@@ -137,6 +165,7 @@ export class HexViewerProvider implements vscode.Disposable {
         try {
             switch (message.type) {
                 case 'ready':
+                    this.webviewReady = true;
                     await this.restore();
                     await this.syncSession();
                     this.applyPendingNavigation();
@@ -184,7 +213,6 @@ export class HexViewerProvider implements vscode.Disposable {
         if (!this.panel?.visible) { return; }
         if (!this.lifecycle.connected) {
             this.memory.setCapabilities(undefined);
-            this.symbols.clear();
             this.stopRefreshTimer();
             if (this.queryTimer) {
                 clearTimeout(this.queryTimer);
@@ -400,11 +428,11 @@ export class HexViewerProvider implements vscode.Disposable {
         if (space.kind !== 'main' || !this.validAddress(space, address)) { return; }
         const source = this.symbols.sourceAtExactAddress(address);
         if (!source) { return; }
-        const document = await vscode.workspace.openTextDocument(source.file);
-        const editor = await vscode.window.showTextDocument(document, { preview: true });
-        const position = new vscode.Position(Math.max(0, source.line - 1), Math.max(0, source.column - 1));
-        editor.selection = new vscode.Selection(position, position);
-        editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+        const project = this.activeProjectService.getActiveProject();
+        const projectRoot = project
+            ? path.dirname(project.uri.fsPath)
+            : vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+        await revealDebugSource(source, projectRoot);
     }
 
     private async loadSymbols(): Promise<void> {
@@ -474,7 +502,7 @@ export class HexViewerProvider implements vscode.Disposable {
     }
 
     private applyPendingNavigation(): void {
-        if (!this.panel || !this.pendingNavigation) { return; }
+        if (!this.panel || !this.webviewReady || !this.pendingNavigation) { return; }
         const navigation = this.pendingNavigation;
         this.pendingNavigation = undefined;
         this.post({ type: 'navigate', ...navigation });

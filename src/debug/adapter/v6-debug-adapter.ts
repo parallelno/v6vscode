@@ -20,6 +20,7 @@ import {
 } from '../../emulator/protocol/debug-models';
 import { loadDebugArtifact } from '../metadata/debug-artifact-loader';
 import { DebugIndex } from '../metadata/debug-index';
+import { resolveDebugSourcePath } from '../metadata/debug-source-path';
 import { Logger } from '../../platform/logging/logger';
 import { PathService } from '../../platform/files/path-service';
 import { getServerInfo, supportsStopRecords, validateDebuggerServer } from '../../emulator/protocol/ipc-server-info';
@@ -358,9 +359,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         };
 
         if (srcLoc) {
-            const sourcePath = path.isAbsolute(srcLoc.file)
-                ? srcLoc.file
-                : path.resolve(this.workspaceRoot, srcLoc.file);
+            const sourcePath = resolveDebugSourcePath(srcLoc.file, this.workspaceRoot);
             frame.source = {
                 path: sourcePath,
                 name: path.basename(sourcePath),

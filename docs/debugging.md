@@ -47,6 +47,7 @@ Closing the display panel terminates the active debug launch and closes the Run 
 - V6 Hardware Statistics in the Run and Debug sidebar, including timing/display state, palette clipboard actions, RAM-disk mapping, and four-drive FDD mount/dismount actions when hardware-statistics schema 1 is advertised.
 - A standalone Ports editor panel showing complete In and Out tables with changes since the previous paused update highlighted.
 - A standalone Hex Viewer editor panel with numeric, symbol, and inclusive-range navigation when the backend advertises `GET_MEM` command 93. Inclusive ranges accept `11-14` and `11..14`. Clearing the search clears its highlight; clicking a visible symbol selects its range without scrolling.
+- A standalone Symbols editor panel that incrementally filters ELF symbols by name or resolved value, supports case/whole-name matching and history, opens exact source rows, and hands resolved symbol ranges to Hex Viewer.
 - A standalone Watchpoints editor panel with structured add, edit, enable/disable, delete, bulk actions, bounded memory previews, and Hex Viewer navigation when the backend advertises watchpoint schema 1 and edit command 94.
 - The Hex Viewer clears all cached bytes and becomes an empty panel when the emulator session stops.
 - Double-clicking a Hex Viewer byte opens an expression editor. Enter or focus loss submits; Escape cancels. Literals, symbols, `+`, `-`, `*`, unary signs, and parentheses are supported, and the final value must fit in one byte.

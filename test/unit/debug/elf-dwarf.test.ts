@@ -208,6 +208,18 @@ describe('readSLEB128', () => {
         expect(duplicateIndex.symbols('value').map(symbol => symbol.address)).to.deep.equal([0x0100, 0x0110]);
         expect(duplicateIndex.symbolsInRange(0x0108, 0x0110).map(symbol => symbol.address)).to.deep.equal([0x0110]);
     });
+
+    it('returns all symbols ordered by address and then name', () => {
+        const orderedIndex = buildDebugIndex([], [
+            { name: 'zeta', value: 0x0110, size: 1, type: 1, binding: 0, section: 1 },
+            { name: 'beta', value: 0x0100, size: 1, type: 1, binding: 0, section: 1 },
+            { name: 'alpha', value: 0x0100, size: 1, type: 1, binding: 0, section: 1 },
+            { name: 'reset', value: 0, size: 1, type: 2, binding: 1, section: 1 },
+            { name: 'undefined', value: 0, size: 1, type: 2, binding: 1, section: 0 },
+        ], '');
+
+        expect(orderedIndex.allSymbols().map(symbol => symbol.name)).to.deep.equal(['reset', 'alpha', 'beta', 'zeta']);
+    });
 });
 
 (ELF_EXISTS ? describe : describe.skip)('Debug artifact loader against demo1.elf', () => {

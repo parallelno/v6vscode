@@ -18,8 +18,8 @@ describe('Standalone emulator panels', () => {
         }
     });
 
-    it('owns Hex Viewer, Ports, and Watchpoints as WebviewPanels with complete panel APIs', () => {
-        for (const provider of ['src/debug/views/hex-viewer-provider.ts', 'src/debug/views/ports-provider.ts', 'src/debug/views/watchpoints-provider.ts']) {
+    it('owns Hex Viewer, Symbols, Ports, and Watchpoints as WebviewPanels with complete panel APIs', () => {
+        for (const provider of ['src/debug/views/hex-viewer-provider.ts', 'src/debug/views/symbols-panel.ts', 'src/debug/views/ports-provider.ts', 'src/debug/views/watchpoints-provider.ts']) {
             const source = read(provider);
             expect(source).to.include('createWebviewPanel(');
             expect(source).to.include('this.panel.reveal();');

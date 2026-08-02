@@ -5,6 +5,8 @@
 **Owners:** v6vscode maintainers
 **Related work:** `hex-viewer-panel-plan.md`, `watchpoints-panel-plan.md`, `debug-adapter-and-debug-views-plan.md`
 
+> **Follow-up (2026-08-01):** `symbols-panel-plan.md` adds Symbols after Hex Viewer using the same standalone panel toggle mechanism. The five-panel inventory below records the original implemented scope.
+
 ## 1. Objective
 
 Add one discoverable `v6emul` menu that opens and closes the emulator tools, move the large Hex Viewer and Watchpoints tools out of the Run and Debug sidebar, and simplify the emulator Display panel to the screen only.

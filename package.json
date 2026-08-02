@@ -80,6 +80,11 @@
         "category": "v6emul"
       },
       {
+        "command": "v6emul.toggleSymbols",
+        "title": "Symbols",
+        "category": "v6emul"
+      },
+      {
         "command": "v6emul.togglePorts",
         "title": "Ports",
         "category": "v6emul"

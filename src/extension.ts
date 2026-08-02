@@ -11,11 +11,13 @@ import {
     CMD_TOGGLE_HEX_VIEWER,
     CMD_TOGGLE_PORTS,
     CMD_TOGGLE_SETTINGS,
+    CMD_TOGGLE_SYMBOLS,
     CMD_TOGGLE_WATCHPOINTS,
     CONTEXT_DISPLAY_OPEN,
     CONTEXT_HEX_VIEWER_OPEN,
     CONTEXT_PORTS_OPEN,
     CONTEXT_SETTINGS_OPEN,
+    CONTEXT_SYMBOLS_OPEN,
     CONTEXT_WATCHPOINTS_OPEN,
     OUTPUT_CHANNEL_NAME,
 } from './config/contribution-ids';
@@ -54,6 +56,8 @@ import {
     CMD_REFRESH_WATCHPOINTS,
     WatchpointsProvider,
 } from './debug/views/watchpoints-provider';
+import { DebugSymbolService } from './debug/metadata/debug-symbol-service';
+import { SymbolsPanel } from './debug/views/symbols-panel';
 
 export function activate(context: vscode.ExtensionContext): void {
     const store = new DisposableStore();
@@ -126,6 +130,7 @@ export function activate(context: vscode.ExtensionContext): void {
         CMD_REFRESH_HARDWARE_STATISTICS,
         () => hardwareStatistics.refresh(),
     ));
+    const debugSymbols = new DebugSymbolService();
     const hexViewer = store.add(new HexViewerProvider(
         context.extensionUri,
         lifecycle,
@@ -137,10 +142,25 @@ export function activate(context: vscode.ExtensionContext): void {
             panelLauncher.setOpen(CMD_TOGGLE_HEX_VIEWER, open);
             void vscode.commands.executeCommand('setContext', CONTEXT_HEX_VIEWER_OPEN, open);
         },
+        debugSymbols,
     ));
     void vscode.commands.executeCommand('setContext', CONTEXT_HEX_VIEWER_OPEN, false);
     store.add(vscode.commands.registerCommand(CMD_TOGGLE_HEX_VIEWER, () => hexViewer.toggle()));
     store.add(vscode.commands.registerCommand(CMD_REFRESH_HEX_VIEWER, () => hexViewer.refresh()));
+    const symbols = store.add(new SymbolsPanel(
+        context.extensionUri,
+        activeProjectService,
+        context.workspaceState,
+        debugSymbols,
+        hexViewer,
+        logger,
+        open => {
+            panelLauncher.setOpen(CMD_TOGGLE_SYMBOLS, open);
+            void vscode.commands.executeCommand('setContext', CONTEXT_SYMBOLS_OPEN, open);
+        },
+    ));
+    void vscode.commands.executeCommand('setContext', CONTEXT_SYMBOLS_OPEN, false);
+    store.add(vscode.commands.registerCommand(CMD_TOGGLE_SYMBOLS, () => symbols.toggle()));
     const portsService = store.add(new PortsService(lifecycle, ipcClient));
     const ports = store.add(new PortsProvider(
         context.extensionUri,

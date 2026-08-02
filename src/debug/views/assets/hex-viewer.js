@@ -211,10 +211,21 @@
         if (message.type === 'navigate') {
             if (message.space) {
                 selectedSpace = message.space;
-                spaceSelect.value = key(selectedSpace);
+                spaceSelect.selectedIndex = Math.max(0, spaces.findIndex(item => key(item.space) === key(selectedSpace)));
+            }
+            if (typeof message.query === 'string') {
+                query.value = message.query;
+                query.classList.remove('invalid');
+                query.title = SEARCH_TOOLTIP;
+                if (message.commitHistory && query.value.trim() && history.at(-1) !== query.value) {
+                    history.push(query.value);
+                    history = history.slice(-50);
+                    historyIndex = history.length;
+                    draft = '';
+                }
             }
             highlightStart = message.start; highlightEnd = message.end;
-            viewport.scrollTop = Math.floor(message.start / 16) * ROW_HEIGHT; lastVisibleKey = ''; render();
+            viewport.scrollTop = Math.floor(message.start / 16) * ROW_HEIGHT; lastVisibleKey = ''; persist(); render();
         }
         if (message.type === 'clearHighlight') { highlightStart = -1; highlightEnd = -1; render(); }
         if (message.type === 'queryError') { query.classList.toggle('invalid', !!message.message); query.title = message.message || SEARCH_TOOLTIP; }

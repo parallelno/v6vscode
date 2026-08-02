@@ -52,6 +52,8 @@ const mockVscode = {
         },
     },
     window: {
+        visibleTextEditors: [],
+        tabGroups: { all: [] },
         createOutputChannel: (_name) => ({
             appendLine: () => {},
             dispose: () => {},
@@ -71,6 +73,13 @@ const mockVscode = {
     Position: class Position {
         constructor(line, character) { this.line = line; this.character = character; }
     },
+    Selection: class Selection {
+        constructor(anchor, active) { this.anchor = anchor; this.active = active; }
+    },
+    TabInputText: class TabInputText {
+        constructor(uri) { this.uri = uri; }
+    },
+    TextEditorRevealType: { InCenterIfOutsideViewport: 0 },
     Range: class Range {
         constructor(start, end) { this.start = start; this.end = end; }
     },

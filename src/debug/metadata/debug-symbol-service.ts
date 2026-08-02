@@ -6,9 +6,15 @@ export type SymbolResolution =
     | { kind: 'missing' }
     | { kind: 'ambiguous'; candidates: ReadonlyArray<SymbolInfo> };
 
+export interface IndexedSymbol extends SymbolInfo {
+    id: string;
+}
+
 export class DebugSymbolService {
     private index: DebugIndex | undefined;
     private artifactPath = '';
+    private generation = 0;
+    private loadGeneration = 0;
 
     async load(artifactPath: string, executablePath: string): Promise<void> {
         if (!artifactPath) {
@@ -18,14 +24,32 @@ export class DebugSymbolService {
         if (artifactPath === this.artifactPath && this.index) {
             return;
         }
+        const loadGeneration = ++this.loadGeneration;
         const result = await loadDebugArtifact(artifactPath, executablePath);
+        if (loadGeneration !== this.loadGeneration) {
+            return;
+        }
         this.index = result.index;
         this.artifactPath = artifactPath;
+        this.generation++;
     }
 
     clear(): void {
+        this.loadGeneration++;
         this.index = undefined;
         this.artifactPath = '';
+        this.generation++;
+    }
+
+    allSymbols(): ReadonlyArray<IndexedSymbol> {
+        return (this.index?.allSymbols() ?? []).map((symbol, index) => ({
+            ...symbol,
+            id: `${this.generation}:${index}`,
+        }));
+    }
+
+    symbolById(id: string): IndexedSymbol | undefined {
+        return this.allSymbols().find(symbol => symbol.id === id);
     }
 
     resolveSymbol(name: string): SymbolResolution {

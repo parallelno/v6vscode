@@ -53,6 +53,9 @@ export interface DebugIndex {
     /** All exact-name symbols; duplicate names are preserved. */
     symbols(name: string): ReadonlyArray<SymbolInfo>;
 
+    /** All symbols ordered by address and then name. */
+    allSymbols(): ReadonlyArray<SymbolInfo>;
+
     /** Symbols whose start address is within the inclusive range. */
     symbolsInRange(start: number, end: number): ReadonlyArray<SymbolInfo>;
 
@@ -112,7 +115,7 @@ export function buildDebugIndex(
     const symbolsByName = new Map<string, SymbolInfo[]>();
     const symbolsByAddr: SymbolInfo[] = [];
     for (const s of symbols) {
-        if (!s.name || s.value === 0) { continue; }
+        if (!s.name || s.section === 0) { continue; }
         if (s.type !== STT_FUNC && s.type !== STT_OBJECT) { continue; }
         const info: SymbolInfo = { name: s.name, address: s.value, size: s.size, type: s.type, binding: s.binding };
         const named = symbolsByName.get(s.name) ?? [];
@@ -120,7 +123,7 @@ export function buildDebugIndex(
         symbolsByName.set(s.name, named);
         symbolsByAddr.push(info);
     }
-    symbolsByAddr.sort((a, b) => a.address - b.address);
+    symbolsByAddr.sort((a, b) => a.address - b.address || a.name.localeCompare(b.name));
 
     // ---- Return implementation ----
     return {
@@ -161,6 +164,10 @@ export function buildDebugIndex(
 
         symbols(name) {
             return symbolsByName.get(name) ?? [];
+        },
+
+        allSymbols() {
+            return symbolsByAddr;
         },
 
         symbolsInRange(start, end) {
