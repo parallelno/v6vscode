@@ -13,4 +13,9 @@ describe('Watchpoints webview editing', () => {
         expect(source).to.match(/if \(event\.key === 'Escape'\) \{[\s\S]*?canceled = true;[\s\S]*?render\(\);\s*\}/);
         expect(source).to.include('if (!canceled && !row.contains(document.activeElement)) row.requestSubmit();');
     });
+
+    it('uses only the custom preview tooltip for display rows', () => {
+        expect(source).not.to.include('address.title = entry.globalAddr');
+        expect(source).to.include("row.addEventListener('mouseenter', event => schedulePreview");
+    });
 });

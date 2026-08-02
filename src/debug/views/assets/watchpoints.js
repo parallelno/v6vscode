@@ -44,7 +44,7 @@
         const activity = cell('activity');
         const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = entry.active; checkbox.disabled = !canMutate; checkbox.setAttribute('aria-label', entry.active ? 'Enabled' : 'Disabled');
         checkbox.addEventListener('change', () => post({ type: 'edit', candidate: { ...entry, active: checkbox.checked } })); activity.append(checkbox, document.createTextNode(entry.active ? 'Enabled' : 'Disabled'));
-        const address = cell('address'); address.textContent = entry.globalAddr; address.title = entry.globalAddr;
+        const address = cell('address'); address.textContent = entry.globalAddr;
         const access = cell(); access.textContent = ({ R: 'Read', W: 'Write', RW: 'Read/Write' })[entry.access];
         const condition = cell(); condition.textContent = entry.condition;
         const value = cell('value'); value.textContent = watchpointValue(entry);
