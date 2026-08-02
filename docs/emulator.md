@@ -35,7 +35,7 @@ Webview-based display surface for the running emulator. Execution control remain
 
 During a debug launch the panel uses the lifecycle's existing connection. It does not open a second TCP client. Frame requests are low priority so continue, pause, stepping, breakpoint updates, and stop polling remain responsive.
 
-Stopping or disconnecting a debug session clears all session-backed panel state immediately, including retained hidden webviews. Display clears its last frame; Symbols, Hex Viewer, Ports, Watchpoints, and Hardware Statistics clear their tables, caches, selections, and pending session UI. Settings retains active-project defaults because they are project configuration rather than emulator-session state. Alt+Disconnect leaves the emulator process running but detaches extension ownership and clears the same panel state.
+Using the debug toolbar's **Stop** control, including its **Alt+Disconnect** variant, clears all session-backed panel state immediately, including retained hidden webviews. Display clears its last frame; Symbols, Hex Viewer, Ports, Watchpoints, and Hardware Statistics clear their tables, caches, selections, and pending session UI. Settings retains active-project defaults because they are project configuration rather than emulator-session state.
 
 ## Hardware Statistics
 
