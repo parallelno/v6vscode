@@ -10,6 +10,7 @@ import { parseMemoryEditQuery } from './memory-edits-query';
 
 export const MEMORY_EDITS_PANEL_ID = 'v6.memoryEdits';
 export const CMD_REFRESH_MEMORY_EDITS = 'v6.refreshMemoryEdits';
+export const CMD_ADD_MEMORY_EDIT = 'v6.addMemoryEdit';
 const WORKSPACE_STATE_KEY = 'v6.memoryEdits.query';
 
 export class MemoryEditsPanel implements vscode.Disposable {
@@ -59,6 +60,8 @@ export class MemoryEditsPanel implements vscode.Disposable {
     async refresh(): Promise<void> {
         await this.runOperation('refresh', () => this.service.refresh());
     }
+
+    add(): void { this.post({ type: 'beginAdd' }); }
 
     dispose(): void {
         this.stopPolling();
@@ -257,7 +260,7 @@ export class MemoryEditsPanel implements vscode.Disposable {
         return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${cssUri}"><title>Memory Edits</title></head>
-<body><div class="toolbar"><button id="add" type="button" title="Add memory edit" aria-label="Add memory edit">+</button><input id="query" type="search" aria-label="Filter by current byte value" title="${tooltip}" placeholder="Filter current value"><span id="count"></span></div>
+<body><div class="toolbar"><input id="query" type="search" aria-label="Filter by current byte value" title="${tooltip}" placeholder="Filter current value"><span id="count"></span></div>
 <div id="status" role="status">No active emulator session</div><div id="table" role="grid" aria-label="Memory Edits"><div class="header" role="row"><span role="columnheader">Address</span><span role="columnheader">Original</span><span role="columnheader">Entered</span><span role="columnheader">Current</span><span role="columnheader">Activity</span><span role="columnheader">Auto-update</span></div><div id="rows"></div></div><div id="empty" tabindex="0">No memory edits</div><div id="live" class="sr-only" aria-live="polite"></div>
 <div id="menu" role="menu" hidden><button role="menuitem" data-action="copyOriginal">Copy Original Value</button><button role="menuitem" data-action="copyEntered">Copy Entered Value</button><button role="menuitem" data-action="copyCurrent">Copy Current Value</button><button role="menuitem" data-action="reveal">Find in Hex Viewer</button><button role="menuitem" data-action="disable">Disable</button><button role="menuitem" data-action="restore">Restore Original</button><button role="menuitem" data-action="delete">Delete Entry</button><button role="menuitem" data-action="deleteAndRestore">Delete and Restore</button><button role="menuitem" data-action="deleteAndRestoreAll">Delete and Restore All</button></div>
 <div id="list-menu" role="menu" hidden><button role="menuitem" data-action="add">Add</button><button role="menuitem" data-action="disable">Disable</button><button role="menuitem" data-action="disableAll">Disable All</button><button role="menuitem" data-action="delete">Delete</button><button role="menuitem" data-action="deleteAll">Delete All</button><button role="menuitem" data-action="deleteAndRestoreAll">Delete and Restore All</button></div>

@@ -2,7 +2,6 @@
 (function () {
     // @ts-ignore
     const vscode = acquireVsCodeApi();
-    const addButton = /** @type {HTMLButtonElement} */ (document.getElementById('add'));
     const query = /** @type {HTMLInputElement} */ (document.getElementById('query'));
     const count = document.getElementById('count');
     const status = document.getElementById('status');
@@ -70,7 +69,6 @@
         count.textContent = `${visible.length} of ${entries.length}`;
         empty.hidden = adding || visible.length > 0;
         empty.textContent = entries.length ? 'No matching memory edits' : 'No memory edits';
-        addButton.disabled = !canMutate;
     }
     function cell(text, className = '') {
         const element = document.createElement('div'); element.className = `cell ${className}`;
@@ -249,7 +247,6 @@
             event.preventDefault(); buttons[(index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
         }
     });
-    addButton.addEventListener('click', () => { if (canMutate) startAdd(); });
     table.addEventListener('contextmenu', event => openListMenu(event, table));
     empty.addEventListener('contextmenu', event => openListMenu(event, empty));
     document.addEventListener('mousedown', event => {
@@ -269,6 +266,7 @@
     });
     window.addEventListener('message', event => {
         const message = event.data;
+        if (message.type === 'beginAdd' && canMutate) startAdd();
         if (message.type === 'state') {
             status.textContent = message.message; canMutate = message.canMutate; canRestore = message.canRestore;
             if (!canMutate) { editingAddress = null; cancelAdd(); submitting = false; render(); }

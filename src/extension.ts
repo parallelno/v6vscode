@@ -61,7 +61,11 @@ import {
 import { DebugSymbolService } from './debug/metadata/debug-symbol-service';
 import { SymbolsPanel } from './debug/views/symbols-panel';
 import { MemoryEditService } from './debug/memory-edits/memory-edit-service';
-import { CMD_REFRESH_MEMORY_EDITS, MemoryEditsPanel } from './debug/views/memory-edits-panel';
+import {
+    CMD_ADD_MEMORY_EDIT,
+    CMD_REFRESH_MEMORY_EDITS,
+    MemoryEditsPanel,
+} from './debug/views/memory-edits-panel';
 
 export function activate(context: vscode.ExtensionContext): void {
     const store = new DisposableStore();
@@ -167,6 +171,7 @@ export function activate(context: vscode.ExtensionContext): void {
     ));
     void vscode.commands.executeCommand('setContext', CONTEXT_MEMORY_EDITS_OPEN, false);
     store.add(vscode.commands.registerCommand(CMD_TOGGLE_MEMORY_EDITS, () => memoryEditsPanel.toggle()));
+    store.add(vscode.commands.registerCommand(CMD_ADD_MEMORY_EDIT, () => memoryEditsPanel.add()));
     store.add(vscode.commands.registerCommand(CMD_REFRESH_MEMORY_EDITS, () => memoryEditsPanel.refresh()));
     const symbols = store.add(new SymbolsPanel(
         context.extensionUri,

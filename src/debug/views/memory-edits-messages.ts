@@ -30,4 +30,5 @@ export type MemoryEditsHostMessage =
     }
     | { type: 'snapshot'; generation: number; entries: readonly MemoryEditSnapshot[] }
     | { type: 'operation'; operation: string; ok: boolean; message: string }
+    | { type: 'beginAdd' }
     | { type: 'restoredQuery'; value: string };

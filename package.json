@@ -53,6 +53,12 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "v6.addMemoryEdit",
+        "title": "Add Memory Edit",
+        "category": "V6",
+        "icon": "$(add)"
+      },
+      {
         "command": "v6.refreshPorts",
         "title": "Refresh Ports",
         "category": "V6",
@@ -145,9 +151,14 @@
           "group": "navigation"
         },
         {
+          "command": "v6.addMemoryEdit",
+          "when": "activeWebviewPanelId == v6.memoryEdits",
+          "group": "navigation@1"
+        },
+        {
           "command": "v6.refreshMemoryEdits",
           "when": "activeWebviewPanelId == v6.memoryEdits",
-          "group": "navigation"
+          "group": "navigation@2"
         },
         {
           "command": "v6.refreshPorts",

@@ -70,6 +70,24 @@ describe('Standalone emulator panels', () => {
         expect(source).not.to.include("executeCommand('v6.hexViewer.focus')");
     });
 
+    it('uses a title-bar action to add memory edits', () => {
+        const manifest = JSON.parse(read('package.json'));
+        const command = manifest.contributes.commands.find((item: { command: string }) => item.command === 'v6.addMemoryEdit');
+        const titleActions = manifest.contributes.menus['editor/title'];
+        const addAction = titleActions.find((item: { command: string }) => item.command === 'v6.addMemoryEdit');
+        const refreshAction = titleActions.find((item: { command: string }) => item.command === 'v6.refreshMemoryEdits');
+        expect(command).to.include({ title: 'Add Memory Edit', icon: '$(add)' });
+        expect(addAction).to.include({ when: 'activeWebviewPanelId == v6.memoryEdits', group: 'navigation@1' });
+        expect(refreshAction.group).to.equal('navigation@2');
+
+        const panel = read('src/debug/views/memory-edits-panel.ts');
+        const script = read('src/debug/views/assets/memory-edits.js');
+        expect(panel).to.include("this.post({ type: 'beginAdd' })");
+        expect(panel).not.to.include('id="add"');
+        expect(script).to.include("message.type === 'beginAdd' && canMutate");
+        expect(script).not.to.include('addButton');
+    });
+
     it('routes Hex Viewer writes through MemoryEditService and exposes every Memory Edits row action', () => {
         const hexViewer = read('src/debug/views/hex-viewer-provider.ts');
         expect(hexViewer).to.include('this.memoryEdits.apply(');
