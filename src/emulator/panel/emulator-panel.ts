@@ -137,6 +137,7 @@ export class EmulatorPanel implements vscode.Disposable {
             } else if (this.lifecycle.state === 'stopped') {
                 this.viewModel.setRunning(false);
                 this.stopFrameLoop();
+                this.postMessage(this.viewModel.makeResetMessage());
             } else {
                 this.viewModel.setRunning(false);
                 this.stopFrameLoop();
@@ -174,6 +175,8 @@ export class EmulatorPanel implements vscode.Disposable {
                 case 'ready':
                     if (this.lifecycle.running) {
                         this.startFrameLoop();
+                    } else if (this.lifecycle.state === 'stopped') {
+                        this.postMessage(this.viewModel.makeResetMessage());
                     }
                     break;
             }

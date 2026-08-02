@@ -175,14 +175,16 @@ export class WatchpointsProvider implements vscode.Disposable {
     }
 
     private async syncSession(): Promise<void> {
-        if (!this.panel?.visible) { return; }
         if (!this.lifecycle.connected) {
             this.stopPolling();
             this.memory.setCapabilities(undefined);
+            this.symbols.clear();
+            this.addressExpressions.clear();
             this.post({ type: 'state', state: 'noSession', message: 'No active emulator session', canMutate: false });
             this.postSnapshot();
             return;
         }
+        if (!this.panel?.visible) { return; }
         if (!this.service.available) {
             this.stopPolling();
             this.post({

@@ -51,6 +51,32 @@ describe('EmulatorLifecycle session ownership', () => {
         expect(states).to.deep.equal(['running', 'connected']);
     });
 
+    it('disconnects a debug-owned session without terminating the emulator process', () => {
+        let disconnected = false;
+        let killed = false;
+        const lifecycle = new EmulatorLifecycle(
+            {} as any,
+            {} as any,
+            { connected: true, disconnect: () => { disconnected = true; } } as any,
+            { info: () => {} } as any,
+            {} as any,
+        );
+        (lifecycle as any)._state = 'connected';
+        (lifecycle as any)._owner = 'debug';
+        (lifecycle as any)._serverInfo = { emulatorVersion: 'test' };
+        (lifecycle as any).emulatorProcess = {
+            spawnResult: { process: { kill: () => { killed = true; } } },
+        };
+
+        lifecycle.disconnect();
+
+        expect(disconnected).to.equal(true);
+        expect(killed).to.equal(false);
+        expect(lifecycle.state).to.equal('stopped');
+        expect(lifecycle.owner).to.equal(null);
+        expect(lifecycle.serverInfo).to.equal(undefined);
+    });
+
     it('starts a debug server without loading the program', async () => {
         let launchRequest: any;
         const serverInfo = {

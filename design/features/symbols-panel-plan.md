@@ -122,15 +122,16 @@ Display the value beside each symbol name. Do not add a symbol-row tooltip becau
 
 Implement the requested label interactions exactly:
 
-- **Left click:** open the label context menu.
+- **Left click:** focus/select the label without opening the context menu.
+- **Right click:** open the label context menu.
 - **Double-click:** open the source location associated with the symbol.
 - **Ctrl+double-click:** open/reveal Hex Viewer and search for the symbol.
 
 On macOS, also accept `Meta+double-click` for the Hex Viewer action while retaining Ctrl on Windows/Linux.
 
-Because browsers emit click events before `dblclick`, defer the single-click menu with one replaceable 250 ms timer and cancel it when a second click arrives. A modifier double-click must trigger only Hex Viewer navigation; an unmodified double-click must trigger only source navigation. Keyboard activation with `Enter` opens source, while the Context Menu key or `Shift+F10` opens the menu.
+A modifier double-click must trigger only Hex Viewer navigation; an unmodified double-click must trigger only source navigation. Keyboard activation with `Enter` opens source, while the Context Menu key or `Shift+F10` opens the menu.
 
-If no exact source row exists, double-click keeps the panel open and shows `Source location unavailable for <name>`. It must not navigate to an unrelated enclosing symbol or silently select an arbitrary duplicate.
+If no exact source row exists, double-click keeps the panel open and shows `No DWARF source line for <name>`. This commonly applies to data symbols because the line table records executable statements rather than declarations. It must not navigate to an unrelated nearby instruction or silently select an arbitrary duplicate.
 
 ### 3.7 Context Menu
 
@@ -323,7 +324,7 @@ Update user/architecture documentation, inspect the Extension Development Host a
 - Artifact/project generation changes discard stale loads and stale webview actions.
 - Copy Name and Copy Value write exact expected text through the host clipboard.
 - Find in Source opens only the exact resolved row and handles unavailable rows without fallback.
-- Plain double-click, Ctrl/Meta+double-click, and deferred single-click produce exactly one intended action.
+- Left click does not open the menu; right click, plain double-click, and Ctrl/Meta+double-click each produce exactly one intended action.
 - Find in Hex Viewer opens a closed viewer, selects Main RAM, sets the name query, highlights the resolved extent, and records history once.
 - Pending Hex Viewer symbol navigation survives the `ready` handshake and newer navigation replaces older navigation.
 - Existing Hex Viewer query, source-navigation, and panel tests remain passing with the shared symbol service.

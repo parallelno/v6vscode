@@ -25,7 +25,8 @@ export function abgrToRgba(abgr: Uint8Array): Uint8Array {
 
 export type PanelMessage =
     | { type: 'frame'; width: number; height: number; pixels: Uint8Array }
-    | { type: 'error'; message: string };
+    | { type: 'error'; message: string }
+    | { type: 'reset' };
 
 export type WebviewMessage =
     | { type: 'key'; scancode: number; action: number }
@@ -74,5 +75,9 @@ export class EmulatorViewModel {
 
     makeErrorMessage(message: string): PanelMessage {
         return { type: 'error', message };
+    }
+
+    makeResetMessage(): PanelMessage {
+        return { type: 'reset' };
     }
 }

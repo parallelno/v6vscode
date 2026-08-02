@@ -300,6 +300,15 @@ export class EmulatorLifecycle extends EventEmitter {
         this.logger.info('v6emul: stopped');
     }
 
+    disconnect(): void {
+        this.client.disconnect();
+        this.emulatorProcess = null;
+        this._serverInfo = undefined;
+        this._owner = null;
+        this.setState('stopped');
+        this.logger.info('v6emul: disconnected');
+    }
+
     async restart(project: V6Project): Promise<void> {
         await this.stop();
         await this.start(project);

@@ -84,13 +84,13 @@ export class PortsProvider implements vscode.Disposable {
     }
 
     private postCurrentState(): void {
-        if (!this.panel?.visible) { return; }
         const state = this.service.state;
         if (!this.lifecycle.connected) {
             this.post({ type: 'reset', generation: state.generation });
             this.post({ type: 'state', state: 'noSession', message: 'No active emulator session' });
             return;
         }
+        if (!this.panel?.visible) { return; }
         if (!this.service.available) {
             this.post({
                 type: 'state', state: 'unsupported',

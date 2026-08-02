@@ -210,7 +210,6 @@ export class HexViewerProvider implements vscode.Disposable {
     }
 
     private async syncSession(): Promise<void> {
-        if (!this.panel?.visible) { return; }
         if (!this.lifecycle.connected) {
             this.memory.setCapabilities(undefined);
             this.stopRefreshTimer();
@@ -223,6 +222,7 @@ export class HexViewerProvider implements vscode.Disposable {
             this.post({ type: 'state', state: 'noSession', message: 'No active emulator session' });
             return;
         }
+        if (!this.panel?.visible) { return; }
 
         const capabilities = this.memoryCapabilities();
         this.memory.setCapabilities(capabilities);

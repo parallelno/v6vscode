@@ -15,7 +15,6 @@
     let draft = '';
     let total = 0;
     let renderGeneration = 0;
-    let clickTimer = 0;
     /** @type {{id:string,element:HTMLButtonElement}|null} */ let menuTarget = null;
 
     function enabled(button) { return button.getAttribute('aria-pressed') === 'true'; }
@@ -75,18 +74,12 @@
         const name = document.createElement('span'); name.className = 'name'; name.textContent = item.name;
         const value = document.createElement('span'); value.className = 'value'; value.textContent = item.value;
         button.append(name, value);
-        button.addEventListener('click', event => {
-            if (event.detail !== 1) return;
-            clearPendingClick();
-            const x = event.clientX; const y = event.clientY;
-            clickTimer = window.setTimeout(() => openMenu(x, y, item, button), 250);
-        });
         button.addEventListener('dblclick', event => {
-            event.preventDefault(); clearPendingClick(); closeMenu();
+            event.preventDefault(); closeMenu();
             action(item.id, event.ctrlKey || event.metaKey ? 'findHex' : 'findSource');
         });
         button.addEventListener('contextmenu', event => {
-            event.preventDefault(); clearPendingClick(); openMenu(event.clientX, event.clientY, item, button);
+            event.preventDefault(); openMenu(event.clientX, event.clientY, item, button);
         });
         button.addEventListener('keydown', event => {
             if (event.key === 'Enter') { event.preventDefault(); action(item.id, 'findSource'); }
@@ -96,8 +89,6 @@
         });
         return button;
     }
-
-    function clearPendingClick() { if (clickTimer) { clearTimeout(clickTimer); clickTimer = 0; } }
 
     function openMenu(x, y, item, element) {
         closeMenu(); menuTarget = { id: item.id, element }; menu.hidden = false;

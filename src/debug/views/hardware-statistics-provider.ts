@@ -148,13 +148,13 @@ export class HardwareStatisticsProvider implements vscode.WebviewViewProvider, v
     }
 
     private postCurrentState(): void {
-        if (!this.view?.visible) { return; }
         const state = this.service.state;
         if (!this.lifecycle.connected) {
             this.post({ type: 'reset', generation: state.generation });
             this.post({ type: 'state', state: 'noSession', message: 'No active emulator session', canMutate: false });
             return;
         }
+        if (!this.view?.visible) { return; }
         if (!this.service.available) {
             this.post({
                 type: 'state', state: 'unsupported', canMutate: false,

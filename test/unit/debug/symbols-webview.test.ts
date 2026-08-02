@@ -19,8 +19,8 @@ describe('Symbols webview interactions', () => {
         expect(source).to.include("event.key === 'ArrowDown'");
     });
 
-    it('arbitrates single and modified double clicks into distinct actions', () => {
-        expect(source).to.include('window.setTimeout(() => openMenu(x, y, item, button), 250)');
+    it('opens the menu only from a context-menu gesture', () => {
+        expect(source).not.to.include('window.setTimeout(() => openMenu');
         expect(source).to.include("event.ctrlKey || event.metaKey ? 'findHex' : 'findSource'");
         expect(source).to.include("button.addEventListener('contextmenu'");
     });

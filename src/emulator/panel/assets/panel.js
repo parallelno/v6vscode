@@ -36,6 +36,9 @@
             case 'error':
                 showError(msg.message);
                 break;
+            case 'reset':
+                clearFrame();
+                break;
         }
     });
 
@@ -50,6 +53,13 @@
         const clamped = new Uint8ClampedArray(pixels.buffer || pixels);
         const imageData = new ImageData(clamped, width, height);
         ctx.putImageData(imageData, 0, 0);
+        hideError();
+    }
+
+    function clearFrame() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        canvas.width = 0;
+        canvas.height = 0;
         hideError();
     }
 

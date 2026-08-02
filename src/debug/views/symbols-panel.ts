@@ -1,6 +1,7 @@
 import * as crypto from 'crypto';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
 import { ActiveProjectService } from '../../project/active/active-project-service';
 import { Logger } from '../../platform/logging/logger';
 import { DebugSymbolService, IndexedSymbol } from '../metadata/debug-symbol-service';
@@ -25,16 +26,23 @@ export class SymbolsPanel implements vscode.Disposable {
     private panel: vscode.WebviewPanel | undefined;
     private queryTimer: ReturnType<typeof setTimeout> | undefined;
     private syncGeneration = 0;
+    private readonly stateListener: (state: string) => void;
 
     constructor(
         private readonly extensionUri: vscode.Uri,
+        private readonly lifecycle: EmulatorLifecycle,
         private readonly activeProjectService: ActiveProjectService,
         private readonly workspaceState: vscode.Memento,
         private readonly symbols: DebugSymbolService,
         private readonly hexViewer: HexViewerProvider,
         private readonly logger: Logger,
         private readonly onOpenStateChanged: (open: boolean) => void = () => {},
-    ) {}
+    ) {
+        this.stateListener = state => {
+            if (state === 'stopped') { this.clearSession(); }
+        };
+        this.lifecycle.on('stateChange', this.stateListener);
+    }
 
     toggle(): void {
         if (this.panel) { this.panel.dispose(); } else { this.open(); }
@@ -76,6 +84,7 @@ export class SymbolsPanel implements vscode.Disposable {
     dispose(): void {
         this.syncGeneration++;
         this.cancelQuery();
+        this.lifecycle.removeListener('stateChange', this.stateListener);
         this.panel?.dispose();
     }
 
@@ -109,6 +118,10 @@ export class SymbolsPanel implements vscode.Disposable {
     }
 
     private async syncSymbols(): Promise<void> {
+        if (!this.lifecycle.connected) {
+            this.clearSession();
+            return;
+        }
         if (!this.panel?.visible) { return; }
         const generation = ++this.syncGeneration;
         let project = this.activeProjectService.getActiveProject();
@@ -183,7 +196,7 @@ export class SymbolsPanel implements vscode.Disposable {
     private async findSource(symbol: IndexedSymbol): Promise<void> {
         const source = this.symbols.sourceAtExactAddress(symbol.address);
         if (!source) {
-            this.post({ type: 'state', state: 'ready', message: `Source location unavailable for ${symbol.name}` });
+            this.post({ type: 'state', state: 'ready', message: `No DWARF source line for ${symbol.name}` });
             return;
         }
         const project = this.activeProjectService.getActiveProject();
@@ -236,6 +249,14 @@ export class SymbolsPanel implements vscode.Disposable {
 
     private cancelQuery(): void {
         if (this.queryTimer) { clearTimeout(this.queryTimer); this.queryTimer = undefined; }
+    }
+
+    private clearSession(): void {
+        this.syncGeneration++;
+        this.cancelQuery();
+        this.symbols.clear();
+        this.postResults('', false, false);
+        this.post({ type: 'state', state: 'empty', message: 'No active emulator session' });
     }
 
     private post(message: SymbolsHostMessage): void {

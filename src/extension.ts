@@ -149,6 +149,7 @@ export function activate(context: vscode.ExtensionContext): void {
     store.add(vscode.commands.registerCommand(CMD_REFRESH_HEX_VIEWER, () => hexViewer.refresh()));
     const symbols = store.add(new SymbolsPanel(
         context.extensionUri,
+        lifecycle,
         activeProjectService,
         context.workspaceState,
         debugSymbols,

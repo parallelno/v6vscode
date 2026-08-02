@@ -1155,6 +1155,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             if (this.lifecycle.owner === 'debug') {
                 if (terminateDebuggee) {
                     await this.lifecycle.stop();
+                } else {
+                    this.lifecycle.disconnect();
                 }
             } else {
                 this.client.disconnect();

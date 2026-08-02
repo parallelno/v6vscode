@@ -203,7 +203,12 @@
             const sessionChanged = message.generation !== generation;
             generation = message.generation;
             entries = message.entries;
-            if (sessionChanged) { editingId = null; }
+            if (sessionChanged) {
+                editingId = null;
+                stoppedIds = new Set();
+                closeMenu();
+                closePreview();
+            }
             else if (editingId !== null && editingId !== 'new' && !entries.some(entry => entry.id === editingId)) { editingId = null; }
             // Editors survive background polling refreshes; only re-render when idle.
             if (editingId === null) render();
