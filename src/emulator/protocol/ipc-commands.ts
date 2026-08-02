@@ -123,6 +123,8 @@ export const enum IpcCommand {
     GET_HARDWARE_STATS = 96,
     SET_IO_PALETTE_ENTRY = 97,
     DISMOUNT_FDD = 98,
+    DEBUG_MEMORY_EDIT_GET_ALL = 99,
+    DEBUG_MEMORY_EDIT_RESTORE = 100,
 }
 
 // Speed value mapping: user-facing string → IPC integer
@@ -193,6 +195,11 @@ export interface ServerCapabilities {
     watchpointMutationsWhileRunning?: boolean;
     watchpointLimits?: {
         maxRangeLength: number;
+        maxCommentBytes: number;
+    };
+    memoryEditSchema?: number;
+    memoryEditLimits?: {
+        globalAddressExclusive: number;
         maxCommentBytes: number;
     };
     stopRecordSchema?: number;

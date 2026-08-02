@@ -9,12 +9,14 @@ import {
     CMD_RUN_PROJECT,
     CMD_TOGGLE_DISPLAY,
     CMD_TOGGLE_HEX_VIEWER,
+    CMD_TOGGLE_MEMORY_EDITS,
     CMD_TOGGLE_PORTS,
     CMD_TOGGLE_SETTINGS,
     CMD_TOGGLE_SYMBOLS,
     CMD_TOGGLE_WATCHPOINTS,
     CONTEXT_DISPLAY_OPEN,
     CONTEXT_HEX_VIEWER_OPEN,
+    CONTEXT_MEMORY_EDITS_OPEN,
     CONTEXT_PORTS_OPEN,
     CONTEXT_SETTINGS_OPEN,
     CONTEXT_SYMBOLS_OPEN,
@@ -58,6 +60,8 @@ import {
 } from './debug/views/watchpoints-provider';
 import { DebugSymbolService } from './debug/metadata/debug-symbol-service';
 import { SymbolsPanel } from './debug/views/symbols-panel';
+import { MemoryEditService } from './debug/memory-edits/memory-edit-service';
+import { CMD_REFRESH_MEMORY_EDITS, MemoryEditsPanel } from './debug/views/memory-edits-panel';
 
 export function activate(context: vscode.ExtensionContext): void {
     const store = new DisposableStore();
@@ -131,10 +135,12 @@ export function activate(context: vscode.ExtensionContext): void {
         () => hardwareStatistics.refresh(),
     ));
     const debugSymbols = new DebugSymbolService();
+    const memoryEdits = store.add(new MemoryEditService(lifecycle, ipcClient));
     const hexViewer = store.add(new HexViewerProvider(
         context.extensionUri,
         lifecycle,
         ipcClient,
+        memoryEdits,
         activeProjectService,
         context.workspaceState,
         logger,
@@ -147,6 +153,21 @@ export function activate(context: vscode.ExtensionContext): void {
     void vscode.commands.executeCommand('setContext', CONTEXT_HEX_VIEWER_OPEN, false);
     store.add(vscode.commands.registerCommand(CMD_TOGGLE_HEX_VIEWER, () => hexViewer.toggle()));
     store.add(vscode.commands.registerCommand(CMD_REFRESH_HEX_VIEWER, () => hexViewer.refresh()));
+    const memoryEditsPanel = store.add(new MemoryEditsPanel(
+        context.extensionUri,
+        lifecycle,
+        memoryEdits,
+        hexViewer,
+        context.workspaceState,
+        logger,
+        open => {
+            panelLauncher.setOpen(CMD_TOGGLE_MEMORY_EDITS, open);
+            void vscode.commands.executeCommand('setContext', CONTEXT_MEMORY_EDITS_OPEN, open);
+        },
+    ));
+    void vscode.commands.executeCommand('setContext', CONTEXT_MEMORY_EDITS_OPEN, false);
+    store.add(vscode.commands.registerCommand(CMD_TOGGLE_MEMORY_EDITS, () => memoryEditsPanel.toggle()));
+    store.add(vscode.commands.registerCommand(CMD_REFRESH_MEMORY_EDITS, () => memoryEditsPanel.refresh()));
     const symbols = store.add(new SymbolsPanel(
         context.extensionUri,
         lifecycle,

@@ -34,6 +34,9 @@ flowchart LR
 	Ports[Ports] --> PortsService[Ports Service]
 	PortsService --> Lifecycle
 	Hex[Hex Viewer] --> Lifecycle
+	Hex --> Edits[Memory Edit Service]
+	MemoryEdits[Memory Edits Panel] --> Edits
+	Edits --> Lifecycle
 	Symbols[Symbols] --> SymbolService[Debug Symbol Service]
 	Hex --> SymbolService
 	Symbols --> Hex
@@ -49,6 +52,8 @@ flowchart LR
 Source debugging loads a final companion ELF through `debug-artifact-loader.ts`. The immutable debug index maps source lines to CPU addresses and CPU addresses back to source locations. A shared debug-source path resolver maps relative and single-rooted DWARF paths against the active project/workspace root for Symbols, Hex Viewer, and DAP stack frames. Shared source navigation reuses visible or inactive open text tabs before creating a preview. ROM/ELF byte mismatches fail metadata loading before source breakpoints can be verified.
 
 The Hex Viewer is a standalone editor `WebviewPanel` opened from the `v6emul` view container or Command Palette. `MemoryService` validates negotiated bank-aware read capabilities, owns a complete validity-tracked cache for Main RAM and 32 RAM-disk banks, and requests only the selected bank's visible interval. `DebugSymbolService` exposes validated metadata for symbol search and exact source navigation without coupling the panel to the DAP adapter. `HexViewerProvider` owns session orchestration, persistence, clipboard access, and webview message validation; browser assets own virtualization and keyboard interaction.
+
+The Memory Edits tool is a standalone editor `WebviewPanel` backed by the same `MemoryEditService` used for Hex Viewer writes. The service validates memory-edit schema 1 and advertised limits, serializes mutations, rejects stale connection responses, and replaces its immutable state from `DEBUG_MEMORY_EDIT_GET_ALL` after every mutation. Original/current values remain server-owned; panel disposal stops polling without changing backend records.
 
 The Symbols tool is a standalone editor `WebviewPanel` backed by the same `DebugSymbolService` as Hex Viewer. Its pure query module unions configurable name matching with exact expression-value matches while preserving duplicate symbols through generation-scoped IDs. The provider owns artifact loading, clipboard/source actions, persistence, and typed Hex Viewer handoff; its webview owns history, incremental list rendering, and accessible menus.
 

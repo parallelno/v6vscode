@@ -27,6 +27,7 @@ describe('Standalone emulator panels', () => {
 
         for (const provider of [
             'src/debug/views/hex-viewer-provider.ts',
+            'src/debug/views/memory-edits-panel.ts',
             'src/debug/views/ports-provider.ts',
             'src/debug/views/hardware-statistics-provider.ts',
             'src/debug/views/watchpoints-provider.ts',
@@ -49,8 +50,8 @@ describe('Standalone emulator panels', () => {
         expect(adapter).to.include('this.lifecycle.disconnect();');
     });
 
-    it('owns Hex Viewer, Symbols, Ports, and Watchpoints as WebviewPanels with complete panel APIs', () => {
-        for (const provider of ['src/debug/views/hex-viewer-provider.ts', 'src/debug/views/symbols-panel.ts', 'src/debug/views/ports-provider.ts', 'src/debug/views/watchpoints-provider.ts']) {
+    it('owns standalone debug tools as WebviewPanels with complete panel APIs', () => {
+        for (const provider of ['src/debug/views/hex-viewer-provider.ts', 'src/debug/views/memory-edits-panel.ts', 'src/debug/views/symbols-panel.ts', 'src/debug/views/ports-provider.ts', 'src/debug/views/watchpoints-provider.ts']) {
             const source = read(provider);
             expect(source).to.include('createWebviewPanel(');
             expect(source).to.include('this.panel.reveal();');
@@ -67,6 +68,46 @@ describe('Standalone emulator panels', () => {
         expect(source).to.include('this.open();');
         expect(source).to.include('this.hexViewer.open();');
         expect(source).not.to.include("executeCommand('v6.hexViewer.focus')");
+    });
+
+    it('routes Hex Viewer writes through MemoryEditService and exposes every Memory Edits row action', () => {
+        const hexViewer = read('src/debug/views/hex-viewer-provider.ts');
+        expect(hexViewer).to.include('this.memoryEdits.apply(');
+        expect(hexViewer).not.to.include('this.memory.writeByte(');
+        expect(hexViewer).to.include('message.previousValue');
+        expect(read('src/debug/views/assets/hex-viewer.js')).to.include('previousValue: byteEdit.previousValue');
+
+        const panel = read('src/debug/views/memory-edits-panel.ts');
+        const entryMenu = panel.match(/<div id="menu".*?<\/div>/s)?.[0] ?? '';
+        const tableMenu = panel.match(/<div id="list-menu".*?<\/div>/s)?.[0] ?? '';
+        for (const action of [
+            'copyOriginal', 'copyEntered', 'copyCurrent', 'reveal',
+            'disable', 'restore', 'delete', 'deleteAndRestore', 'deleteAndRestoreAll',
+        ]) {
+            expect(entryMenu).to.include(`data-action="${action}"`);
+        }
+        for (const action of ['add', 'disable', 'disableAll', 'delete', 'deleteAll', 'deleteAndRestoreAll']) {
+            expect(tableMenu).to.include(`data-action="${action}"`);
+        }
+        expect(panel).to.include('this.service.restoreRetaining(');
+        expect(panel).to.include('this.service.deleteAndRestore(');
+        expect(panel).to.include('this.service.deleteAndRestoreAll()');
+        expect(panel).to.include('this.service.apply(message.globalAddr, message.value)');
+        expect(panel).to.include('this.service.setActivity(message.globalAddr, message.enabled)');
+        expect(panel).to.include('this.service.disableAll()');
+        expect(panel).to.include('this.service.deleteAll()');
+        const script = read('src/debug/views/assets/memory-edits.js');
+        expect(script).to.include("button.dataset.action !== 'add' && entries.length === 0");
+        expect(script).to.include("table.addEventListener('contextmenu'");
+        expect(script).to.include("empty.addEventListener('contextmenu'");
+        expect(script).to.include("input.type = 'checkbox'");
+        expect(script).to.include('draftAddress = addressInput.value');
+        expect(script).to.include('draftValue = valueInput.value');
+        expect(script).to.include('addressInput.value = draftAddress');
+        expect(script).to.include('valueInput.value = draftValue');
+        expect(script).to.include('if (editingAddress === null && !adding) render()');
+        expect(script).to.include("if (event.key === 'Enter' && !event.isComposing)");
+        expect(script).to.include('row.requestSubmit()');
     });
 
     it('marks changed port cells visually and accessibly', () => {

@@ -85,6 +85,33 @@ export interface WatchpointDelRequest {
     id: number;
 }
 
+export interface MemoryEditInput {
+    globalAddr: number;
+    enteredValue: number;
+    readonly: boolean;
+    active: boolean;
+    comment: string;
+}
+
+export interface MemoryEditSnapshot extends MemoryEditInput {
+    originalValue: number;
+    currentValue: number;
+}
+
+export interface MemoryEditAddressRequest {
+    globalAddr: number;
+}
+
+export interface MemoryEditListResponse {
+    edits: unknown[];
+}
+
+export interface MemoryEditRestoreResponse {
+    globalAddr: number;
+    restoredValue: number;
+    deleted: true;
+}
+
 // ---------------------------------------------------------------------------
 // Stop detection
 // ---------------------------------------------------------------------------

@@ -28,7 +28,7 @@
     let menuTarget = null;
     let lastVisibleKey = '';
     let editingEnabled = false;
-    /** @type {{space:any,address:number,expression:string,submitting:boolean,message:string}|null} */
+    /** @type {{space:any,address:number,expression:string,previousValue:number,submitting:boolean,message:string}|null} */
     let byteEdit = null;
 
     const key = (space) => space.kind === 'main' ? 'main' : `ramDisk:${space.disk}:${space.bank}`;
@@ -121,7 +121,7 @@
     function navigateFocus(address) { viewport.scrollTop = Math.floor(address / 16) * ROW_HEIGHT; render(); requestAnimationFrame(() => rows.querySelectorAll('.byte')[address % 16 + OVERSCAN * 16]?.focus()); }
 
     function startByteEdit(address, value) {
-        byteEdit = { space: selectedSpace, address, expression: `0x${value.toString(16).toUpperCase().padStart(2, '0')}`, submitting: false, message: '' };
+        byteEdit = { space: selectedSpace, address, expression: `0x${value.toString(16).toUpperCase().padStart(2, '0')}`, previousValue: value, submitting: false, message: '' };
         render();
         requestAnimationFrame(() => {
             const input = /** @type {HTMLInputElement|null} */ (rows.querySelector('.byte-editor'));
@@ -147,7 +147,7 @@
     function submitByteEdit() {
         if (!byteEdit || byteEdit.submitting) return;
         byteEdit.submitting = true;
-        vscode.postMessage({ type: 'editByte', space: byteEdit.space, address: byteEdit.address, expression: byteEdit.expression });
+        vscode.postMessage({ type: 'editByte', space: byteEdit.space, address: byteEdit.address, expression: byteEdit.expression, previousValue: byteEdit.previousValue });
     }
 
     function openMenu(event, target) {

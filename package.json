@@ -47,6 +47,12 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "v6.refreshMemoryEdits",
+        "title": "Refresh Memory Edits",
+        "category": "V6",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "v6.refreshPorts",
         "title": "Refresh Ports",
         "category": "V6",
@@ -77,6 +83,11 @@
       {
         "command": "v6emul.toggleHexViewer",
         "title": "Hex Viewer",
+        "category": "v6emul"
+      },
+      {
+        "command": "v6emul.toggleMemoryEdits",
+        "title": "Memory Edits",
         "category": "v6emul"
       },
       {
@@ -131,6 +142,11 @@
         {
           "command": "v6.refreshHexViewer",
           "when": "activeWebviewPanelId == v6.hexViewer",
+          "group": "navigation"
+        },
+        {
+          "command": "v6.refreshMemoryEdits",
+          "when": "activeWebviewPanelId == v6.memoryEdits",
           "group": "navigation"
         },
         {

@@ -4,6 +4,7 @@ import {
     supportsStopRecords,
     validateDebuggerServer,
     validateHardwareStatisticsServer,
+    validateMemoryEditServer,
     validateWatchpointServer,
 } from '../../../src/emulator/protocol/ipc-server-info';
 import { IpcCommand, IpcResponse } from '../../../src/emulator/protocol/ipc-commands';
@@ -179,6 +180,42 @@ describe('supportsStopRecords', () => {
         expect(supportsStopRecords({
             ...info, capabilities: { ...info.capabilities, stopRecordSchema: undefined },
         })).to.equal(false);
+    });
+});
+
+describe('validateMemoryEditServer', () => {
+    const info = {
+        protocolVersion: 2,
+        emulatorVersion: 'test-build',
+        commands: [
+            IpcCommand.DEBUG_MEMORY_EDIT_ADD,
+            IpcCommand.DEBUG_MEMORY_EDIT_DEL_ALL,
+            IpcCommand.DEBUG_MEMORY_EDIT_DEL,
+            IpcCommand.DEBUG_MEMORY_EDIT_GET,
+            IpcCommand.DEBUG_MEMORY_EDIT_EXISTS,
+            IpcCommand.DEBUG_MEMORY_EDIT_GET_ALL,
+            IpcCommand.DEBUG_MEMORY_EDIT_RESTORE,
+        ],
+        capabilities: {
+            debugger: true,
+            rawFrame: true,
+            rawFrameSchema: 1,
+            stackSampleSchema: 1,
+            memoryEditSchema: 1,
+            memoryEditLimits: { globalAddressExclusive: 0x210000, maxCommentBytes: 1024 },
+        },
+    };
+
+    it('requires schema 1, limits, and the complete request set', () => {
+        expect(() => validateMemoryEditServer(info)).not.to.throw();
+        expect(() => validateMemoryEditServer({
+            ...info,
+            commands: info.commands.filter(command => command !== IpcCommand.DEBUG_MEMORY_EDIT_RESTORE),
+        }))
+            .to.throw('does not provide memory-edit schema 1');
+        expect(() => validateMemoryEditServer({
+            ...info, capabilities: { ...info.capabilities, memoryEditLimits: undefined },
+        })).to.throw('does not provide memory-edit schema 1');
     });
 });
 

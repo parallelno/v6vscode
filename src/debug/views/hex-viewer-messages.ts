@@ -5,7 +5,7 @@ export type HexViewerWebviewMessage =
     | { type: 'visibleRange'; space: MemorySpace; offset: number; length: number }
     | { type: 'selectSpace'; space: MemorySpace }
     | { type: 'query'; value: string }
-    | { type: 'editByte'; space: MemorySpace; address: number; expression: string }
+    | { type: 'editByte'; space: MemorySpace; address: number; expression: string; previousValue: number }
     | { type: 'copy'; target: 'byte' | 'symbol'; value: string; address: number; space: MemorySpace }
     | { type: 'findSource'; address: number; space: MemorySpace }
     | { type: 'persist'; space: MemorySpace; query: string; history: string[] };

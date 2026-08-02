@@ -5,6 +5,7 @@ export const SUPPORTED_IPC_PROTOCOL_VERSION = 2;
 export const SUPPORTED_RAW_FRAME_SCHEMA = 1;
 export const SUPPORTED_BREAKPOINT_SCHEMA = 1;
 export const SUPPORTED_WATCHPOINT_SCHEMA = 1;
+export const SUPPORTED_MEMORY_EDIT_SCHEMA = 1;
 export const SUPPORTED_STOP_RECORD_SCHEMA = 1;
 export const SUPPORTED_HARDWARE_STATS_SCHEMA = 1;
 
@@ -91,5 +92,27 @@ export function validateHardwareStatisticsServer(info: GetServerInfoResponse): v
         || info.capabilities.fddDismount !== true
         || requiredCommands.some(command => !info.commands.includes(command))) {
         throw new Error(`v6emul ${info.emulatorVersion} does not provide hardware statistics schema 1`);
+    }
+}
+
+export function validateMemoryEditServer(info: GetServerInfoResponse): void {
+    const requiredCommands = [
+        IpcCommand.DEBUG_MEMORY_EDIT_ADD,
+        IpcCommand.DEBUG_MEMORY_EDIT_DEL_ALL,
+        IpcCommand.DEBUG_MEMORY_EDIT_DEL,
+        IpcCommand.DEBUG_MEMORY_EDIT_GET,
+        IpcCommand.DEBUG_MEMORY_EDIT_EXISTS,
+        IpcCommand.DEBUG_MEMORY_EDIT_GET_ALL,
+        IpcCommand.DEBUG_MEMORY_EDIT_RESTORE,
+    ];
+    const limits = info.capabilities.memoryEditLimits;
+    if (info.capabilities.memoryEditSchema !== SUPPORTED_MEMORY_EDIT_SCHEMA
+        || !limits
+        || !Number.isSafeInteger(limits.globalAddressExclusive)
+        || limits.globalAddressExclusive <= 0
+        || !Number.isSafeInteger(limits.maxCommentBytes)
+        || limits.maxCommentBytes < 0
+        || requiredCommands.some(command => !info.commands.includes(command))) {
+        throw new Error(`v6emul ${info.emulatorVersion} does not provide memory-edit schema 1`);
     }
 }

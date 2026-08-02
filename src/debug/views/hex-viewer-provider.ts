@@ -13,6 +13,7 @@ import {
     MemorySpace,
     memorySpaceKey,
     memorySpaceLabel,
+    memorySpaceGlobalAddress,
 } from '../../emulator/memory/memory-space';
 import { MemoryReadCapabilities } from '../../emulator/protocol/memory-models';
 import { IpcCommand } from '../../emulator/protocol/ipc-commands';
@@ -22,6 +23,7 @@ import { Logger } from '../../platform/logging/logger';
 import { parseHexQuery, ParsedLocation } from './hex-viewer-query';
 import { HexViewerHostMessage, HexViewerWebviewMessage } from './hex-viewer-messages';
 import { revealDebugSource } from './debug-source-navigation';
+import { MemoryEditService } from '../memory-edits/memory-edit-service';
 
 export const HEX_VIEWER_VIEW_ID = 'v6.hexViewer';
 export const CMD_REFRESH_HEX_VIEWER = 'v6.refreshHexViewer';
@@ -63,6 +65,7 @@ export class HexViewerProvider implements vscode.Disposable {
         private readonly extensionUri: vscode.Uri,
         private readonly lifecycle: EmulatorLifecycle,
         client: IpcClient,
+        private readonly memoryEdits: MemoryEditService,
         private readonly activeProjectService: ActiveProjectService,
         private readonly workspaceState: vscode.Memento,
         private readonly logger: Logger,
@@ -255,7 +258,7 @@ export class HexViewerProvider implements vscode.Disposable {
         });
         this.post({
             type: 'editing',
-            enabled: this.lifecycle.serverInfo?.commands.includes(IpcCommand.SET_BYTE_GLOBAL) === true,
+            enabled: this.memoryEdits.available,
         });
         this.post({
             type: 'state',
@@ -405,8 +408,8 @@ export class HexViewerProvider implements vscode.Disposable {
             return;
         }
         try {
-            if (this.lifecycle.serverInfo?.commands.includes(IpcCommand.SET_BYTE_GLOBAL) !== true) {
-                throw new Error('The active v6emul does not support global memory writes');
+            if (!this.memoryEdits.available) {
+                throw new Error('The active v6emul does not support memory-edit schema 1');
             }
             const value = evaluateSymbolExpression(message.expression, name => {
                 const resolution = this.symbols.resolveSymbol(name);
@@ -417,8 +420,20 @@ export class HexViewerProvider implements vscode.Disposable {
             if (value < 0 || value > 0xFF) {
                 throw new Error('Byte value must be an integer from 0 to 255');
             }
-            await this.memory.writeByte(message.space, message.address, value);
-            this.post({ type: 'byteEdit', space: message.space, address: message.address, ok: true, value, message: '' });
+            if (!Number.isInteger(message.previousValue) || message.previousValue < 0 || message.previousValue > 0xFF) {
+                throw new Error('Previous byte value must be an integer from 0 to 255');
+            }
+            const entry = await this.memoryEdits.apply(
+                memorySpaceGlobalAddress(message.space, message.address),
+                value,
+                message.previousValue,
+            );
+            const currentValue = entry?.currentValue ?? value;
+            this.memory.cache.write(message.space, message.address, Uint8Array.of(currentValue));
+            this.post({
+                type: 'byteEdit', space: message.space, address: message.address,
+                ok: true, value: currentValue, message: '',
+            });
         } catch (error) {
             this.post({
                 type: 'byteEdit', space: message.space, address: message.address, ok: false,

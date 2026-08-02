@@ -35,7 +35,7 @@ Webview-based display surface for the running emulator. Execution control remain
 
 During a debug launch the panel uses the lifecycle's existing connection. It does not open a second TCP client. Frame requests are low priority so continue, pause, stepping, breakpoint updates, and stop polling remain responsive.
 
-Using the debug toolbar's **Stop** control, including its **Alt+Disconnect** variant, clears all session-backed panel state immediately, including retained hidden webviews. Display clears its last frame; Symbols, Hex Viewer, Ports, Watchpoints, and Hardware Statistics clear their tables, caches, selections, and pending session UI. Settings retains active-project defaults because they are project configuration rather than emulator-session state.
+Using the debug toolbar's **Stop** control, including its **Alt+Disconnect** variant, clears all connection-backed panel state immediately, including retained hidden webviews. Display clears its last frame; Symbols, Hex Viewer, Memory Edits, Ports, Watchpoints, and Hardware Statistics clear their tables, caches, selections, and pending UI. Memory-edit records remain owned by the emulator process and are fetched again after reconnect. Settings retains active-project defaults because they are project configuration rather than emulator-session state.
 
 ## Hardware Statistics
 
@@ -55,7 +55,13 @@ After the first accepted snapshot, each update compares all bytes with the immed
 
 The view requires `GET_MEM` command `93` in `GET_SERVER_INFO`. Main RAM starts at global address `0x00000`; RAM Disk 1 / Bank 0 starts at `0x10000`, and each subsequent bank occupies the next 64 KiB interval. Without command 93 the view shows an unsupported-backend state and sends no legacy per-byte requests.
 
-When the server also advertises `SET_BYTE_GLOBAL` command `43`, double-click byte editing evaluates the submitted expression in the extension host and writes `{ addr, data }` to the same linear global address space. The client cache changes only after a successful response.
+When the server advertises memory-edit schema 1, double-click byte editing evaluates the submitted expression in the extension host and submits a complete `DEBUG_MEMORY_EDIT_ADD` record at the same linear global address. The shared service refreshes `DEBUG_MEMORY_EDIT_GET_ALL`, and the client cache changes only to the acknowledged current value.
+
+## Memory Edits
+
+`Memory Edits` is a standalone editor panel opened from the `v6emul` view container or Command Palette. It lists the emulator's complete tracked byte-edit collection in global-address order with Original, Entered, Current, Activity, and Auto-update columns. The Add button opens stable empty Address and Entered fields; Enter submits the new record. Search filters Current using decimal or `$NN`, `0xNN`, and `NNh` byte forms. Values, Activity, and Auto-update can be changed inline. Entry menus provide Disable, clipboard, typed Hex Viewer navigation, and delete/restore actions. Right-clicking blank list space opens Add, Disable, Disable All, Delete, Delete All, and Delete and Restore All actions.
+
+Auto-update maps to an active readonly server record and protects the entered value from emulated CPU writes. **Restore Original** is available while paused or running: it invokes `DEBUG_MEMORY_EDIT_RESTORE`, then recreates the row as inactive. **Delete Entry** removes tracking without changing memory; **Delete and Restore** invokes the same restore request without recreating the row. While running, Current may change again after restoration because the retained row is inactive. Records and their server-captured originals survive reset, restart, ROM loading, and TCP reconnect, and are cleared when the emulator process exits.
 
 ## Watchpoints
 
