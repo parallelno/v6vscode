@@ -35,11 +35,12 @@ v6emul
     Watchpoints
 ```
 
-Contribute the view container, launcher view, and four commands in `package.json`. Use context keys and launcher state to show which panels are open:
+Contribute the view container, launcher view, and five commands in `package.json`. Use context keys and launcher state to show which panels are open:
 
 - `v6emul.settingsOpen`
 - `v6emul.displayOpen`
 - `v6emul.hexViewerOpen`
+- `v6emul.portsOpen`
 - `v6emul.watchpointsOpen`
 
 The commands remain available in the Command Palette under the `v6emul` category. Command handlers own toggle behavior; the launcher invokes those commands and renders open state.
@@ -49,6 +50,7 @@ Proposed command IDs:
 - `v6emul.toggleSettings`
 - `v6emul.toggleDisplay`
 - `v6emul.toggleHexViewer`
+- `v6emul.togglePorts`
 - `v6emul.toggleWatchpoints`
 
 Do not keep duplicate Hex Viewer or Watchpoints contributions in `views.debug`. Hardware Statistics remains in the Run and Debug sidebar because it is compact and is outside this change.
@@ -222,7 +224,7 @@ Update user and architecture documentation, inspect the Extension Development Ho
 
 ### Extension-host/manual checks
 
-1. Open the `v6emul` Activity Bar container or **View > Open View... > v6emul** and verify all four entries are present.
+1. Open the `v6emul` Activity Bar container or **View > Open View... > v6emul** and verify all five entries are present.
 2. Toggle each entry twice and verify checked state and tab disposal remain synchronized.
 3. Start a V6 debug session; verify Display shows only the frame and keyboard input still works.
 4. Use VS Code's debug toolbar for Pause/Continue, Step Over, and Restart.
@@ -244,8 +246,8 @@ npm run test:regression
 ## 8. Implementation Checklist
 
 - [x] Document that VS Code cannot accept a direct **View > v6emul** submenu from an extension.
-- [x] Add the supported `v6emul` Activity Bar/Open View container and four panel launchers.
-- [x] Add Settings, Display, Hex Viewer, and Watchpoints toggle commands.
+- [x] Add the supported `v6emul` Activity Bar/Open View container and five panel launchers.
+- [x] Add Settings, Display, Hex Viewer, Ports, and Watchpoints toggle commands.
 - [x] Add and synchronize one open-state context key and launcher state per panel.
 - [x] Keep toggle commands available in the Command Palette.
 - [x] Extract speed/display validation, IPC, state, and persistence into a shared settings controller.
@@ -265,7 +267,7 @@ npm run test:regression
 - [x] Update Watchpoints Add and Find in Hex Viewer to use standalone panel APIs.
 - [x] Add panel title actions for Hex Viewer refresh and Watchpoints add/refresh.
 - [x] Remove Hex Viewer and Watchpoints from `views.debug`.
-- [x] Preserve Hardware Statistics in the Run and Debug sidebar.
+- [x] Preserve Hardware Statistics in the Run and Debug sidebar and extract Ports into a standalone editor panel.
 - [x] Add focused settings, launcher-state, Display-surface, panel-ownership, and handoff tests.
 - [x] Update existing Display lifecycle and webview tests.
 - [x] Update emulator, debugging, architecture, commands, README, and superseded feature-plan documentation.

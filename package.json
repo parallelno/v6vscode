@@ -47,6 +47,12 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "v6.refreshPorts",
+        "title": "Refresh Ports",
+        "category": "V6",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "v6.refreshWatchpoints",
         "title": "Refresh Watchpoints",
         "category": "V6",
@@ -71,6 +77,11 @@
       {
         "command": "v6emul.toggleHexViewer",
         "title": "Hex Viewer",
+        "category": "v6emul"
+      },
+      {
+        "command": "v6emul.togglePorts",
+        "title": "Ports",
         "category": "v6emul"
       },
       {
@@ -115,6 +126,11 @@
         {
           "command": "v6.refreshHexViewer",
           "when": "activeWebviewPanelId == v6.hexViewer",
+          "group": "navigation"
+        },
+        {
+          "command": "v6.refreshPorts",
+          "when": "activeWebviewPanelId == v6.ports",
           "group": "navigation"
         },
         {

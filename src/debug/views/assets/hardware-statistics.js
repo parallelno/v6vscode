@@ -55,29 +55,8 @@
             button.addEventListener('keydown', event => { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) openMenu(event, { kind: 'drive', index: drive.index, mounted: drive.mounted, element: button }); });
             value.appendChild(button); fdc.append(term, value);
         });
-        renderPorts('in'); renderPorts('out');
     }
     function fileName(filePath) { return filePath.split(/[\\/]/).filter(Boolean).pop() || filePath; }
-    function renderPorts(direction) {
-        const target = /** @type {HTMLElement} */ (document.getElementById(`ports-${direction}`)); target.replaceChildren();
-        const error = model?.portErrors?.[direction]; const bytes = model?.ports?.[direction];
-        if (error) { const message = document.createElement('div'); message.className = 'port-error'; message.textContent = error; target.appendChild(message); return; }
-        if (!bytes) { target.textContent = 'Expand while paused to load port history'; return; }
-        const grid = document.createElement('div'); grid.className = 'port-grid'; grid.setAttribute('role', 'grid');
-        grid.appendChild(heading('')); for (let column = 0; column < 16; column++) grid.appendChild(heading(column.toString(16).toUpperCase()));
-        bytes.forEach((value, index) => {
-            if (index % 16 === 0) grid.appendChild(heading((index >> 4).toString(16).toUpperCase()));
-            const cell = document.createElement('span'); const port = `0x${index.toString(16).toUpperCase().padStart(2, '0')}`; const byte = `0x${value.toString(16).toUpperCase().padStart(2, '0')}`;
-            cell.textContent = byte.slice(2); cell.title = `Port ${port}: ${byte}`; cell.setAttribute('role', 'gridcell'); cell.setAttribute('aria-label', cell.title); grid.appendChild(cell);
-        });
-        target.appendChild(grid);
-    }
-    function heading(text) { const cell = document.createElement('span'); cell.className = 'heading'; cell.textContent = text; cell.setAttribute('role', 'columnheader'); return cell; }
-    document.querySelectorAll('.disclosure').forEach(button => button.addEventListener('click', () => {
-        const direction = button.dataset.direction; const expanded = button.getAttribute('aria-expanded') !== 'true';
-        button.setAttribute('aria-expanded', String(expanded)); const target = /** @type {HTMLElement} */ (document.getElementById(`ports-${direction}`)); target.hidden = !expanded;
-        post({ type: 'setPortsExpanded', direction, expanded }); if (expanded) renderPorts(direction);
-    }));
     function showTooltip(text, x, y, element) { tooltip.textContent = text; tooltip.hidden = false; tooltip.style.left = `${Math.max(8, Math.min(x, innerWidth - tooltip.offsetWidth - 8))}px`; tooltip.style.top = `${Math.max(8, Math.min(y + 8, innerHeight - tooltip.offsetHeight - 8))}px`; element.setAttribute('aria-describedby', 'tooltip'); }
     function hideTooltip() { tooltip.hidden = true; document.querySelectorAll('[aria-describedby="tooltip"]').forEach(element => element.removeAttribute('aria-describedby')); }
     function openMenu(event, target) {

@@ -158,6 +158,7 @@ describe('Commands and templates regression tests', () => {
                 'v6emul.toggleSettings',
                 'v6emul.toggleDisplay',
                 'v6emul.toggleHexViewer',
+                'v6emul.togglePorts',
                 'v6emul.toggleWatchpoints',
             ]);
             expect(contributes.menus['menubar/view']).to.equal(undefined);

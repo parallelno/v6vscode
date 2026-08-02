@@ -18,8 +18,8 @@ describe('Standalone emulator panels', () => {
         }
     });
 
-    it('owns Hex Viewer and Watchpoints as WebviewPanels with complete panel APIs', () => {
-        for (const provider of ['src/debug/views/hex-viewer-provider.ts', 'src/debug/views/watchpoints-provider.ts']) {
+    it('owns Hex Viewer, Ports, and Watchpoints as WebviewPanels with complete panel APIs', () => {
+        for (const provider of ['src/debug/views/hex-viewer-provider.ts', 'src/debug/views/ports-provider.ts', 'src/debug/views/watchpoints-provider.ts']) {
             const source = read(provider);
             expect(source).to.include('createWebviewPanel(');
             expect(source).to.include('this.panel.reveal();');
@@ -36,5 +36,21 @@ describe('Standalone emulator panels', () => {
         expect(source).to.include('this.open();');
         expect(source).to.include('this.hexViewer.open();');
         expect(source).not.to.include("executeCommand('v6.hexViewer.focus')");
+    });
+
+    it('marks changed port cells visually and accessibly', () => {
+        const script = read('src/debug/views/assets/ports.js');
+        const styles = read('src/debug/views/assets/ports.css');
+        expect(script).to.include("if (didChange) cell.className = 'changed'");
+        expect(script).to.include("didChange ? ' (changed)' : ''");
+        expect(styles).to.include('.port-grid .changed');
+    });
+
+    it('keeps port tables compact with stable fixed-size cells', () => {
+        const styles = read('src/debug/views/assets/ports.css');
+        expect(styles).to.include('--port-cell-size: 22px');
+        expect(styles).to.include('--port-table-width: 376px');
+        expect(styles).to.include('height: 20px');
+        expect(styles).to.include('font-size: 11px');
     });
 });

@@ -9,10 +9,12 @@ import {
     CMD_RUN_PROJECT,
     CMD_TOGGLE_DISPLAY,
     CMD_TOGGLE_HEX_VIEWER,
+    CMD_TOGGLE_PORTS,
     CMD_TOGGLE_SETTINGS,
     CMD_TOGGLE_WATCHPOINTS,
     CONTEXT_DISPLAY_OPEN,
     CONTEXT_HEX_VIEWER_OPEN,
+    CONTEXT_PORTS_OPEN,
     CONTEXT_SETTINGS_OPEN,
     CONTEXT_WATCHPOINTS_OPEN,
     OUTPUT_CHANNEL_NAME,
@@ -44,6 +46,8 @@ import {
     CMD_REFRESH_HEX_VIEWER,
     HexViewerProvider,
 } from './debug/views/hex-viewer-provider';
+import { PortsService } from './debug/ports/ports-service';
+import { CMD_REFRESH_PORTS, PortsProvider } from './debug/views/ports-provider';
 import { WatchpointService } from './debug/watchpoints/watchpoint-service';
 import {
     CMD_ADD_WATCHPOINT,
@@ -137,6 +141,20 @@ export function activate(context: vscode.ExtensionContext): void {
     void vscode.commands.executeCommand('setContext', CONTEXT_HEX_VIEWER_OPEN, false);
     store.add(vscode.commands.registerCommand(CMD_TOGGLE_HEX_VIEWER, () => hexViewer.toggle()));
     store.add(vscode.commands.registerCommand(CMD_REFRESH_HEX_VIEWER, () => hexViewer.refresh()));
+    const portsService = store.add(new PortsService(lifecycle, ipcClient));
+    const ports = store.add(new PortsProvider(
+        context.extensionUri,
+        lifecycle,
+        portsService,
+        logger,
+        open => {
+            panelLauncher.setOpen(CMD_TOGGLE_PORTS, open);
+            void vscode.commands.executeCommand('setContext', CONTEXT_PORTS_OPEN, open);
+        },
+    ));
+    void vscode.commands.executeCommand('setContext', CONTEXT_PORTS_OPEN, false);
+    store.add(vscode.commands.registerCommand(CMD_TOGGLE_PORTS, () => ports.toggle()));
+    store.add(vscode.commands.registerCommand(CMD_REFRESH_PORTS, () => ports.refresh()));
     const watchpointService = store.add(new WatchpointService(lifecycle, ipcClient));
     const watchpoints = store.add(new WatchpointsProvider(
         context.extensionUri,

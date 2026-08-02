@@ -24,11 +24,6 @@ export interface HardwareStatisticsSnapshot {
     fdc: { selectedDrive: number; drives: readonly HardwareDriveSnapshot[] };
 }
 
-export interface HardwarePortsSnapshot {
-    direction: 'in' | 'out';
-    bytes: readonly number[];
-}
-
 export interface SetPaletteEntryRequest {
     index: number;
     hwColor: number;
@@ -94,16 +89,6 @@ export function decodeHardwareStatistics(value: unknown): HardwareStatisticsSnap
             drives,
         },
     };
-}
-
-export function decodeHardwarePorts(value: unknown, direction: 'in' | 'out'): HardwarePortsSnapshot {
-    const root = object(value, `${direction} ports`);
-    const bytesValue = root.bytes;
-    const values = bytesValue instanceof Uint8Array ? Array.from(bytesValue) : bytesValue;
-    if (!Array.isArray(values) || values.length !== 256) {
-        throw new Error(`Invalid ${direction} ports: server must return exactly 256 bytes`);
-    }
-    return { direction, bytes: values.map((entry, index) => integer(entry, `bytes[${index}]`, 0, 0xFF)) };
 }
 
 function object(value: unknown, name: string): Record<string, unknown> {

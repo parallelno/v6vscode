@@ -8,7 +8,7 @@
 
 ## 1. Objective
 
-Replace the current read-only `TreeDataProvider` for **V6 Hardware Statistics** with a compact, interactive debug-sidebar view. The view presents timing, display, palette, port, RAM-disk, and FDC state from one emulator session and supports palette clipboard operations plus FDD mount/dismount actions.
+Replace the current read-only `TreeDataProvider` for **V6 Hardware Statistics** with a compact, interactive debug-sidebar view. The view presents timing, display, palette, RAM-disk, and FDC state from one emulator session and supports palette clipboard operations plus FDD mount/dismount actions. Port statistics are presented by the independent **Ports** editor panel.
 
 The emulator is authoritative for hardware state. The extension host owns IPC, file access, clipboard access, lifecycle tracking, validation, and mutation serialization. The webview owns rendering, expansion state, focus, tooltips, and its accessible context menus; it never sends IPC or reads files directly.
 
@@ -16,7 +16,7 @@ The emulator is authoritative for hardware state. The extension host owns IPC, f
 
 Keep the existing view ID, `v6.hardwareStatistics`, and its placement in the built-in Run and Debug sidebar, but change its contribution to `"type": "webview"` and register a `WebviewViewProvider`.
 
-A native tree cannot provide the required horizontal swatch grid, multi-column byte tables, separators, or item-specific Copy/Paste and Mount/Dismount menus. A `WebviewView` can provide these interactions while retaining the requested sidebar placement and view-title Refresh command.
+A native tree cannot provide the required horizontal swatch grid, separators, or item-specific Copy/Paste and Mount/Dismount menus. A `WebviewView` can provide these interactions while retaining the requested sidebar placement and view-title Refresh command.
 
 The view uses the existing emulator lifecycle and prioritized `IpcClient`; it must not open a second connection. Replace `HardwareStatisticsView` with `HardwareStatisticsProvider`. Remove `CpuStatisticsPanel` after its remaining formatter dependencies are migrated to pure hardware-statistics formatters.
 
@@ -30,11 +30,10 @@ The order is fixed:
 
 1. Main statistics
 2. Palette
-3. Ports
-4. Peripherals / RAM Disk
-5. FDC
+3. Peripherals / RAM Disk
+4. FDC
 
-At narrow sidebar widths, labels remain fixed and values wrap or truncate with a complete tooltip. The palette may wrap from 16 to 8 or 4 columns while retaining square swatches. Port tables scroll horizontally rather than collapsing cells into cards.
+At narrow sidebar widths, labels remain fixed and values wrap or truncate with a complete tooltip. The palette may wrap from 16 to 8 or 4 columns while retaining square swatches.
 
 ### 3.2 Main Statistics
 
@@ -88,30 +87,7 @@ Paste is disabled while running, without a compatible session, or while another 
 
 ### 3.4 Ports
 
-After a separator, show the heading **Ports** and two disclosure rows, **In** and **Out**. Both are collapsed initially. Expansion is retained for the life of the resolved webview but is not persisted across VS Code restarts.
-
-Each expanded table displays all 256 last-observed bytes as a 16 by 16 matrix:
-
-- Columns and rows are labelled `0..F`.
-- Cell `(row, column)` represents port `(row << 4) | column`.
-- Each value is uppercase two-digit hexadecimal without a prefix.
-- Each cell tooltip and accessible label is `Port 0xNN: 0xNN`.
-- Changed values may use `--vscode-debugTokenExpression-value` until the next accepted snapshot, but color is never the only indication available to assistive technology.
-
-The byte arrays represent Devector's `IO::PortsData`: the last byte read by `IN` for **In**, and the last byte written by `OUT` for **Out**. Each response contains `{ "bytes": <256-byte MessagePack binary> }`. A direction is accepted only when the response contains exactly 256 bytes; malformed responses are rejected without padding, repeating, or per-byte fallback requests.
-
-Port querying is deliberately lazy:
-
-1. Never query ports while the containing view is hidden.
-2. Never query a direction while its table is collapsed.
-3. On transition from hidden to visible or collapsed to expanded, mark that direction dirty; do not query immediately while emulation is running.
-4. When the emulator transitions to stopped/paused, issue one request for each visible, expanded, dirty direction.
-5. Manual Refresh while stopped refreshes only visible, expanded directions.
-6. Coalesce duplicate refresh triggers per session generation and direction. Allow at most one in-flight request per direction.
-7. Drop a response if the session generation changed, the view became hidden, or the direction was collapsed before it completed.
-8. While running, retain the last paused values with a `Paused snapshot` status and send no port request.
-
-This makes port traffic proportional to visible data, with at most two bulk requests per accepted stop snapshot rather than 512 per-byte requests.
+Port statistics were extracted into the independent **Ports** editor panel. Hardware Statistics sends no port requests and contains no port disclosure or grid state.
 
 ### 3.5 Peripherals / RAM Disk
 
@@ -159,10 +135,10 @@ The server owns session-relative counters. A statistics session starts when the 
 ### 4.2 Refresh Triggers
 
 - On connection while stopped and visible: fetch the main/peripheral snapshot once.
-- On every transition from running to stopped while visible: fetch a new main/peripheral snapshot and the eligible expanded port directions.
-- On hidden to visible while stopped: fetch a main/peripheral snapshot and eligible dirty ports.
-- On manual Refresh while stopped and visible: fetch a main/peripheral snapshot and only expanded port directions.
-- While running: perform no statistics or port polling; display the last accepted snapshot with `Running; values refresh when paused`.
+- On every transition from running to stopped while visible: fetch a new main/peripheral snapshot.
+- On hidden to visible while stopped: fetch a main/peripheral snapshot.
+- On manual Refresh while stopped and visible: fetch a main/peripheral snapshot.
+- While running: perform no statistics polling; display the last accepted snapshot with `Running; values refresh when paused`.
 - While hidden: perform no statistics work and mark the snapshot dirty for the next visible stopped state.
 
 Coalesce simultaneous triggers into one refresh transaction. Main/peripheral state is one atomic snapshot so values from different stops cannot be combined. Palette writes and drive mutations are serialized; refresh follows mutation acknowledgement.
@@ -179,7 +155,7 @@ The view has explicit states:
 - **Read failure:** retain the previous valid snapshot, mark it stale, log command and error, and expose Refresh.
 - **Disconnected:** clear state, menus, pending requests, and selected rows.
 
-One malformed field rejects the complete atomic snapshot. A port response rejects only that direction. Mutation failures never alter the acknowledged UI state.
+One malformed field rejects the complete atomic snapshot. Mutation failures never alter the acknowledged UI state.
 
 ## 5. Data Model and Architecture
 
@@ -218,10 +194,6 @@ interface DriveSnapshot {
     updated: boolean;
 }
 
-interface PortsSnapshot {
-    direction: 'in' | 'out';
-    bytes: readonly number[];   // exactly 256 bytes
-}
 ```
 
 Reads/writes and read/write counts may remain available to other FDD services but are not rendered by this panel.
@@ -241,7 +213,7 @@ flowchart LR
 
 Responsibilities:
 
-- **HardwareStatisticsService** owns capability checks, typed requests, runtime response validation, atomic snapshots, lazy port caches, refresh coalescing, mutation serialization, and change events. It has no DOM dependency.
+- **HardwareStatisticsService** owns capability checks, typed requests, runtime response validation, atomic snapshots, refresh coalescing, mutation serialization, and change events. It has no DOM dependency.
 - **HardwareStatisticsProvider** owns webview lifecycle, visibility, messages, file/clipboard prompts, stale-generation rejection, and posting service snapshots.
 - **Webview assets** own rendering, disclosure state, keyboard interaction, tooltips, and context-menu presentation. They treat every host message as a replacement snapshot.
 - **FDD persistence service** owns dirty-image save/discard/export/reset behavior for all four drives and coordinates shutdown, replacement, and dismount.
@@ -390,10 +362,9 @@ Both existing commands return `{ "bytes": <256-byte MessagePack binary> }`. `@ms
 
 Use a CSP nonce, external script/style assets, no remote sources, and narrow `localResourceRoots`. Render all path and status text through `textContent`; never interpolate emulator or clipboard data into HTML.
 
-Host-to-webview messages are discriminated snapshots containing session generation, view state, main snapshot, per-direction optional port snapshots, pending actions, and user-facing errors. Webview-to-host messages are limited to:
+Host-to-webview messages are discriminated snapshots containing session generation, view state, main snapshot, pending actions, and user-facing errors. Webview-to-host messages are limited to:
 
 - `ready`
-- `setPortsExpanded` with direction and boolean
 - `refresh`
 - `copyPalette` with session generation and palette index
 - `pastePalette` with session generation and palette index
@@ -402,7 +373,7 @@ Host-to-webview messages are discriminated snapshots containing session generati
 
 The host re-derives the current color and drive from its acknowledged snapshot. It validates discriminants, primitive types, generation, index bounds, current execution state, and action enablement. Webview-provided values are never sent directly to IPC.
 
-Use semantic headings, property tables, disclosure buttons with `aria-expanded`, labelled port grids, roving focus for swatches and byte grids, `role="menu"` context menus, and `role="tooltip"` tooltips. Menus support arrow keys, Home/End, Enter/Space, Escape, focus return, and dismissal on scroll, blur, snapshot replacement, session change, or view disposal. Every pointer action has the stated keyboard equivalent.
+Use semantic headings, property tables, roving focus for swatches, `role="menu"` context menus, and `role="tooltip"` tooltips. Menus support arrow keys, Home/End, Enter/Space, Escape, focus return, and dismissal on scroll, blur, snapshot replacement, session change, or view disposal. Every pointer action has the stated keyboard equivalent.
 
 ## 8. Contributions and Lifecycle
 
@@ -422,16 +393,14 @@ Register with `vscode.window.registerWebviewViewProvider` and use `retainContext
 - `BBGGGRRR` to RGB24 conversion for boundaries and representative colors; exact tooltip text.
 - Clipboard parser acceptance and rejection; palette index/value validation.
 - Mapping-byte decoding for every bit and one-based RAM-disk Index formatting.
-- Port chunk decoding, 256-byte validation, matrix address calculation, and changed-cell derivation.
 - Snapshot runtime validation for array lengths, enums, drive count/index, paths, booleans, and unknown/missing fields.
-- Refresh reducer behavior for visible/hidden, expanded/collapsed, running/stopped, duplicate triggers, stale generations, and in-flight collapse.
+- Refresh reducer behavior for visible/hidden, running/stopped, duplicate triggers, and stale generations.
 - Menu enablement and dirty-drive save/discard/cancel outcomes.
 
 ### Extension Host and Integration Tests
 
 - Webview contribution/registration, CSP, ready handshake, visibility changes, and disposal.
 - Exactly one main snapshot request per coalesced paused refresh.
-- No port request while hidden, collapsed, or running; only the expanded directions refresh on stop and manual Refresh.
 - Palette Copy/Paste uses host clipboard, rejects forged indices and invalid clipboard text, serializes mutation, and verifies acknowledgement.
 - Drive Mount uses the host file dialog and sends the selected drive/path/data with `autoBoot: false`.
 - Dismount disabled for empty media; dirty Save/Discard/Cancel behavior; authoritative post-mutation refresh.
@@ -452,7 +421,7 @@ Register with `vscode.window.registerWebviewViewProvider` and use `retainContext
 
 1. Define the schema 1 `displayMode` compatibility handling and `rusLat` source recorded in Section 6.2.
 2. Add commands `96..98`, typed extension models, validators, formatters, port decoding, and exact server capability checks.
-3. Implement `HardwareStatisticsService` with session generation, atomic refreshes, lazy ports, coalescing, and serialized mutations.
+3. Implement `HardwareStatisticsService` with session generation, atomic refreshes, coalescing, and serialized mutations.
 4. Generalize FDD persistence to all four drives and add replace/dismount dirty-state coordination.
 5. Replace the native tree with the webview provider and implement the full layout, tooltips, menus, and keyboard behavior.
 6. Add unit, extension-host, and real-emulator tests; update emulator, debugging, command, and protocol documentation.
@@ -462,7 +431,6 @@ Register with `vscode.window.registerWebviewViewProvider` and use `retainContext
 
 - The debug sidebar shows the requested main fields in the required order and formats, sourced from one paused-state snapshot.
 - Palette shows 16 square swatches with exact tooltips and acknowledged Copy/Paste behavior.
-- Ports contains expandable In/Out 16 by 16 byte tables and emits no query while hidden, collapsed, or running.
 - Peripherals shows the five requested RAM-disk fields with Devector-compatible mapping semantics.
 - FDC shows selected drive, mounted/dismounted state and path tooltips for A-D, plus Mount/Dismount context actions with correct disabled and dirty-image behavior.
 - Running, hidden, disconnected, unsupported, synchronizing, stale, and ready states are explicit and do not leak requests or stale cross-session data.
@@ -477,11 +445,12 @@ Register with `vscode.window.registerWebviewViewProvider` and use `retainContext
 - [x] Resolve and test schema 1 `displayMode` compatibility and authoritative `rusLat` semantics.
 - [x] Return a lossless 256-byte MessagePack binary port payload and cover it with protocol decoding tests.
 - [x] Add extension IPC command enums, request/response models, runtime validators, and capability checks.
-- [x] Add pure formatting, color conversion, mapping decoding, clipboard parsing, and port-grid helpers.
-- [x] Implement `HardwareStatisticsService` with session generation, coalesced snapshots, lazy port reads, and serialized mutations.
+- [x] Add pure formatting, color conversion, mapping decoding, and clipboard parsing helpers.
+- [x] Implement `HardwareStatisticsService` with session generation, coalesced snapshots, and serialized mutations.
 - [x] Generalize FDD persistence and coordinate dirty Save/Discard/Cancel for all drives.
 - [x] Replace `HardwareStatisticsView` with a registered `HardwareStatisticsProvider` webview view.
-- [x] Implement compact main statistics, separators, 16 swatches, expandable port grids, RAM Disk, and FDC sections.
+- [x] Implement compact main statistics, separators, 16 swatches, RAM Disk, and FDC sections.
+- [x] Extract port statistics into the independent Ports editor panel.
 - [x] Implement accessible palette and drive context menus, tooltips, keyboard operation, and focus restoration.
 - [x] Gate palette and FDD mutations while running and verify every mutation with an authoritative snapshot.
 - [x] Add unit tests for formatting, validation, decoding, refresh state, and stale-generation rejection.

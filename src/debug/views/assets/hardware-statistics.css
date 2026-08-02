@@ -14,14 +14,6 @@ hr { border: 0; border-top: 1px solid var(--vscode-panel-border); margin: 10px 0
 .swatch::after { content: ''; display: block; width: 100%; height: 100%; background: var(--swatch); }
 .palette-editor { grid-column: span 3; width: 64px; height: 22px; padding: 1px 4px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, var(--vscode-focusBorder)); font: inherit; }
 button:focus-visible { outline: 2px solid var(--vscode-focusBorder); outline-offset: 1px; }
-.disclosure { display: block; width: 100%; height: 24px; padding: 2px 4px; border: 0; color: var(--vscode-foreground); background: transparent; text-align: left; }
-.disclosure::before { content: '›'; display: inline-block; width: 14px; }
-.disclosure[aria-expanded="true"]::before { transform: rotate(90deg); }
-.ports { overflow-x: auto; padding: 4px 0 8px; color: var(--vscode-editor-foreground); }
-.port-grid { display: grid; grid-template-columns: 28px repeat(16, 26px); width: max-content; font-family: var(--vscode-editor-font-family); font-size: 11px; }
-.port-grid span { min-height: 20px; padding: 2px 3px; text-align: center; border-bottom: 1px solid var(--vscode-panel-border); }
-.port-grid .heading { color: var(--vscode-descriptionForeground); }
-.port-error { max-width: 100%; color: var(--vscode-errorForeground); overflow-wrap: anywhere; }
 .drive { display: contents; }
 .drive button { border: 0; padding: 0; color: var(--vscode-foreground); background: transparent; font: inherit; text-align: right; }
 #tooltip, #menu { position: fixed; z-index: 10; max-width: min(420px, calc(100vw - 16px)); color: var(--vscode-menu-foreground); background: var(--vscode-menu-background); border: 1px solid var(--vscode-menu-border); box-shadow: 0 2px 8px var(--vscode-widget-shadow); }

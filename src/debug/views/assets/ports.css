@@ -1,0 +1,16 @@
+:root { color-scheme: light dark; --port-cell-size: 22px; --port-label-size: 24px; --port-table-width: 376px; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 10px 12px 16px; color: var(--vscode-foreground); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); }
+header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: 0; }
+#status { color: var(--vscode-descriptionForeground); }
+main { display: grid; grid-template-columns: repeat(2, var(--port-table-width)); gap: 14px; overflow-x: auto; }
+section { min-width: var(--port-table-width); }
+h2 { margin: 0 0 5px; font-size: 12px; font-weight: 600; letter-spacing: 0; }
+.ports { color: var(--vscode-editor-foreground); }
+.port-grid { display: grid; grid-template-columns: var(--port-label-size) repeat(16, var(--port-cell-size)); width: var(--port-table-width); font-family: var(--vscode-editor-font-family); font-size: 11px; line-height: 1; border-top: 1px solid var(--vscode-panel-border); border-left: 1px solid var(--vscode-panel-border); }
+.port-grid span { height: 20px; padding: 4px 1px; text-align: center; border-right: 1px solid var(--vscode-panel-border); border-bottom: 1px solid var(--vscode-panel-border); }
+.port-grid .heading { color: var(--vscode-descriptionForeground); background: var(--vscode-editorGroupHeader-tabsBackground); font-family: var(--vscode-font-family); }
+.port-grid .changed { color: var(--vscode-debugTokenExpression-value); background: var(--vscode-diffEditor-insertedTextBackground); font-weight: 700; outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
+.error { color: var(--vscode-errorForeground); overflow-wrap: anywhere; }
+@media (max-width: 800px) { main { grid-template-columns: var(--port-table-width); } }

@@ -4,21 +4,15 @@ import { EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
 import { IpcCommand, IpcResponse } from '../../emulator/protocol/ipc-commands';
 import { validateHardwareStatisticsServer } from '../../emulator/protocol/ipc-server-info';
 import {
-    decodeHardwarePorts,
     decodeHardwareStatistics,
     DismountFddResponse,
-    HardwarePortsSnapshot,
     HardwareStatisticsSnapshot,
     SetPaletteEntryResponse,
 } from './hardware-statistics-model';
 
-export type PortDirection = 'in' | 'out';
-
 export interface HardwareStatisticsState {
     generation: number;
     snapshot?: HardwareStatisticsSnapshot;
-    ports: Partial<Record<PortDirection, HardwarePortsSnapshot>>;
-    portErrors: Partial<Record<PortDirection, string>>;
     synchronizing: boolean;
 }
 
@@ -26,9 +20,6 @@ export class HardwareStatisticsService extends EventEmitter {
     private generation = 0;
     private visible = false;
     private snapshotValue: HardwareStatisticsSnapshot | undefined;
-    private readonly portsValue: Partial<Record<PortDirection, HardwarePortsSnapshot>> = {};
-    private readonly portErrorsValue: Partial<Record<PortDirection, string>> = {};
-    private readonly expanded = new Set<PortDirection>();
     private refreshPromise: Promise<void> | undefined;
     private synchronizing = false;
     private mutationQueue: Promise<void> = Promise.resolve();
@@ -44,10 +35,6 @@ export class HardwareStatisticsService extends EventEmitter {
                 this.generation++;
                 this.synchronizing = false;
                 this.snapshotValue = undefined;
-                delete this.portsValue.in;
-                delete this.portsValue.out;
-                delete this.portErrorsValue.in;
-                delete this.portErrorsValue.out;
                 this.emitChange();
             } else if (state === 'connected' && this.visible && this.available) {
                 void this.refresh().catch(() => {});
@@ -75,8 +62,6 @@ export class HardwareStatisticsService extends EventEmitter {
         return {
             generation: this.generation,
             snapshot: this.snapshotValue,
-            ports: { ...this.portsValue },
-            portErrors: { ...this.portErrorsValue },
             synchronizing: this.synchronizing,
         };
     }
@@ -85,14 +70,6 @@ export class HardwareStatisticsService extends EventEmitter {
         this.visible = visible;
         if (visible && this.lifecycle.connected && !this.lifecycle.running && this.available) {
             void this.refresh().catch(() => {});
-        }
-    }
-
-    setPortExpanded(direction: PortDirection, expanded: boolean): void {
-        if (expanded) this.expanded.add(direction);
-        else this.expanded.delete(direction);
-        if (expanded && this.visible && this.lifecycle.connected && !this.lifecycle.running && this.available) {
-            void this.refreshPorts(direction).catch(() => {});
         }
     }
 
@@ -166,7 +143,6 @@ export class HardwareStatisticsService extends EventEmitter {
         const generation = this.generation;
         try {
             await this.refreshSnapshot(generation);
-            await Promise.all([...this.expanded].map(direction => this.refreshPorts(direction, this.generation)));
         } finally {
             this.synchronizing = false;
             this.emitChange();
@@ -181,8 +157,6 @@ export class HardwareStatisticsService extends EventEmitter {
         if (this.snapshotValue && snapshot.sessionId !== this.snapshotValue.sessionId) {
             this.generation++;
             generation = this.generation;
-            delete this.portsValue.in;
-            delete this.portsValue.out;
         } else if (this.snapshotValue && snapshot.cpuCycles > this.snapshotValue.cpuCycles) {
             snapshot = {
                 ...snapshot,
@@ -190,25 +164,6 @@ export class HardwareStatisticsService extends EventEmitter {
             };
         }
         this.snapshotValue = snapshot;
-        this.emitChange();
-    }
-
-    private async refreshPorts(direction: PortDirection, generation = this.generation): Promise<void> {
-        if (!this.visible || !this.expanded.has(direction) || this.lifecycle.running) { return; }
-        const command = direction === 'in' ? IpcCommand.GET_IO_PORTS_IN_DATA : IpcCommand.GET_IO_PORTS_OUT_DATA;
-        try {
-            const response = await this.client.send<unknown>(command, undefined, 5000, 'normal');
-            const data = this.requireData(response, command === IpcCommand.GET_IO_PORTS_IN_DATA
-                ? 'GET_IO_PORTS_IN_DATA' : 'GET_IO_PORTS_OUT_DATA');
-            const ports = decodeHardwarePorts(data, direction);
-            if (generation !== this.generation || !this.visible || !this.expanded.has(direction)) { return; }
-            this.portsValue[direction] = ports;
-            delete this.portErrorsValue[direction];
-        } catch (error) {
-            if (generation === this.generation && this.visible && this.expanded.has(direction)) {
-                this.portErrorsValue[direction] = error instanceof Error ? error.message : String(error);
-            }
-        }
         this.emitChange();
     }
 

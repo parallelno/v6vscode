@@ -75,25 +75,6 @@ describe('HardwareStatisticsService', () => {
         service.dispose();
     });
 
-    it('queries only expanded port directions and accepts 256-byte payloads', async () => {
-        const lifecycle = new FakeLifecycle(); lifecycle.connected = true;
-        const commands: IpcCommand[] = [];
-        const client = { send: async (command: IpcCommand) => {
-            commands.push(command);
-            return command === IpcCommand.GET_HARDWARE_STATS
-                ? { ok: true, data: snapshot }
-                : { ok: true, data: { bytes: Array.from({ length: 256 }, (_, index) => index) } };
-        } };
-        const service = new HardwareStatisticsService(lifecycle as any, client as any);
-        service.setPortExpanded('in', true);
-        service.setVisible(true);
-        await service.refresh();
-        expect(commands.filter(command => command === IpcCommand.GET_IO_PORTS_IN_DATA)).to.have.length(1);
-        expect(commands).not.to.include(IpcCommand.GET_IO_PORTS_OUT_DATA);
-        expect(service.state.ports.in?.bytes[255]).to.equal(255);
-        service.dispose();
-    });
-
     it('rejects stale responses after disconnect', async () => {
         const lifecycle = new FakeLifecycle(); lifecycle.connected = true;
         let release!: () => void;

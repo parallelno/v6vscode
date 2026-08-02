@@ -10,7 +10,7 @@ import {
     parseHardwareByte,
     vectorColorRgb24,
 } from '../hardware-statistics/hardware-statistics-format';
-import { HardwareStatisticsService, PortDirection } from '../hardware-statistics/hardware-statistics-service';
+import { HardwareStatisticsService } from '../hardware-statistics/hardware-statistics-service';
 import {
     HardwareStatisticsHostMessage,
     HardwareStatisticsViewModel,
@@ -76,11 +76,6 @@ export class HardwareStatisticsProvider implements vscode.WebviewViewProvider, v
             if (!this.current(message)) { return; }
             switch (message.type) {
                 case 'refresh': await this.refresh(); break;
-                case 'setPortsExpanded':
-                    if (validDirection(message.direction) && typeof message.expanded === 'boolean') {
-                        this.service.setPortExpanded(message.direction, message.expanded);
-                    }
-                    break;
                 case 'copyPalette': await this.copyPalette(message.index); break;
                 case 'pastePalette': await this.pastePalette(message.index); break;
                 case 'editPalette': await this.editPalette(message.index, message.value); break;
@@ -191,11 +186,6 @@ export class HardwareStatisticsProvider implements vscode.WebviewViewProvider, v
                 rgb: `#${vectorColorRgb24(hwColor).toString(16).toUpperCase().padStart(6, '0')}`,
                 tooltip: paletteTooltip(index, hwColor),
             })),
-            ports: {
-                in: state.ports.in?.bytes,
-                out: state.ports.out?.bytes,
-            },
-            portErrors: state.portErrors,
             ramDisk: formatRamDisk(snapshot.ramDisk.index, snapshot.ramDisk.mapping),
             selectedDrive: String.fromCharCode(65 + snapshot.fdc.selectedDrive),
             drives: snapshot.fdc.drives.map((drive, index) => ({ index, label: driveNames[index], ...drive })),
@@ -238,12 +228,9 @@ export class HardwareStatisticsProvider implements vscode.WebviewViewProvider, v
 <meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${cssUri}"><title>V6 Hardware Statistics</title></head>
 <body><div id="status" role="status">No active emulator session</div><main id="content" hidden>
 <dl id="main-stats" class="properties"></dl><hr><section><h2>Palette</h2><div id="palette" class="palette" role="grid" aria-label="Hardware palette"></div></section>
-<hr><section><h2>Ports</h2><button class="disclosure" data-direction="in" aria-expanded="false">In</button><div id="ports-in" class="ports" hidden></div><button class="disclosure" data-direction="out" aria-expanded="false">Out</button><div id="ports-out" class="ports" hidden></div></section>
 <hr><section><h2>Peripherals</h2><h3>RAM Disk</h3><dl id="ram-disk" class="properties"></dl></section>
 <hr><section><h2>FDC</h2><dl id="fdc" class="properties"></dl></section></main>
 <div id="tooltip" role="tooltip" hidden></div><div id="menu" role="menu" hidden><button role="menuitem" data-action="copy">Copy</button><button role="menuitem" data-action="edit">Edit</button><button role="menuitem" data-action="paste">Paste</button><button role="menuitem" data-action="mount">Mount</button><button role="menuitem" data-action="dismount">Dismount</button></div><div id="live" class="sr-only" aria-live="polite"></div>
 <script nonce="${nonce}" src="${jsUri}"></script></body></html>`;
     }
 }
-
-function validDirection(value: string): value is PortDirection { return value === 'in' || value === 'out'; }

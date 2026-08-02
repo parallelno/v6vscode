@@ -29,13 +29,17 @@ Templates live in `src/templates/` and use `{{key}}` placeholder expansion.
 
 ## v6emul Panel Toggles
 
-The `v6emul` Activity Bar container, also available through **View > Open View... > v6emul**, contains launchers for Settings, Display, Hex Viewer, and Watchpoints. Each launcher creates an editor panel when closed and disposes it when open. Open panels show a check icon and `Open` state; closing a panel tab clears that state. The same toggle commands remain available in the Command Palette under the `v6emul` category.
+The `v6emul` Activity Bar container, also available through **View > Open View... > v6emul**, contains launchers for Settings, Display, Hex Viewer, Ports, and Watchpoints. Each launcher creates an editor panel when closed and disposes it when open. Open panels show a check icon and `Open` state; closing a panel tab clears that state. The same toggle commands remain available in the Command Palette under the `v6emul` category.
 
 VS Code's extension API does not expose the built-in **View** menubar as a menu contribution location. A direct **View > v6emul** submenu cannot be contributed by an extension; `menubar/view` is ignored by the host.
 
 ## V6: Refresh Hex Viewer
 
 Refreshes the currently visible address interval in the standalone Hex Viewer panel. It requires an active emulator that advertises `GET_MEM` command 93; hidden panels do not poll or refresh.
+
+## V6: Refresh Ports
+
+Refreshes both 256-byte In and Out tables in the standalone Ports panel while the emulator is paused. Values changed since the previous accepted update are highlighted.
 
 ## V6: Add Watchpoint
 

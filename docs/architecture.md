@@ -31,6 +31,8 @@ flowchart LR
 	DAP[V6 Debug Adapter] --> Lifecycle[Emulator Lifecycle]
 	Panel[Emulator Panel] --> Lifecycle
 	Stats[Hardware Statistics] --> Lifecycle
+	Ports[Ports] --> PortsService[Ports Service]
+	PortsService --> Lifecycle
 	Hex[Hex Viewer] --> Lifecycle
 	Watch[Watchpoints] --> WatchService[Watchpoint Service]
 	WatchService --> Lifecycle
@@ -47,4 +49,6 @@ The Hex Viewer is a standalone editor `WebviewPanel` opened from the `v6emul` vi
 
 The Watchpoints tool is another standalone editor `WebviewPanel`. A session-scoped `WatchpointService` validates schema-1 payloads, serializes mutations, and reconciles every mutation with the backend's authoritative ID-ordered snapshot. The provider validates webview messages, performs bounded memory previews, and hands typed ranges to Hex Viewer. Accurate DAP data-breakpoint stop attribution remains disabled until v6emul exposes watchpoint hit identity.
 
-Hardware Statistics is a Run and Debug `WebviewView`. `HardwareStatisticsService` validates schema-1 snapshots, rejects stale session generations, coalesces refreshes, lazily requests expanded port directions, and serializes verified palette/FDD mutations. `HardwareStatisticsProvider` owns clipboard and file-dialog access, dirty-image decisions, and the typed webview message boundary. Port responses are accepted only as complete 256-byte payloads.
+Hardware Statistics is a Run and Debug `WebviewView`. `HardwareStatisticsService` validates schema-1 snapshots, rejects stale session generations, coalesces refreshes, and serializes verified palette/FDD mutations. `HardwareStatisticsProvider` owns clipboard and file-dialog access, dirty-image decisions, and the typed webview message boundary.
+
+Ports is an independent editor `WebviewPanel`. `PortsService` validates complete 256-byte In/Out payloads, coalesces visible paused refreshes, rejects stale session responses, and derives changed addresses from consecutive accepted snapshots. `PortsProvider` owns panel lifecycle and posts immutable table snapshots to the webview.

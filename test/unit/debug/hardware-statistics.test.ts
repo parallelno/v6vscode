@@ -1,7 +1,6 @@
 import { expect } from 'chai';
 import { encode } from '@msgpack/msgpack';
 import {
-    decodeHardwarePorts,
     decodeHardwareStatistics,
     HardwareStatisticsSnapshot,
 } from '../../../src/debug/hardware-statistics/hardware-statistics-model';
@@ -13,6 +12,7 @@ import {
     vectorColorRgb24,
 } from '../../../src/debug/hardware-statistics/hardware-statistics-format';
 import { decodeResponse } from '../../../src/emulator/protocol/ipc-codec';
+import { decodePorts } from '../../../src/debug/ports/ports-model';
 
 describe('Hardware statistics model and formatting', () => {
     const response = {
@@ -89,8 +89,8 @@ describe('Hardware statistics model and formatting', () => {
     });
 
     it('requires a lossless 256-byte port payload', () => {
-        expect(decodeHardwarePorts({ bytes: Array.from({ length: 256 }, (_, index) => index) }, 'in').bytes[255]).to.equal(255);
-        expect(() => decodeHardwarePorts({ data0: 0 }, 'in')).to.throw('exactly 256 bytes');
+        expect(decodePorts({ bytes: Array.from({ length: 256 }, (_, index) => index) }, 'in').bytes[255]).to.equal(255);
+        expect(() => decodePorts({ data0: 0 }, 'in')).to.throw('exactly 256 bytes');
     });
 
     it('decodes the server 256-byte MessagePack binary port payload', () => {
@@ -103,7 +103,7 @@ describe('Hardware statistics model and formatting', () => {
         Buffer.from(payload.buffer, payload.byteOffset, payload.byteLength).copy(frame, 4);
 
         const response = decodeResponse(frame);
-        const ports = decodeHardwarePorts(response.data, 'out');
+        const ports = decodePorts(response.data, 'out');
         expect(ports.bytes).to.deep.equal(Array.from({ length: 256 }, (_, index) => index));
     });
 
