@@ -13,7 +13,7 @@ The panel searches performance tests by user-defined name and presents an editab
 
 | Column | Content | Editing |
 |---|---|---|
-| Activity | Whether the test collects samples | Double-click checkbox/toggle |
+| Activity | Whether the test collects samples | Single-click checkbox/toggle |
 | Name | User-defined test name | Double-click text input |
 | Start Global Address | Inclusive low address where measurement starts | Double-click address input |
 | End Global Address | Inclusive high address where measurement ends | Double-click address input |
@@ -79,7 +79,6 @@ Important limitations:
 - There is no get-all command.
 - There is no edit command. Reusing `ADD` replaces the object and resets its statistics. Changing `addrStart` requires a separate delete and add and is not atomic.
 - There is no disable-all command. The client cannot implement it by iteration because it cannot enumerate records; replacing records through `ADD` would also reset statistics.
-- The update counter in `DebugData` changes for definition mutations, but it is not exposed by a command and statistics sampling does not increment it.
 - The model and commands accept local 16-bit `Addr`, not the requested global memory address.
 - The server does not advertise a CodePerf schema, limits, global-address support, or mutation-while-running behavior through `GET_SERVER_INFO`.
 - Parsing relies directly on JSON conversion and does not provide the structured field validation used by newer debug protocols.
@@ -150,9 +149,10 @@ Matching is a case-insensitive substring by default. An empty query shows every 
 
 The table context-menu **Add** action inserts one local draft row, focuses Name, and does not contact the emulator until submission. Only one draft or edited row may exist at a time.
 
-Double-clicking an editable cell enters inline edit mode:
+Activity is the exception to the table's double-click editing behavior: one normal click on its checkbox toggles the acknowledged state and immediately submits that Activity-only change. Disable the checkbox while its mutation is in flight and restore the acknowledged state if the mutation fails. Do not require a double-click or open the rest of the row for editing.
 
-- Activity uses a checkbox.
+Double-clicking any other editable cell enters inline edit mode:
+
 - Name uses a single-line text input.
 - Start Global Address and End Global Address use single-line address inputs.
 - Statistics never enters edit mode.
@@ -173,7 +173,7 @@ Changing Activity or Name must preserve statistics. Changing either address may 
 
 ### 3.5 Double-click source navigation
 
-Double-clicking an editable cell edits that cell and stops event propagation. Double-clicking Statistics or non-control row space navigates to the source line for the acknowledged start global address.
+Clicking the Activity checkbox toggles Activity and stops event propagation. Double-clicking Name, Start Global Address, or End Global Address edits that cell and stops event propagation. Double-clicking Statistics or non-control row space navigates to the source line for the acknowledged start global address.
 
 The host resolves the address through `DebugSymbolService.sourceAtExactAddress`, derives the active project root, and calls the shared `revealDebugSource` helper. Never trust a source path supplied by the webview.
 
@@ -265,7 +265,6 @@ test/
 - After every mutation, fetch and validate the complete collection before publishing it.
 - While visible, poll the complete snapshot once per second so Statistics changes while execution runs. Stop polling when hidden, disposed, disconnected, or unsupported.
 - Prevent overlapping polls and discard responses from older connection or request generations.
-- A definition update counter may avoid unnecessary definition rerenders, but it cannot replace periodic statistics snapshots because samples change without collection mutations.
 - On malformed server data, reject the whole replacement snapshot, retain the last valid snapshot as stale, log the field-level failure, and disable mutations until reconciliation succeeds.
 
 ## 5. Extension Changes
@@ -301,7 +300,7 @@ Add focused tests for:
 3. Service session generations, stale-response rejection, mutation serialization, post-mutation reconciliation, polling without overlap, and polling shutdown when hidden/disconnected.
 4. Add, complete-row Edit, Disable, Disable All, Delete, and Delete All success/failure behavior.
 5. Name filtering, empty query, case-insensitive matching, query persistence, and 256-character bounds.
-6. Double-click separation: editable cells enter edit mode while row/Statistics double-click requests source navigation.
+6. Click separation: one click on Activity submits its toggle, double-clicking other editable cells enters edit mode, and row/Statistics double-click requests source navigation.
 7. Address and UTF-8 name validation, Enter/Escape/Tab behavior, and no IPC message for invalid drafts.
 8. Row and table context-menu ordering, keyboard access, focus restoration, and disabled/gray states for empty, inactive, deleted-all, disconnected, unsupported, and in-flight cases.
 9. Statistics formatting and refresh while running.
@@ -331,13 +330,13 @@ The table, search, Statistics column, refresh, Disable All, Delete All enablemen
 
 #### Current server solution that is not enough
 
-`DEBUG_CODE_PERF_GET` accepts one `{ addr }` lookup. The client cannot discover the set of keys. Its response uses `CodePerf::ToJson()`, which contains only `label`, string-form `addrStart`, string-form `addrEnd`, and `active`; it omits `averageCcDiff` and `tests`. `GetFilteredCodePerfs` and `GetCodePerfsUpdates` exist only as in-process APIs and are not exposed through IPC. The formatted in-process string is unsuitable as a structured wire contract.
+`DEBUG_CODE_PERF_GET` accepts one `{ addr }` lookup. The client cannot discover the set of keys. Its response uses `CodePerf::ToJson()`, which contains only `label`, string-form `addrStart`, string-form `addrEnd`, and `active`; it omits `averageCcDiff` and `tests`. `GetFilteredCodePerfs` exists only as an in-process API and is not exposed through IPC. The formatted in-process string is unsuitable as a structured wire contract.
 
 #### New server functionality and recommendations
 
 Add a versioned structured CodePerf snapshot command, recommended as `DEBUG_CODE_PERF_GET_ALL`, returning a deterministically ordered array. Each entry must include stable ID, name, numeric start/end global addresses, activity, finite numeric average clock cycles, and non-negative integer test count. Return an empty array for an empty collection. Keep statistics numeric on the wire and format the requested string in the client.
 
-Optionally expose a non-consuming definition update counter, but still support full polling because statistics change without definition mutations. Construct each snapshot coherently on the emulator thread and document whether an in-progress sample is included.
+An update-counter command is not required for this panel. The client must fetch full snapshots periodically while the panel is visible because statistics change without definition mutations; a definition-only counter could not indicate those changes. Construct each snapshot coherently on the emulator thread and document whether an in-progress sample is included.
 
 ### 7.2 Global execution-address support
 
@@ -423,7 +422,7 @@ Return structured `invalid_request` errors with at least `details.command` and `
 
 - [ ] Implement the five-column accessible table and exact Statistics formatting.
 - [ ] Reuse established name-search behavior and persist the bounded query.
-- [ ] Implement Add draft and double-click editing for Activity, Name, Start, and End.
+- [ ] Implement one-click Activity toggling plus Add draft and double-click editing for Name, Start, and End.
 - [ ] Implement host and webview validation plus Enter/Escape/Tab/Space behavior.
 - [ ] Implement row double-click source navigation without conflicting with cell editing.
 - [ ] Implement row and table context menus in the specified order.
