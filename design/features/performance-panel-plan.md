@@ -15,8 +15,8 @@ The panel searches performance tests by user-defined name and presents an editab
 |---|---|---|
 | Activity | Whether the test collects samples | Single-click checkbox/toggle |
 | Name | User-defined test name | Double-click text input |
-| Start Global Address | Inclusive low address where measurement starts | Double-click address input |
-| End Global Address | Inclusive high address where measurement ends | Double-click address input |
+| Start Address | Inclusive 16-bit CPU address where measurement starts | Double-click address input |
+| End Address | Inclusive 16-bit CPU address where measurement ends | Double-click address input |
 | Statistics | `average cc: <decimal number>, tests: <decimal number>` | Read-only |
 
 The emulator is authoritative for test definitions, activity, and statistics. The webview is an untrusted presentation client and never invokes IPC directly.
@@ -79,8 +79,7 @@ Important limitations:
 - There is no get-all command.
 - There is no edit command. Reusing `ADD` replaces the object and resets its statistics. Changing `addrStart` requires a separate delete and add and is not atomic.
 - There is no disable-all command. The client cannot implement it by iteration because it cannot enumerate records; replacing records through `ADD` would also reset statistics.
-- The model and commands accept local 16-bit `Addr`, not the requested global memory address.
-- The server does not advertise a CodePerf schema, limits, global-address support, or mutation-while-running behavior through `GET_SERVER_INFO`.
+- The server does not advertise a CodePerf schema, limits, or mutation-while-running behavior through `GET_SERVER_INFO`.
 - Parsing relies directly on JSON conversion and does not provide the structured field validation used by newer debug protocols.
 
 The existing five commands are therefore insufficient to implement the requested panel faithfully. Section 7 defines the required server work.
@@ -121,7 +120,7 @@ Session states are:
 - **Synchronizing:** retain the last snapshot from the same connection, mark it stale, and disable mutations.
 - **Ready/paused:** show the latest acknowledged snapshot and allow mutations.
 - **Running:** continue statistics refresh and allow mutations only when the server advertises that capability.
-- **Unsupported backend:** identify the missing schema, command, or global-address capability.
+- **Unsupported backend:** identify the missing schema or command capability.
 - **Read failure:** retain acknowledged rows, mark statistics stale, and expose Refresh.
 - **Disconnected:** clear rows and drafts; reconnect fetches a fresh server snapshot.
 
@@ -133,9 +132,9 @@ Formatting rules:
 
 - Activity displays `Active` or `Disabled` with an accessible checkbox/state; do not rely on color alone.
 - Name is rendered verbatim as plain text and truncated only visually, retaining its full tooltip and accessible name.
-- Global addresses use uppercase six-digit `0xNNNNNN` notation. Tooltips include the resolved memory-space label and local `0xNNNN` offset.
+- Addresses use uppercase four-digit `0xNNNN` notation and represent the server's 16-bit CPU `Addr` values directly.
 - Statistics is exactly `average cc: N, tests: M`, using base-10 numbers. Round the average to the nearest integer to match the existing `CodePerf::AddrToStr()` presentation unless the agreed server schema specifies a different precision.
-- Sort rows by ascending start global address, then end global address, then name.
+- Sort rows by ascending start address, then end address, then name.
 - Preserve selection, focus, and an active draft by stable server test ID across snapshot replacement.
 - Assign all server and user text through `textContent` or form values, never `innerHTML`.
 
@@ -154,10 +153,10 @@ Activity is the exception to the table's double-click editing behavior: one norm
 Double-clicking any other editable cell enters inline edit mode:
 
 - Name uses a single-line text input.
-- Start Global Address and End Global Address use single-line address inputs.
+- Start Address and End Address use single-line address inputs.
 - Statistics never enters edit mode.
 
-Address inputs accept decimal, `0x`, `$`, and `h` forms and normalize to uppercase `0xNNNNNN` after acknowledgement. Validate integer syntax, negotiated global-memory bounds, `start <= end`, supported executable memory spaces, and any server range rules. Validate Name as UTF-8 within the advertised byte limit.
+Address inputs accept decimal, `0x`, `$`, and `h` forms and normalize to uppercase `0xNNNN` after acknowledgement. Validate integer syntax, the 16-bit range `0..0xFFFF`, `start <= end`, and any server range rules. Validate Name as UTF-8 within the advertised byte limit.
 
 Keyboard behavior:
 
@@ -173,11 +172,11 @@ Changing Activity or Name must preserve statistics. Changing either address may 
 
 ### 3.5 Double-click source navigation
 
-Clicking the Activity checkbox toggles Activity and stops event propagation. Double-clicking Name, Start Global Address, or End Global Address edits that cell and stops event propagation. Double-clicking Statistics or non-control row space navigates to the source line for the acknowledged start global address.
+Clicking the Activity checkbox toggles Activity and stops event propagation. Double-clicking Name, Start Address, or End Address edits that cell and stops event propagation. Double-clicking Statistics or non-control row space navigates to the source line for the acknowledged start address.
 
 The host resolves the address through `DebugSymbolService.sourceAtExactAddress`, derives the active project root, and calls the shared `revealDebugSource` helper. Never trust a source path supplied by the webview.
 
-If the address has no exact DWARF row, keep the panel state unchanged and report `No DWARF source line for 0xNNNNNN` in the status area. Banked/global address resolution must follow the server's agreed execution-address mapping; do not silently truncate a global address to 16 bits.
+If the address has no exact DWARF row, keep the panel state unchanged and report `No DWARF source line for 0xNNNN` in the status area.
 
 ### 3.6 Context menus
 
@@ -230,7 +229,7 @@ flowchart LR
 
 **Webview assets** own rendering, local filtering, draft/edit state, focus, keyboard behavior, and accessible menus. They never invent server state or send raw IPC payloads.
 
-**v6emul** owns stable test identity, definitions, activity, statistics, persistence, and the mapping between global execution addresses and measured instruction execution.
+**v6emul** owns stable test identity, definitions, activity, statistics, persistence, and matching against 16-bit CPU execution addresses.
 
 ### 4.2 Proposed extension layout
 
@@ -277,9 +276,9 @@ Add command and context constants in `src/config/contribution-ids.ts`. Add Perfo
 
 ### 5.2 Protocol and service
 
-Add typed request/response models and strict runtime decoders for the agreed server schema. Reject duplicate IDs, duplicate start addresses when disallowed by the schema, non-finite statistics, negative test counts, invalid booleans/strings, unsupported global addresses, and malformed collection ordering.
+Add typed request/response models and strict runtime decoders for the agreed server schema. Reject duplicate IDs, duplicate start addresses when disallowed by the schema, non-finite statistics, negative test counts, invalid booleans/strings, addresses outside `0..0xFFFF`, and malformed collection ordering.
 
-Add `validatePerformanceServer` beside the existing server-info validators. Require the agreed schema version, global-address semantics, mutation-while-running declaration, limits, and all commands needed by the panel before enabling mutations.
+Add `validatePerformanceServer` beside the existing server-info validators. Require the agreed schema version, mutation-while-running declaration, limits, and all commands needed by the panel before enabling mutations.
 
 The service API should expose immutable `snapshot`, `available`, `refresh`, `add`, `edit`, `disable`, `disableAll`, `delete`, and `deleteAll` operations. Preserve server fields the panel does not edit.
 
@@ -296,7 +295,7 @@ Use a strict Content Security Policy and nonce. Validate every incoming message 
 Add focused tests for:
 
 1. Capability negotiation and every required command.
-2. Snapshot decoding, numeric boundaries, duplicate IDs, invalid statistics, malformed names, and global-address limits.
+2. Snapshot decoding, 16-bit address boundaries, duplicate IDs, invalid statistics, and malformed names.
 3. Service session generations, stale-response rejection, mutation serialization, post-mutation reconciliation, polling without overlap, and polling shutdown when hidden/disconnected.
 4. Add, complete-row Edit, Disable, Disable All, Delete, and Delete All success/failure behavior.
 5. Name filtering, empty query, case-insensitive matching, query persistence, and 256-character bounds.
@@ -304,9 +303,9 @@ Add focused tests for:
 7. Address and UTF-8 name validation, Enter/Escape/Tab behavior, and no IPC message for invalid drafts.
 8. Row and table context-menu ordering, keyboard access, focus restoration, and disabled/gray states for empty, inactive, deleted-all, disconnected, unsupported, and in-flight cases.
 9. Statistics formatting and refresh while running.
-10. Source navigation success, missing exact DWARF address, project-root resolution, and global addresses that cannot be mapped safely.
+10. Source navigation success, missing exact DWARF address, and project-root resolution.
 11. Launcher toggle state, direct tab close, reopen behavior, and refresh command routing.
-12. Live-server contract tests proving statistics survive Name/Activity edits and Disable All, address edits are atomic, global addresses are not truncated, and collection snapshots update while execution runs.
+12. Live-server contract tests proving statistics survive Name/Activity edits and Disable All, address edits are atomic, 16-bit boundaries are enforced, and collection snapshots update while execution runs.
 
 Run `npm run compile` and the focused unit suites after each extension slice, then `npm run test:unit` and the regression suite before completion.
 
@@ -334,27 +333,11 @@ The table, search, Statistics column, refresh, Disable All, Delete All enablemen
 
 #### New server functionality and recommendations
 
-Add a versioned structured CodePerf snapshot command, recommended as `DEBUG_CODE_PERF_GET_ALL`, returning a deterministically ordered array. Each entry must include stable ID, name, numeric start/end global addresses, activity, finite numeric average clock cycles, and non-negative integer test count. Return an empty array for an empty collection. Keep statistics numeric on the wire and format the requested string in the client.
+Add a versioned structured CodePerf snapshot command, recommended as `DEBUG_CODE_PERF_GET_ALL`, returning a deterministically ordered array. Each entry must include stable ID, name, numeric 16-bit start/end addresses, activity, finite numeric average clock cycles, and non-negative integer test count. Return an empty array for an empty collection. Keep addresses and statistics numeric on the wire and format them in the client.
 
 An update-counter command is not required for this panel. The client must fetch full snapshots periodically while the panel is visible because statistics change without definition mutations; a definition-only counter could not indicate those changes. Construct each snapshot coherently on the emulator thread and document whether an in-progress sample is included.
 
-### 7.2 Global execution-address support
-
-#### Description of the feature which implementation is blocked by the server code
-
-The requested Start Global Address and End Global Address fields must identify the actual executable memory space, distinguish Main RAM from RAM-disk banks, validate ranges, and allow source navigation without silently discarding bank bits.
-
-#### Current server solution that is not enough
-
-`CodePerf` uses 16-bit `Addr` for both endpoints, the collection is keyed by 16-bit `addrStart`, and `CheckCodePerfs` receives only the current 16-bit CPU address. Requests and persisted JSON therefore cannot distinguish two global memory locations with the same local offset. The extension's global addresses are six-digit values that encode memory-space identity.
-
-#### New server functionality and recommendations
-
-Define CodePerf schema 1 around numeric `GlobalAddr` endpoints and document how the currently executing CPU address maps to a global backing location at both the start and end instruction. Pass that resolved global execution address into performance matching. Reject unsupported/non-executable spaces and invalid or cross-space ranges with structured `invalid_request` details.
-
-Persist numeric or canonical global addresses without truncation. Advertise the exclusive global-memory bound and supported executable spaces. If CodePerf is intentionally limited to the CPU's 16-bit logical address space, change the product requirement and panel labels to Start Address/End Address instead; the client must not present those values as global.
-
-### 7.3 Atomic editing and activity changes that preserve statistics
+### 7.2 Atomic editing and activity changes that preserve statistics
 
 #### Description of the feature which implementation is blocked by the server code
 
@@ -370,7 +353,7 @@ Give each record a stable server-owned ID and add an atomic edit operation that 
 
 Add a bulk disable operation, recommended as `DEBUG_CODE_PERF_DISABLE_ALL`, that atomically sets every active record inactive, preserves statistics, and reports the affected count. Keep `DEBUG_CODE_PERF_DEL_ALL` for deletion. Define idempotent behavior for already-disabled and empty collections.
 
-### 7.4 Capability negotiation, limits, and validation
+### 7.3 Capability negotiation, limits, and validation
 
 #### Description of the feature which implementation is blocked by the server code
 
@@ -378,11 +361,11 @@ The extension must determine whether a connected emulator can safely support the
 
 #### Current server solution that is not enough
 
-`GET_SERVER_INFO` does not advertise a CodePerf schema, limits, global-address support, or mutations-while-running behavior. Current handlers index JSON fields directly and rely on implicit conversion. There is no negotiated maximum name length, explicit endpoint relationship rule, stable-ID contract, or structured error detail for malformed input.
+`GET_SERVER_INFO` does not advertise a CodePerf schema, limits, or mutations-while-running behavior. Current handlers index JSON fields directly and rely on implicit conversion. There is no negotiated maximum name length, explicit endpoint relationship rule, stable-ID contract, or structured error detail for malformed input.
 
 #### New server functionality and recommendations
 
-Advertise `codePerfSchema: 1`, required command IDs, global-address support, mutations-while-running support, global-memory bounds, supported executable spaces, and maximum UTF-8 name bytes. Add strict request validation for required/unknown fields, types, finite values, IDs, global-address bounds, endpoint ordering, executable spaces, and UTF-8 byte limits.
+Advertise `codePerfSchema: 1`, required command IDs, mutations-while-running support, the 16-bit address bounds, and maximum UTF-8 name bytes. Add strict request validation for required/unknown fields, types, finite values, IDs, address bounds, endpoint ordering, and UTF-8 byte limits.
 
 Return structured `invalid_request` errors with at least `details.command` and `details.field`. Document collection lifetime, persistence, statistics reset points, behavior during reset/restart/ROM load, maximum record count, sample-count saturation semantics, and whether `addrStart == addrEnd` is rejected. Prefer rejecting equal endpoints unless the sampling algorithm is changed, because the current `if/else if` implementation never completes such a sample.
 
@@ -390,16 +373,14 @@ Return structured `invalid_request` errors with at least `details.command` and `
 
 ### Server contract
 
-- [ ] Agree whether performance endpoints are true global addresses or rename the requested fields to local CPU addresses.
 - [ ] Define and advertise CodePerf schema 1, limits, lifecycle, and mutation-while-running behavior.
 - [ ] Add stable server-owned performance-test IDs.
 - [ ] Add a structured get-all snapshot containing definitions and runtime statistics.
-- [ ] Resolve executing instructions to global addresses and use them for CodePerf matching.
 - [ ] Add strict field validation and structured errors.
 - [ ] Add atomic Edit preserving statistics for Name/Activity and explicitly resetting them for endpoint changes.
 - [ ] Add atomic Disable All preserving statistics.
 - [ ] Define empty, missing-ID, duplicate-range, equal-endpoint, and sample-count saturation behavior.
-- [ ] Add server unit and IPC contract tests for all commands, limits, persistence, statistics, and global-address mapping.
+- [ ] Add server unit and IPC contract tests for all commands, 16-bit address limits, persistence, and statistics.
 
 ### Extension protocol and service
 
