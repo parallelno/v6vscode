@@ -35,7 +35,7 @@ Webview-based display surface for the running emulator. Execution control remain
 
 During a debug launch the panel uses the lifecycle's existing connection. It does not open a second TCP client. Frame requests are low priority so continue, pause, stepping, breakpoint updates, and stop polling remain responsive.
 
-Using the debug toolbar's **Stop** control, including its **Alt+Disconnect** variant, clears all connection-backed panel state immediately, including retained hidden webviews. Display clears its last frame; Symbols, Hex Viewer, Memory Edits, Ports, Watchpoints, and Hardware Statistics clear their tables, caches, selections, and pending UI. Memory-edit records remain owned by the emulator process and are fetched again after reconnect. Settings retains active-project defaults because they are project configuration rather than emulator-session state.
+Using the debug toolbar's **Stop** control, including its **Alt+Disconnect** variant, clears all connection-backed panel state immediately, including retained hidden webviews. Display clears its last frame; Symbols, Hex Viewer, Memory Edits, Performance, Ports, Watchpoints, and Hardware Statistics clear their tables, caches, selections, and pending UI. Memory-edit and CodePerf records remain owned by the emulator process and are fetched again after reconnect. Settings retains active-project defaults because they are project configuration rather than emulator-session state.
 
 ## Hardware Statistics
 
@@ -62,6 +62,12 @@ When the server advertises memory-edit schema 1, double-click byte editing evalu
 `Memory Edits` is a standalone editor panel opened from the `v6emul` view container or Command Palette. It lists the emulator's complete tracked byte-edit collection in global-address order with Original, Entered, Current, Activity, and Auto-update columns. The Add button opens stable empty Address and Entered fields; Enter submits the new record. Search filters Current using decimal or `$NN`, `0xNN`, and `NNh` byte forms. Values, Activity, and Auto-update can be changed inline. Entry menus provide Disable, clipboard, typed Hex Viewer navigation, and delete/restore actions. Right-clicking blank list space opens Add, Disable, Disable All, Delete, Delete All, and Delete and Restore All actions.
 
 Auto-update maps to an active readonly server record and protects the entered value from emulated CPU writes. **Restore Original** is available while paused or running: it invokes `DEBUG_MEMORY_EDIT_RESTORE`, then recreates the row as inactive. **Delete Entry** removes tracking without changing memory; **Delete and Restore** invokes the same restore request without recreating the row. While running, Current may change again after restoration because the retained row is inactive. Records and their server-captured originals survive reset, restart, ROM loading, and TCP reconnect, and are cleared when the emulator process exits.
+
+## Performance
+
+`Performance` is a standalone editor panel for server-owned CodePerf ranges and sampled timing statistics. It searches by name, edits 16-bit start/end addresses, toggles collection activity, and displays `average cc: N, tests: M`. Visible panels refresh the complete ID-ordered collection once per second. Mutations are serialized and reconciled with the authoritative collection before the UI accepts them; source navigation resolves the acknowledged start address through loaded ELF/DWARF metadata.
+
+The panel requires CodePerf schema 1 with `codePerfServerAllocatedIds`, `codePerfEdit`, and `codePerfMutationsWhileRunning` set to true. The server must advertise limits for the 65536-address space, UTF-8 name bytes, live records, and test count, plus commands `79..83`, `101` (`DEBUG_CODE_PERF_GET_ALL`), and `102` (`DEBUG_CODE_PERF_EDIT`). Records, IDs, and completed statistics survive reset, restart, ROM loading, and reconnect while the same debugger instance remains alive; destroying it starts a new collection lifetime.
 
 ## Watchpoints
 

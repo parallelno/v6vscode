@@ -125,6 +125,8 @@ export const enum IpcCommand {
     DISMOUNT_FDD = 98,
     DEBUG_MEMORY_EDIT_GET_ALL = 99,
     DEBUG_MEMORY_EDIT_RESTORE = 100,
+    DEBUG_CODE_PERF_GET_ALL = 101,
+    DEBUG_CODE_PERF_EDIT = 102,
 }
 
 // Speed value mapping: user-facing string → IPC integer
@@ -201,6 +203,16 @@ export interface ServerCapabilities {
     memoryEditLimits?: {
         globalAddressExclusive: number;
         maxCommentBytes: number;
+    };
+    codePerfSchema?: number;
+    codePerfServerAllocatedIds?: boolean;
+    codePerfEdit?: boolean;
+    codePerfMutationsWhileRunning?: boolean;
+    codePerfLimits?: {
+        addressExclusive: number;
+        maxNameBytes: number;
+        maxRecords: number;
+        maxTestCount: number;
     };
     stopRecordSchema?: number;
     hardwareStatsSchema?: number;

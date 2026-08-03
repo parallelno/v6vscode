@@ -10,6 +10,7 @@ import {
     CMD_TOGGLE_DISPLAY,
     CMD_TOGGLE_HEX_VIEWER,
     CMD_TOGGLE_MEMORY_EDITS,
+    CMD_TOGGLE_PERFORMANCE,
     CMD_TOGGLE_PORTS,
     CMD_TOGGLE_SETTINGS,
     CMD_TOGGLE_SYMBOLS,
@@ -17,6 +18,7 @@ import {
     CONTEXT_DISPLAY_OPEN,
     CONTEXT_HEX_VIEWER_OPEN,
     CONTEXT_MEMORY_EDITS_OPEN,
+    CONTEXT_PERFORMANCE_OPEN,
     CONTEXT_PORTS_OPEN,
     CONTEXT_SETTINGS_OPEN,
     CONTEXT_SYMBOLS_OPEN,
@@ -66,6 +68,12 @@ import {
     CMD_REFRESH_MEMORY_EDITS,
     MemoryEditsPanel,
 } from './debug/views/memory-edits-panel';
+import { PerformanceService } from './debug/performance/performance-service';
+import {
+    CMD_ADD_PERFORMANCE,
+    CMD_REFRESH_PERFORMANCE,
+    PerformancePanel,
+} from './debug/views/performance-panel';
 
 export function activate(context: vscode.ExtensionContext): void {
     const store = new DisposableStore();
@@ -173,6 +181,24 @@ export function activate(context: vscode.ExtensionContext): void {
     store.add(vscode.commands.registerCommand(CMD_TOGGLE_MEMORY_EDITS, () => memoryEditsPanel.toggle()));
     store.add(vscode.commands.registerCommand(CMD_ADD_MEMORY_EDIT, () => memoryEditsPanel.add()));
     store.add(vscode.commands.registerCommand(CMD_REFRESH_MEMORY_EDITS, () => memoryEditsPanel.refresh()));
+    const performanceService = store.add(new PerformanceService(lifecycle, ipcClient));
+    const performancePanel = store.add(new PerformancePanel(
+        context.extensionUri,
+        lifecycle,
+        performanceService,
+        debugSymbols,
+        activeProjectService,
+        context.workspaceState,
+        logger,
+        open => {
+            panelLauncher.setOpen(CMD_TOGGLE_PERFORMANCE, open);
+            void vscode.commands.executeCommand('setContext', CONTEXT_PERFORMANCE_OPEN, open);
+        },
+    ));
+    void vscode.commands.executeCommand('setContext', CONTEXT_PERFORMANCE_OPEN, false);
+    store.add(vscode.commands.registerCommand(CMD_TOGGLE_PERFORMANCE, () => performancePanel.toggle()));
+    store.add(vscode.commands.registerCommand(CMD_ADD_PERFORMANCE, () => performancePanel.add()));
+    store.add(vscode.commands.registerCommand(CMD_REFRESH_PERFORMANCE, () => performancePanel.refresh()));
     const symbols = store.add(new SymbolsPanel(
         context.extensionUri,
         lifecycle,

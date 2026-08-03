@@ -6,6 +6,7 @@ export const SUPPORTED_RAW_FRAME_SCHEMA = 1;
 export const SUPPORTED_BREAKPOINT_SCHEMA = 1;
 export const SUPPORTED_WATCHPOINT_SCHEMA = 1;
 export const SUPPORTED_MEMORY_EDIT_SCHEMA = 1;
+export const SUPPORTED_CODE_PERF_SCHEMA = 1;
 export const SUPPORTED_STOP_RECORD_SCHEMA = 1;
 export const SUPPORTED_HARDWARE_STATS_SCHEMA = 1;
 
@@ -114,5 +115,34 @@ export function validateMemoryEditServer(info: GetServerInfoResponse): void {
         || limits.maxCommentBytes < 0
         || requiredCommands.some(command => !info.commands.includes(command))) {
         throw new Error(`v6emul ${info.emulatorVersion} does not provide memory-edit schema 1`);
+    }
+}
+
+export function validatePerformanceServer(info: GetServerInfoResponse): void {
+    const requiredCommands = [
+        IpcCommand.DEBUG_CODE_PERF_ADD,
+        IpcCommand.DEBUG_CODE_PERF_DEL_ALL,
+        IpcCommand.DEBUG_CODE_PERF_DEL,
+        IpcCommand.DEBUG_CODE_PERF_GET,
+        IpcCommand.DEBUG_CODE_PERF_EXISTS,
+        IpcCommand.DEBUG_CODE_PERF_GET_ALL,
+        IpcCommand.DEBUG_CODE_PERF_EDIT,
+    ];
+    const limits = info.capabilities.codePerfLimits;
+    if (info.capabilities.codePerfSchema !== SUPPORTED_CODE_PERF_SCHEMA
+        || info.capabilities.codePerfServerAllocatedIds !== true
+        || info.capabilities.codePerfEdit !== true
+        || info.capabilities.codePerfMutationsWhileRunning !== true
+        || !limits
+        || !Number.isSafeInteger(limits.addressExclusive)
+        || limits.addressExclusive !== 0x10000
+        || !Number.isSafeInteger(limits.maxNameBytes)
+        || limits.maxNameBytes < 0
+        || !Number.isSafeInteger(limits.maxRecords)
+        || limits.maxRecords <= 0
+        || !Number.isSafeInteger(limits.maxTestCount)
+        || limits.maxTestCount <= 0
+        || requiredCommands.some(command => !info.commands.includes(command))) {
+        throw new Error(`v6emul ${info.emulatorVersion} does not provide CodePerf schema 1`);
     }
 }

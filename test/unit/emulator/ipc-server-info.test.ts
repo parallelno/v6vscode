@@ -5,6 +5,7 @@ import {
     validateDebuggerServer,
     validateHardwareStatisticsServer,
     validateMemoryEditServer,
+    validatePerformanceServer,
     validateWatchpointServer,
 } from '../../../src/emulator/protocol/ipc-server-info';
 import { IpcCommand, IpcResponse } from '../../../src/emulator/protocol/ipc-commands';
@@ -296,5 +297,56 @@ describe('validateHardwareStatisticsServer', () => {
             ...validInfo,
             capabilities: { ...validInfo.capabilities, paletteEntryMutation: false },
         })).to.throw('hardware statistics schema 1');
+    });
+});
+
+describe('validatePerformanceServer', () => {
+    const info = {
+        protocolVersion: 2,
+        emulatorVersion: 'test-build',
+        commands: [
+            IpcCommand.DEBUG_CODE_PERF_ADD,
+            IpcCommand.DEBUG_CODE_PERF_DEL_ALL,
+            IpcCommand.DEBUG_CODE_PERF_DEL,
+            IpcCommand.DEBUG_CODE_PERF_GET,
+            IpcCommand.DEBUG_CODE_PERF_EXISTS,
+            IpcCommand.DEBUG_CODE_PERF_GET_ALL,
+            IpcCommand.DEBUG_CODE_PERF_EDIT,
+        ],
+        capabilities: {
+            debugger: true,
+            rawFrame: true,
+            rawFrameSchema: 1,
+            stackSampleSchema: 1,
+            codePerfSchema: 1,
+            codePerfServerAllocatedIds: true,
+            codePerfEdit: true,
+            codePerfMutationsWhileRunning: true,
+            codePerfLimits: {
+                addressExclusive: 0x10000,
+                maxNameBytes: 1024,
+                maxRecords: 256,
+                maxTestCount: 20000,
+            },
+        },
+    };
+
+    it('requires schema 1, all capabilities, limits, and the complete command set', () => {
+        expect(() => validatePerformanceServer(info)).not.to.throw();
+        for (const command of info.commands) {
+            expect(() => validatePerformanceServer({
+                ...info, commands: info.commands.filter(candidate => candidate !== command),
+            })).to.throw('does not provide CodePerf schema 1');
+        }
+        for (const capability of [
+            'codePerfServerAllocatedIds', 'codePerfEdit', 'codePerfMutationsWhileRunning',
+        ] as const) {
+            expect(() => validatePerformanceServer({
+                ...info, capabilities: { ...info.capabilities, [capability]: false },
+            })).to.throw('does not provide CodePerf schema 1');
+        }
+        expect(() => validatePerformanceServer({
+            ...info, capabilities: { ...info.capabilities, codePerfLimits: undefined },
+        })).to.throw('does not provide CodePerf schema 1');
     });
 });

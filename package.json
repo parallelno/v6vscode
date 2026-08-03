@@ -59,6 +59,18 @@
         "icon": "$(add)"
       },
       {
+        "command": "v6.refreshPerformance",
+        "title": "Refresh Performance",
+        "category": "V6",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "v6.addPerformance",
+        "title": "Add Performance Test",
+        "category": "V6",
+        "icon": "$(add)"
+      },
+      {
         "command": "v6.refreshPorts",
         "title": "Refresh Ports",
         "category": "V6",
@@ -94,6 +106,11 @@
       {
         "command": "v6emul.toggleMemoryEdits",
         "title": "Memory Edits",
+        "category": "v6emul"
+      },
+      {
+        "command": "v6emul.togglePerformance",
+        "title": "Performance",
         "category": "v6emul"
       },
       {
@@ -158,6 +175,16 @@
         {
           "command": "v6.refreshMemoryEdits",
           "when": "activeWebviewPanelId == v6.memoryEdits",
+          "group": "navigation@2"
+        },
+        {
+          "command": "v6.addPerformance",
+          "when": "activeWebviewPanelId == v6.performance",
+          "group": "navigation@1"
+        },
+        {
+          "command": "v6.refreshPerformance",
+          "when": "activeWebviewPanelId == v6.performance",
           "group": "navigation@2"
         },
         {

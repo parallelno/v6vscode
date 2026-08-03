@@ -112,6 +112,26 @@ export interface MemoryEditRestoreResponse {
     deleted: true;
 }
 
+export interface CodePerfInput {
+    name: string;
+    addrStart: number;
+    addrEnd: number;
+    active: boolean;
+}
+
+export interface CodePerfSnapshot extends CodePerfInput {
+    id: number;
+    averageClockCycles: number;
+    testCount: number;
+}
+
+export interface CodePerfLimits {
+    addressExclusive: number;
+    maxNameBytes: number;
+    maxRecords: number;
+    maxTestCount: number;
+}
+
 // ---------------------------------------------------------------------------
 // Stop detection
 // ---------------------------------------------------------------------------

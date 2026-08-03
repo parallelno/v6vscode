@@ -28,6 +28,7 @@ describe('Standalone emulator panels', () => {
         for (const provider of [
             'src/debug/views/hex-viewer-provider.ts',
             'src/debug/views/memory-edits-panel.ts',
+            'src/debug/views/performance-panel.ts',
             'src/debug/views/ports-provider.ts',
             'src/debug/views/hardware-statistics-provider.ts',
             'src/debug/views/watchpoints-provider.ts',
@@ -51,7 +52,7 @@ describe('Standalone emulator panels', () => {
     });
 
     it('owns standalone debug tools as WebviewPanels with complete panel APIs', () => {
-        for (const provider of ['src/debug/views/hex-viewer-provider.ts', 'src/debug/views/memory-edits-panel.ts', 'src/debug/views/symbols-panel.ts', 'src/debug/views/ports-provider.ts', 'src/debug/views/watchpoints-provider.ts']) {
+        for (const provider of ['src/debug/views/hex-viewer-provider.ts', 'src/debug/views/memory-edits-panel.ts', 'src/debug/views/performance-panel.ts', 'src/debug/views/symbols-panel.ts', 'src/debug/views/ports-provider.ts', 'src/debug/views/watchpoints-provider.ts']) {
             const source = read(provider);
             expect(source).to.include('createWebviewPanel(');
             expect(source).to.include('this.panel.reveal();');
@@ -126,6 +127,32 @@ describe('Standalone emulator panels', () => {
         expect(script).to.include('if (editingAddress === null && !adding) render()');
         expect(script).to.include("if (event.key === 'Enter' && !event.isComposing)");
         expect(script).to.include('row.requestSubmit()');
+    });
+
+    it('contributes the Performance panel with editing, navigation, and bulk actions', () => {
+        const manifest = JSON.parse(read('package.json'));
+        const titleActions = manifest.contributes.menus['editor/title'];
+        expect(titleActions.find((item: { command: string }) => item.command === 'v6.addPerformance'))
+            .to.include({ when: 'activeWebviewPanelId == v6.performance', group: 'navigation@1' });
+        expect(titleActions.find((item: { command: string }) => item.command === 'v6.refreshPerformance'))
+            .to.include({ when: 'activeWebviewPanelId == v6.performance', group: 'navigation@2' });
+
+        const panel = read('src/debug/views/performance-panel.ts');
+        const script = read('src/debug/views/assets/performance.js');
+        const entryMenu = panel.match(/<div id="menu".*?<\/div>/s)?.[0] ?? '';
+        const listMenu = panel.match(/<div id="list-menu".*?<\/div>/s)?.[0] ?? '';
+        for (const action of ['disable', 'disableAll', 'delete', 'deleteAll']) {
+            expect(entryMenu).to.include(`data-action="${action}"`);
+        }
+        for (const action of ['add', 'disableAll', 'deleteAll']) {
+            expect(listMenu).to.include(`data-action="${action}"`);
+        }
+        expect(panel).to.include('this.symbols.sourceAtExactAddress(entry.addrStart)');
+        expect(script).to.include("post({ type: 'setActivity', id: entry.id, active: input.checked })");
+        expect(script).to.include("editable.addEventListener('dblclick'");
+        expect(script).to.include("post({ type: 'reveal', id: entry.id })");
+        expect(script).to.include('draft[key] = input.value');
+        expect(script).to.include('if (editingId === null && !adding) render()');
     });
 
     it('marks changed port cells visually and accessibly', () => {

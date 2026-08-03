@@ -29,7 +29,7 @@ Templates live in `src/templates/` and use `{{key}}` placeholder expansion.
 
 ## v6emul Panel Toggles
 
-The `v6emul` Activity Bar container, also available through **View > Open View... > v6emul**, contains launchers for Settings, Display, Hex Viewer, Memory Edits, Symbols, Ports, and Watchpoints. Each launcher creates an editor panel when closed and disposes it when open. Open panels show a check icon and `Open` state; closing a panel tab clears that state. The same toggle commands remain available in the Command Palette under the `v6emul` category.
+The `v6emul` Activity Bar container, also available through **View > Open View... > v6emul**, contains launchers for Settings, Display, Hex Viewer, Memory Edits, Performance, Symbols, Ports, and Watchpoints. Each launcher creates an editor panel when closed and disposes it when open. Open panels show a check icon and `Open` state; closing a panel tab clears that state. The same toggle commands remain available in the Command Palette under the `v6emul` category.
 
 VS Code's extension API does not expose the built-in **View** menubar as a menu contribution location. A direct **View > v6emul** submenu cannot be contributed by an extension; `menubar/view` is ignored by the host.
 
@@ -42,6 +42,10 @@ Refreshes the currently visible address interval in the standalone Hex Viewer pa
 Refreshes the server's complete tracked byte-edit snapshot, including original, entered, and current values. The standalone panel requires memory-edit schema 1 and commands `74..78`, `99`, and `100`. Row actions copy values, navigate to Hex Viewer, restore while recreating an inactive entry, delete tracking, or restore and delete.
 
 The **v6emul: Symbols** toggle opens a standalone symbol browser backed by the active project's ELF/DWARF debug artifact. It supports incremental name/value-expression filtering, search history, source navigation, clipboard actions, and resolved navigation into Hex Viewer without requiring an emulator connection for browsing.
+
+## V6: Refresh Performance
+
+Refreshes the authoritative CodePerf test collection and sampled statistics. The standalone panel requires CodePerf schema 1 and commands `79..83`, `101`, and `102`. It supports name filtering, inline name/range editing, Activity toggles, source navigation from the start address, and row or collection disable/delete actions.
 
 ## V6: Refresh Ports
 
