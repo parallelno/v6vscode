@@ -77,8 +77,8 @@ Important limitations:
 - `DEBUG_CODE_PERF_GET` is a single-address lookup, not a collection query.
 - `CodePerf::ToJson()` omits `averageCcDiff` and `tests`, so no IPC request can return the requested Statistics value.
 - There is no get-all command.
-- There is no edit command. Reusing `ADD` replaces the object and resets its statistics. Changing `addrStart` requires a separate delete and add and is not atomic.
-- There is no disable-all command. The client cannot implement it by iteration because it cannot enumerate records; replacing records through `ADD` would also reset statistics.
+- Editing uses `DEBUG_CODE_PERF_ADD`, which replaces the object at `addrStart` and resets its statistics. Changing `addrStart` requires `DEBUG_CODE_PERF_DEL` for the old address followed by `DEBUG_CODE_PERF_ADD` for the edited record.
+- There is no collection query, so the client cannot currently implement Disable All by submitting each known record through `DEBUG_CODE_PERF_ADD` with `active: false`.
 - The server does not advertise a CodePerf schema, limits, or mutation-while-running behavior through `GET_SERVER_INFO`.
 - Parsing relies directly on JSON conversion and does not provide the structured field validation used by newer debug protocols.
 
@@ -135,7 +135,7 @@ Formatting rules:
 - Addresses use uppercase four-digit `0xNNNN` notation and represent the server's 16-bit CPU `Addr` values directly.
 - Statistics is exactly `average cc: N, tests: M`, using base-10 numbers. Round the average to the nearest integer to match the existing `CodePerf::AddrToStr()` presentation unless the agreed server schema specifies a different precision.
 - Sort rows by ascending start address, then end address, then name.
-- Preserve selection, focus, and an active draft by stable server test ID across snapshot replacement.
+- Preserve selection, focus, and an active draft by start address across snapshot replacement. When an edit changes the start address, transfer selection to the acknowledged new address.
 - Assign all server and user text through `textContent` or form values, never `innerHTML`.
 
 ### 3.3 Search
@@ -148,7 +148,7 @@ Matching is a case-insensitive substring by default. An empty query shows every 
 
 The table context-menu **Add** action inserts one local draft row, focuses Name, and does not contact the emulator until submission. Only one draft or edited row may exist at a time.
 
-Activity is the exception to the table's double-click editing behavior: one normal click on its checkbox toggles the acknowledged state and immediately submits that Activity-only change. Disable the checkbox while its mutation is in flight and restore the acknowledged state if the mutation fails. Do not require a double-click or open the rest of the row for editing.
+Activity is the exception to the table's double-click editing behavior: one normal click on its checkbox immediately submits the complete record through `DEBUG_CODE_PERF_ADD` with the toggled `active` value. This replacement resets that test's statistics. Disable the checkbox while its mutation is in flight and restore the acknowledged state if the mutation fails. Do not require a double-click or open the rest of the row for editing.
 
 Double-clicking any other editable cell enters inline edit mode:
 
@@ -166,9 +166,9 @@ Keyboard behavior:
 - `Space` toggles Activity when its checkbox has focus.
 - Invalid input keeps edit mode open, applies VS Code error styling, connects the error with `aria-describedby`, and sends no IPC request.
 
-The webview sends the session generation, stable test ID for an existing row, and a complete candidate. `PerformanceService` validates it again, serializes the mutation, refreshes the authoritative collection, and exits edit mode only when the acknowledged row matches. Do not optimistically replace an acknowledged row.
+The webview sends the session generation, original start address for an existing row, and a complete candidate. `PerformanceService` validates it again and serializes the mutation. If the start address is unchanged, send `DEBUG_CODE_PERF_ADD` with the complete candidate. If it changed, send `DEBUG_CODE_PERF_DEL` for the original start address and then `DEBUG_CODE_PERF_ADD` with the complete candidate. Refresh the authoritative collection afterward and exit edit mode only when the acknowledged row matches. Do not optimistically replace an acknowledged row.
 
-Changing Activity or Name must preserve statistics. Changing either address may reset statistics because it changes the measured region, but the server must perform that change atomically and return the resulting snapshot.
+Every edit, including Activity or Name changes, replaces the server record through `DEBUG_CODE_PERF_ADD` and therefore resets `averageCcDiff`, `tests`, and the in-progress sample. This reset is expected. If Add fails after deleting a record whose start address changed, reconcile immediately so the panel shows the actual server state and report the failed edit.
 
 ### 3.5 Double-click source navigation
 
@@ -203,7 +203,7 @@ Keep inapplicable actions visible and visually muted through the native `disable
 - Delete is disabled when the selected row no longer exists or its mutation is in flight.
 - Delete All is disabled when the collection is empty or mutation is unavailable, including immediately after a successful Delete All.
 
-Disable and Disable All retain records and accumulated statistics. Delete removes one record without affecting others. Delete All removes the complete server collection and requires a VS Code modal confirmation containing the record count.
+Disable resubmits the complete selected record through `DEBUG_CODE_PERF_ADD` with `active: false`. Disable All serially resubmits every active record in the acknowledged collection the same way, then refreshes once; report partial failures. Both actions retain records but reset statistics for each replaced record. Delete removes one record without affecting others. Delete All removes the complete server collection and requires a VS Code modal confirmation containing the record count.
 
 Close the menu on action, `Escape`, outside click, scroll, edit start, snapshot replacement, session change, panel hide, or disposal. Return focus to the original row when it still exists, otherwise to the table body.
 
@@ -259,7 +259,7 @@ test/
 
 ### 4.3 Synchronization
 
-- Every webview operation carries the current session generation and stable server test ID.
+- Every webview operation carries the current session generation and the acknowledged start address that identifies the server record.
 - Serialize mutations; do not coalesce distinct mutations.
 - After every mutation, fetch and validate the complete collection before publishing it.
 - While visible, poll the complete snapshot once per second so Statistics changes while execution runs. Stop polling when hidden, disposed, disconnected, or unsupported.
@@ -280,7 +280,7 @@ Add typed request/response models and strict runtime decoders for the agreed ser
 
 Add `validatePerformanceServer` beside the existing server-info validators. Require the agreed schema version, mutation-while-running declaration, limits, and all commands needed by the panel before enabling mutations.
 
-The service API should expose immutable `snapshot`, `available`, `refresh`, `add`, `edit`, `disable`, `disableAll`, `delete`, and `deleteAll` operations. Preserve server fields the panel does not edit.
+The service API should expose immutable `snapshot`, `available`, `refresh`, `add`, `edit`, `disable`, `disableAll`, `delete`, and `deleteAll` operations. `edit`, `disable`, and each step of `disableAll` use `DEBUG_CODE_PERF_ADD` with a complete record; `edit` first uses `DEBUG_CODE_PERF_DEL` when the start address changes. Preserve server fields the panel does not edit.
 
 ### 5.3 Panel and webview
 
@@ -297,7 +297,7 @@ Add focused tests for:
 1. Capability negotiation and every required command.
 2. Snapshot decoding, 16-bit address boundaries, duplicate IDs, invalid statistics, and malformed names.
 3. Service session generations, stale-response rejection, mutation serialization, post-mutation reconciliation, polling without overlap, and polling shutdown when hidden/disconnected.
-4. Add, complete-row Edit, Disable, Disable All, Delete, and Delete All success/failure behavior.
+4. Add, ADD-backed complete-row Edit, Disable, serial Disable All, Delete, and Delete All success/failure behavior, including partial Disable All and failed Add after an address-changing delete.
 5. Name filtering, empty query, case-insensitive matching, query persistence, and 256-character bounds.
 6. Click separation: one click on Activity submits its toggle, double-clicking other editable cells enters edit mode, and row/Statistics double-click requests source navigation.
 7. Address and UTF-8 name validation, Enter/Escape/Tab behavior, and no IPC message for invalid drafts.
@@ -305,7 +305,7 @@ Add focused tests for:
 9. Statistics formatting and refresh while running.
 10. Source navigation success, missing exact DWARF address, and project-root resolution.
 11. Launcher toggle state, direct tab close, reopen behavior, and refresh command routing.
-12. Live-server contract tests proving statistics survive Name/Activity edits and Disable All, address edits are atomic, 16-bit boundaries are enforced, and collection snapshots update while execution runs.
+12. Live-server contract tests proving every ADD-backed edit and disable resets statistics, address-changing edits use Delete then Add, 16-bit boundaries are enforced, and collection snapshots update while execution runs.
 
 Run `npm run compile` and the focused unit suites after each extension slice, then `npm run test:unit` and the regression suite before completion.
 
@@ -333,27 +333,11 @@ The table, search, Statistics column, refresh, Disable All, Delete All enablemen
 
 #### New server functionality and recommendations
 
-Add a versioned structured CodePerf snapshot command, recommended as `DEBUG_CODE_PERF_GET_ALL`, returning a deterministically ordered array. Each entry must include stable ID, name, numeric 16-bit start/end addresses, activity, finite numeric average clock cycles, and non-negative integer test count. Return an empty array for an empty collection. Keep addresses and statistics numeric on the wire and format them in the client.
+Add a versioned structured CodePerf snapshot command, recommended as `DEBUG_CODE_PERF_GET_ALL`, returning an array ordered by start address. Each entry must include name, numeric 16-bit start/end addresses, activity, finite numeric average clock cycles, and non-negative integer test count. Return an empty array for an empty collection. Keep addresses and statistics numeric on the wire and format them in the client. The start address remains the record key; no separate server ID is required.
 
 An update-counter command is not required for this panel. The client must fetch full snapshots periodically while the panel is visible because statistics change without definition mutations; a definition-only counter could not indicate those changes. Construct each snapshot coherently on the emulator thread and document whether an in-progress sample is included.
 
-### 7.2 Atomic editing and activity changes that preserve statistics
-
-#### Description of the feature which implementation is blocked by the server code
-
-Inline editing, Disable, and Disable All require atomic server mutations. Name and Activity changes must retain accumulated statistics, while changing the start key must not create a transient duplicate or delete the wrong record.
-
-#### Current server solution that is not enough
-
-`DEBUG_CODE_PERF_ADD` replaces the complete `CodePerf` object at `addrStart`, resetting `averageCcDiff`, `tests`, and in-progress state. Changing the start address requires client-side `DEL` followed by `ADD`, which is non-atomic and loses the old record if Add fails. There is no Disable All operation, and the client cannot enumerate records to emulate it. Records have no stable identity independent of the editable start address.
-
-#### New server functionality and recommendations
-
-Give each record a stable server-owned ID and add an atomic edit operation that accepts the ID plus a complete validated definition. Preserve statistics when only Name or Activity changes. Reset statistics when either endpoint changes, and return or document that reset explicitly. Reject unknown IDs rather than silently adding a second record.
-
-Add a bulk disable operation, recommended as `DEBUG_CODE_PERF_DISABLE_ALL`, that atomically sets every active record inactive, preserves statistics, and reports the affected count. Keep `DEBUG_CODE_PERF_DEL_ALL` for deletion. Define idempotent behavior for already-disabled and empty collections.
-
-### 7.3 Capability negotiation, limits, and validation
+### 7.2 Capability negotiation, limits, and validation
 
 #### Description of the feature which implementation is blocked by the server code
 
@@ -361,7 +345,7 @@ The extension must determine whether a connected emulator can safely support the
 
 #### Current server solution that is not enough
 
-`GET_SERVER_INFO` does not advertise a CodePerf schema, limits, or mutations-while-running behavior. Current handlers index JSON fields directly and rely on implicit conversion. There is no negotiated maximum name length, explicit endpoint relationship rule, stable-ID contract, or structured error detail for malformed input.
+`GET_SERVER_INFO` does not advertise a CodePerf schema, limits, or mutations-while-running behavior. Current handlers index JSON fields directly and rely on implicit conversion. There is no negotiated maximum name length, explicit endpoint relationship rule, or structured error detail for malformed input.
 
 #### New server functionality and recommendations
 
@@ -374,12 +358,9 @@ Return structured `invalid_request` errors with at least `details.command` and `
 ### Server contract
 
 - [ ] Define and advertise CodePerf schema 1, limits, lifecycle, and mutation-while-running behavior.
-- [ ] Add stable server-owned performance-test IDs.
 - [ ] Add a structured get-all snapshot containing definitions and runtime statistics.
 - [ ] Add strict field validation and structured errors.
-- [ ] Add atomic Edit preserving statistics for Name/Activity and explicitly resetting them for endpoint changes.
-- [ ] Add atomic Disable All preserving statistics.
-- [ ] Define empty, missing-ID, duplicate-range, equal-endpoint, and sample-count saturation behavior.
+- [ ] Define empty, missing-address, duplicate-range, equal-endpoint, and sample-count saturation behavior.
 - [ ] Add server unit and IPC contract tests for all commands, 16-bit address limits, persistence, and statistics.
 
 ### Extension protocol and service
@@ -387,7 +368,7 @@ Return structured `invalid_request` errors with at least `details.command` and `
 - [ ] Add CodePerf schema/limit capability models and `validatePerformanceServer`.
 - [ ] Add typed request/response models and strict runtime codecs.
 - [ ] Implement `PerformanceService` with immutable snapshots and session generations.
-- [ ] Implement serialized Add/Edit/Disable/Disable All/Delete/Delete All operations.
+- [ ] Implement serialized Add/Edit/Disable/Disable All/Delete/Delete All operations, using Add for edits/activity changes and Delete then Add when the start address changes.
 - [ ] Add post-mutation full reconciliation and visible-only statistics polling.
 - [ ] Add service, codec, validation, stale-response, and live-contract tests.
 
@@ -416,4 +397,4 @@ Return structured `invalid_request` errors with at least `details.command` and `
 - [ ] Update user, command, emulator, and architecture documentation.
 - [ ] Run `npm run compile`, focused unit tests, `npm run test:unit`, and regression tests.
 - [ ] Verify the panel manually in an Extension Development Host while paused, running, hidden/reopened, disconnected/reconnected, and after Delete All.
-- [ ] Verify against a live compatible emulator that statistics update and survive Name/Activity/Disable All mutations.
+- [ ] Verify against a live compatible emulator that statistics update while running and reset after Edit, Activity toggle, Disable, and Disable All replacements.
