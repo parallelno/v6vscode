@@ -47,9 +47,10 @@ describe('Performance webview contract', () => {
         expect(script).not.to.include('function parseAddress');
     });
 
-    it('uses half-width tracks for activity, start, and end columns', () => {
+    it('uses compact activity and name tracks with wider address columns', () => {
         expect(styles).to.include('minmax(31px, .3fr)');
-        expect(styles.match(/minmax\(46px, \.425fr\)/g)).to.have.length(2);
+        expect(styles).to.include('minmax(63px, .7fr)');
+        expect(styles.match(/minmax\(92px, \.85fr\)/g)).to.have.length(2);
         expect(styles).to.include('justify-content: center');
     });
 

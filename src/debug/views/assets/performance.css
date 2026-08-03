@@ -1,6 +1,6 @@
 :root {
     color-scheme: light dark;
-    --columns: minmax(31px, .3fr) minmax(125px, 1.4fr) minmax(46px, .425fr) minmax(46px, .425fr) minmax(185px, 1.6fr);
+    --columns: minmax(31px, .3fr) minmax(63px, .7fr) minmax(92px, .85fr) minmax(92px, .85fr) minmax(185px, 1.6fr);
 }
 * { box-sizing: border-box; }
 body { margin: 0; padding: 12px; color: var(--vscode-foreground); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: 12px; overflow: hidden; }
@@ -11,7 +11,7 @@ body { margin: 0; padding: 12px; color: var(--vscode-foreground); background: va
 #count, #status { color: var(--vscode-descriptionForeground); }
 #count { white-space: nowrap; }
 #status { height: 24px; padding: 4px 0; }
-#table { height: calc(100vh - 78px); min-width: 450px; border-top: 1px solid var(--vscode-panel-border); overflow: auto; }
+#table { height: calc(100vh - 78px); min-width: 465px; border-top: 1px solid var(--vscode-panel-border); overflow: auto; }
 .header, .row { display: grid; grid-template-columns: var(--columns); min-height: 24px; align-items: center; }
 .header { position: sticky; top: 0; z-index: 1; color: var(--vscode-descriptionForeground); background: var(--vscode-editor-background); border-bottom: 1px solid var(--vscode-panel-border); font-weight: 600; }
 .header span, .cell { min-width: 0; padding: 2px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
