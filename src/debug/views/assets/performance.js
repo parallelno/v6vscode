@@ -26,19 +26,6 @@
     let listMenuSource = null;
 
     function post(message) { vscode.postMessage({ generation, ...message }); }
-    function hex(value) { return `0x${Number(value).toString(16).toUpperCase().padStart(4, '0')}`; }
-    function parseAddress(text) {
-        const value = text.trim(); let parsed;
-        if (/^[0-9]+$/.test(value)) parsed = parseInt(value, 10);
-        else if (/^\$[0-9a-f]+$/i.test(value)) parsed = parseInt(value.slice(1), 16);
-        else if (/^0x[0-9a-f]+$/i.test(value)) parsed = parseInt(value.slice(2), 16);
-        else if (/^[0-9a-f]+h$/i.test(value)) parsed = parseInt(value.slice(0, -1), 16);
-        else throw new Error('Enter an address as decimal, $NNNN, 0xNNNN, or NNNNh');
-        if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 0xFFFF) {
-            throw new Error('Address must be in the range 0..65535');
-        }
-        return parsed;
-    }
     function clearInvalid(...inputs) {
         for (const input of inputs) { input.classList.remove('invalid'); input.removeAttribute('aria-describedby'); }
     }
@@ -49,15 +36,7 @@
     function inputValue(name, addrStart, addrEnd, active) {
         clearInvalid(name, addrStart, addrEnd);
         if (new TextEncoder().encode(name.value).length > 1024) return invalid(name, 'Name exceeds 1024 UTF-8 bytes');
-        let start; let end;
-        try { start = parseAddress(addrStart.value); } catch (error) {
-            return invalid(addrStart, error instanceof Error ? error.message : String(error));
-        }
-        try { end = parseAddress(addrEnd.value); } catch (error) {
-            return invalid(addrEnd, error instanceof Error ? error.message : String(error));
-        }
-        if (start >= end) return invalid(addrEnd, 'End address must be greater than start address');
-        return { name: name.value, addrStart: start, addrEnd: end, active };
+        return { name: name.value, addrStart: addrStart.value, addrEnd: addrEnd.value, active };
     }
     function visibleEntries() {
         const needle = query.value.trim().toLocaleLowerCase();
@@ -78,9 +57,7 @@
                 post({ type: 'setActivity', id: entry.id, active: input.checked });
             }
         });
-        const label = document.createElement('span'); label.className = 'activity-label';
-        label.textContent = entry.active ? 'Active' : 'Disabled';
-        element.append(input, label); return element;
+        element.appendChild(input); return element;
     }
     function select(id, row) {
         selectedId = id; rows.querySelector('.selected')?.classList.remove('selected'); row?.classList.add('selected');
@@ -98,15 +75,16 @@
         row.setAttribute('role', 'row'); row.tabIndex = 0; row.dataset.id = String(entry.id);
         const name = cell(entry.name, 'editable'); name.title = entry.name;
         name.setAttribute('aria-label', entry.name || 'Unnamed performance test');
-        const start = cell(hex(entry.addrStart), 'editable');
-        const end = cell(hex(entry.addrEnd), 'editable');
+        const start = cell(entry.addrStart, 'editable');
+        const end = cell(entry.addrEnd, 'editable');
+        start.title = entry.addrStart; end.title = entry.addrEnd;
         const stats = cell(`average cc: ${Math.round(entry.averageClockCycles)}, tests: ${entry.testCount}`, 'statistics');
         row.append(checkboxCell(entry), name, start, end, stats);
         row.addEventListener('click', () => select(entry.id, row));
         for (const editable of [name, start, end]) editable.addEventListener('dblclick', event => {
             event.stopPropagation(); if (canMutate && !submitting) {
                 editingId = entry.id;
-                editDraft = { name: entry.name, addrStart: hex(entry.addrStart), addrEnd: hex(entry.addrEnd), active: entry.active };
+                editDraft = { name: entry.name, addrStart: entry.addrStart, addrEnd: entry.addrEnd, active: entry.active };
                 closeMenus(); render();
             }
         });
@@ -122,20 +100,17 @@
     function editorRow(entry) {
         const row = document.createElement('form'); row.className = `row${entry ? '' : ' draft'}`; row.setAttribute('role', 'row');
         const values = entry
-            ? editDraft ?? { name: entry.name, addrStart: hex(entry.addrStart), addrEnd: hex(entry.addrEnd), active: entry.active }
+            ? editDraft ?? { name: entry.name, addrStart: entry.addrStart, addrEnd: entry.addrEnd, active: entry.active }
             : draft;
         const activeCell = cell('', 'toggle');
         const active = document.createElement('input'); active.type = 'checkbox'; active.checked = values.active;
         active.setAttribute('aria-label', 'Activity');
-        const activeLabel = document.createElement('span'); activeLabel.className = 'activity-label';
-        activeLabel.textContent = active.checked ? 'Active' : 'Disabled';
         active.addEventListener('change', () => {
-            activeLabel.textContent = active.checked ? 'Active' : 'Disabled';
             if (entry && editDraft) { editDraft.active = active.checked; }
         });
-        activeCell.append(active, activeLabel);
-        const name = textInput('Name', values.name); const start = textInput('Start address', values.addrStart);
-        const end = textInput('End address', values.addrEnd);
+        activeCell.appendChild(active);
+        const name = textInput('Name', values.name); const start = textInput('Start', values.addrStart);
+        const end = textInput('End', values.addrEnd);
         for (const control of [active, name.input, start.input, end.input]) {
             control.disabled = !canMutate || submitting;
         }
@@ -168,7 +143,7 @@
     }
     function textInput(label, value) {
         const holder = cell('', 'editable'); const input = document.createElement('input');
-        input.type = 'text'; input.value = value; input.setAttribute('aria-label', label); holder.appendChild(input);
+        input.type = 'text'; input.value = value; input.maxLength = 256; input.setAttribute('aria-label', label); holder.appendChild(input);
         return { cell: holder, input };
     }
     function startAdd() {
@@ -257,7 +232,13 @@
         }
         if (message.type === 'operation') {
             submitting = false; live.textContent = message.message || (message.ok ? 'Performance test updated' : 'Performance operation failed');
-            if (message.ok) { editingId = null; editDraft = null; if (message.operation === 'add') adding = false; } render();
+            if (message.ok) { editingId = null; editDraft = null; if (message.operation === 'add') adding = false; }
+            render();
+            if (!message.ok && message.field) {
+                const label = message.field === 'addrStart' ? 'Start' : 'End';
+                const input = document.querySelector(`input[aria-label="${label}"]`);
+                if (input) invalid(input, message.message);
+            }
         }
         if (message.type === 'dismissMenus') closeMenus();
         if (message.type === 'restoredQuery') { query.value = message.value; render(); }

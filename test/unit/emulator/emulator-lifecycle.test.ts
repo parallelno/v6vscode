@@ -140,6 +140,62 @@ describe('EmulatorLifecycle session ownership', () => {
         expect(launchRequest).not.to.have.property('loadAddr');
     });
 
+    it('enables debugger processing after loading a run-owned ROM', async () => {
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v6-run-'));
+        const romPath = path.join(tempDir, 'test.rom');
+        fs.writeFileSync(romPath, Buffer.from([0x00, 0x76]));
+        const requests: Array<{ command: IpcCommand; data: any }> = [];
+        const serverInfo = {
+            protocolVersion: 2,
+            emulatorVersion: 'test-build',
+            commands: [IpcCommand.GET_FRAME_RAW, IpcCommand.DEBUG_ATTACH],
+            capabilities: { rawFrameSchema: 1 },
+        };
+        const client = {
+            connected: true,
+            connect: async () => {},
+            disconnect: () => {},
+            send: async (command: IpcCommand, data: any) => {
+                requests.push({ command, data });
+                if (command === IpcCommand.GET_SERVER_INFO) {
+                    return { ok: true, data: serverInfo };
+                }
+                if (command === IpcCommand.PING) {
+                    return { ok: true };
+                }
+                return { ok: true };
+            },
+        };
+        const lifecycle = new EmulatorLifecycle(
+            { resolve: () => 'v6emul' } as any,
+            {
+                launch: (request: any) => ({
+                    port: request.tcpPort,
+                    spawnResult: { process: {}, exitPromise: new Promise(() => {}) },
+                }),
+            } as any,
+            client as any,
+            { info: () => {}, error: () => {}, debug: () => {} } as any,
+            { resolveExtensionPath: () => 'boot.bin' } as any,
+        );
+
+        try {
+            await lifecycle.start({
+                name: 'test',
+                run: { executable: romPath },
+                uri: {} as any,
+            });
+        } finally {
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+
+        const loadIndex = requests.findIndex(request => request.command === IpcCommand.LOAD_ROM);
+        const attachIndex = requests.findIndex(request => request.command === IpcCommand.DEBUG_ATTACH);
+        expect(loadIndex).to.be.greaterThan(-1);
+        expect(attachIndex).to.be.greaterThan(loadIndex);
+        expect(requests[attachIndex].data).to.deep.equal({ data: true });
+    });
+
     it('loads the debug ROM paused after breakpoint configuration', async () => {
         const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v6-debug-'));
         const romPath = path.join(tempDir, 'test.rom');

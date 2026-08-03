@@ -14,8 +14,8 @@ import { Logger } from '../../platform/logging/logger';
 import { DebugSymbolService } from '../metadata/debug-symbol-service';
 import { evaluateSymbolExpression } from '../utilities/symbol-expression';
 import { WatchpointService } from '../watchpoints/watchpoint-service';
+import { EntryExpressionStore } from './entry-expression-store';
 import { HexViewerProvider } from './hex-viewer-provider';
-import { WatchpointExpressionStore } from './watchpoint-expression-store';
 import {
     WatchpointCandidate,
     WatchpointEditCandidate,
@@ -31,7 +31,7 @@ export class WatchpointsProvider implements vscode.Disposable {
     private panel: vscode.WebviewPanel | undefined;
     private readonly memory: MemoryService;
     private readonly symbols = new DebugSymbolService();
-    private readonly addressExpressions = new WatchpointExpressionStore();
+    private readonly addressExpressions = new EntryExpressionStore<WatchpointEntry, 'globalAddr'>(['globalAddr']);
     private pollTimer: ReturnType<typeof setInterval> | undefined;
     private readonly stateListener: () => void;
     private readonly changeListener: () => void;
@@ -108,7 +108,7 @@ export class WatchpointsProvider implements vscode.Disposable {
                 active: true,
                 comment: '',
             });
-            this.addressExpressions.set(added.id, expression);
+            this.addressExpressions.set(added.id, { globalAddr: expression });
             this.postSnapshot();
         });
     }
@@ -140,14 +140,14 @@ export class WatchpointsProvider implements vscode.Disposable {
                 case 'add': if (this.current(message)) {
                     await this.runOperation('add', async () => {
                         const added = await this.service.add(await this.resolveCandidate(message.candidate));
-                        this.addressExpressions.set(added.id, message.candidate.globalAddr);
+                        this.addressExpressions.set(added.id, { globalAddr: message.candidate.globalAddr });
                         this.postSnapshot();
                     });
                 } break;
                 case 'edit': if (this.current(message)) {
                     await this.runOperation('edit', async () => {
                         const edited = await this.service.edit(await this.resolveEditCandidate(message.candidate));
-                        this.addressExpressions.set(edited.id, message.candidate.globalAddr);
+                        this.addressExpressions.set(edited.id, { globalAddr: message.candidate.globalAddr });
                         this.postSnapshot();
                     });
                 } break;
@@ -279,12 +279,7 @@ export class WatchpointsProvider implements vscode.Disposable {
     private async resolveCandidate(candidate: WatchpointCandidate): Promise<WatchpointAddRequest> {
         const globalAddr = typeof candidate.globalAddr === 'number'
             ? candidate.globalAddr
-            : evaluateSymbolExpression(candidate.globalAddr, name => {
-                const resolution = this.symbols.resolveSymbol(name);
-                if (resolution.kind === 'missing') { throw new Error(`Symbol not found: ${name}`); }
-                if (resolution.kind === 'ambiguous') { throw new Error(`Symbol is ambiguous: ${name}`); }
-                return resolution.symbol.address;
-            });
+            : evaluateSymbolExpression(candidate.globalAddr, name => this.symbols.requireSymbolAddress(name));
         return { ...candidate, globalAddr };
     }
 

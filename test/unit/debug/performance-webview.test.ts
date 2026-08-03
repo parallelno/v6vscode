@@ -11,12 +11,13 @@ describe('Performance webview contract', () => {
     const styles = read('src/debug/views/assets/performance.css');
 
     it('renders the specified table and statistics without HTML injection', () => {
-        for (const heading of ['Activity', 'Name', 'Start Address', 'End Address', 'Statistics']) {
+        for (const heading of ['Activity', 'Name', 'Start', 'End', 'Statistics']) {
             expect(panel).to.include(`>${heading}</span>`);
         }
         expect(script).to.include('average cc: ${Math.round(entry.averageClockCycles)}, tests: ${entry.testCount}');
         expect(script).to.include("name.title = entry.name");
-        expect(script).to.include("label.textContent = entry.active ? 'Active' : 'Disabled'");
+        expect(script).not.to.include('activity-label');
+        expect(script).not.to.include("entry.active ? 'Active' : 'Disabled'");
         expect(script).not.to.include('innerHTML');
     });
 
@@ -35,6 +36,21 @@ describe('Performance webview contract', () => {
         expect(script).to.include('editDraft[key] = input.value');
         expect(script).to.include('control.disabled = !canMutate || submitting');
         expect(styles).to.include('.invalid');
+    });
+
+    it('submits and renders address expressions without evaluating them in the webview', () => {
+        expect(script).to.include('addrStart: addrStart.value, addrEnd: addrEnd.value');
+        expect(script).to.include("cell(entry.addrStart, 'editable')");
+        expect(script).to.include("cell(entry.addrEnd, 'editable')");
+        expect(script).to.include('start.title = entry.addrStart; end.title = entry.addrEnd');
+        expect(script).to.include("message.field === 'addrStart' ? 'Start' : 'End'");
+        expect(script).not.to.include('function parseAddress');
+    });
+
+    it('uses half-width tracks for activity, start, and end columns', () => {
+        expect(styles).to.include('minmax(31px, .3fr)');
+        expect(styles.match(/minmax\(46px, \.425fr\)/g)).to.have.length(2);
+        expect(styles).to.include('justify-content: center');
     });
 
     it('keeps menu actions ordered and dismisses menus when the panel hides', () => {

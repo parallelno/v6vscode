@@ -15,6 +15,7 @@ class FakeLifecycle extends EventEmitter {
             IpcCommand.DEBUG_CODE_PERF_DEL, IpcCommand.DEBUG_CODE_PERF_GET,
             IpcCommand.DEBUG_CODE_PERF_EXISTS, IpcCommand.DEBUG_CODE_PERF_GET_ALL,
             IpcCommand.DEBUG_CODE_PERF_EDIT,
+            IpcCommand.DEBUG_ATTACH,
         ],
         capabilities: {
             debugger: true, rawFrame: true, rawFrameSchema: 1, stackSampleSchema: 1,

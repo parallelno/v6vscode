@@ -63,6 +63,13 @@ export class DebugSymbolService {
         return { kind: 'missing' };
     }
 
+    requireSymbolAddress(name: string): number {
+        const resolution = this.resolveSymbol(name);
+        if (resolution.kind === 'missing') { throw new Error(`Symbol not found: ${name}`); }
+        if (resolution.kind === 'ambiguous') { throw new Error(`Symbol is ambiguous: ${name}`); }
+        return resolution.symbol.address;
+    }
+
     symbolsInRange(start: number, end: number): ReadonlyArray<SymbolInfo> {
         return this.index?.symbolsInRange(start, end) ?? [];
     }

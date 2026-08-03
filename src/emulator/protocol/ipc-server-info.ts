@@ -120,6 +120,7 @@ export function validateMemoryEditServer(info: GetServerInfoResponse): void {
 
 export function validatePerformanceServer(info: GetServerInfoResponse): void {
     const requiredCommands = [
+        IpcCommand.DEBUG_ATTACH,
         IpcCommand.DEBUG_CODE_PERF_ADD,
         IpcCommand.DEBUG_CODE_PERF_DEL_ALL,
         IpcCommand.DEBUG_CODE_PERF_DEL,

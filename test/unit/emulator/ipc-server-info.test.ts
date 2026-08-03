@@ -305,6 +305,7 @@ describe('validatePerformanceServer', () => {
         protocolVersion: 2,
         emulatorVersion: 'test-build',
         commands: [
+            IpcCommand.DEBUG_ATTACH,
             IpcCommand.DEBUG_CODE_PERF_ADD,
             IpcCommand.DEBUG_CODE_PERF_DEL_ALL,
             IpcCommand.DEBUG_CODE_PERF_DEL,

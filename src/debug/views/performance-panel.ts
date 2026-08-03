@@ -6,8 +6,11 @@ import { Logger } from '../../platform/logging/logger';
 import { ActiveProjectService } from '../../project/active/active-project-service';
 import { PerformanceService } from '../performance/performance-service';
 import { DebugSymbolService } from '../metadata/debug-symbol-service';
+import { CodePerfInput, CodePerfSnapshot } from '../../emulator/protocol/debug-models';
+import { evaluateSymbolExpression } from '../utilities/symbol-expression';
 import { revealDebugSource } from './debug-source-navigation';
-import { PerformanceHostMessage, PerformanceWebviewMessage } from './performance-messages';
+import { EntryExpressionStore } from './entry-expression-store';
+import { PerformanceCandidate, PerformanceHostMessage, PerformanceWebviewMessage } from './performance-messages';
 import { normalizePerformanceQuery } from './performance-query';
 
 export const PERFORMANCE_PANEL_ID = 'v6.performance';
@@ -18,6 +21,10 @@ const WORKSPACE_STATE_KEY = 'v6.performance.query';
 export class PerformancePanel implements vscode.Disposable {
     private panel: vscode.WebviewPanel | undefined;
     private pollTimer: ReturnType<typeof setInterval> | undefined;
+    private readonly addressExpressions = new EntryExpressionStore<CodePerfSnapshot, 'addrStart' | 'addrEnd'>(
+        ['addrStart', 'addrEnd'],
+        (_field, value) => formatAddress(value),
+    );
     private readonly stateListener: () => void;
     private readonly changeListener: () => void;
 
@@ -88,10 +95,18 @@ export class PerformancePanel implements vscode.Disposable {
                     break;
                 case 'refresh': if (this.current(message)) { await this.refresh(); } break;
                 case 'add': if (this.current(message)) {
-                    await this.runOperation('add', () => this.service.add(message.input));
+                    await this.runOperation('add', async () => {
+                        const added = await this.service.add(this.resolveCandidate(message.input));
+                        this.addressExpressions.set(added.id, message.input);
+                        this.postSnapshot();
+                    });
                 } break;
                 case 'edit': if (this.current(message) && validId(message.id)) {
-                    await this.runOperation('edit', () => this.service.edit(message.id, message.input));
+                    await this.runOperation('edit', async () => {
+                        const edited = await this.service.edit(message.id, this.resolveCandidate(message.input));
+                        this.addressExpressions.set(edited.id, message.input);
+                        this.postSnapshot();
+                    });
                 } break;
                 case 'setActivity': if (this.current(message) && validId(message.id)) {
                     await this.runOperation('setActivity', () => this.service.setActivity(message.id, message.active));
@@ -134,6 +149,7 @@ export class PerformancePanel implements vscode.Disposable {
         }
         this.post({ type: 'state', state: 'loading', message: 'Synchronizing performance tests...', canMutate: false });
         try {
+            await this.loadSymbols();
             await this.service.refresh();
             this.postReadyState();
             this.startPolling();
@@ -205,16 +221,50 @@ export class PerformancePanel implements vscode.Disposable {
     }
 
     private postSnapshot(): void {
+        const generation = this.service.sessionGeneration;
         this.post({
-            type: 'snapshot', generation: this.service.sessionGeneration,
-            entries: this.service.snapshot.map(entry => ({ ...entry })),
+            type: 'snapshot', generation,
+            entries: this.addressExpressions.decorate(this.service.snapshot, generation),
         });
+    }
+
+    private resolveCandidate(candidate: PerformanceCandidate): CodePerfInput {
+        return {
+            ...candidate,
+            addrStart: this.resolveAddress(candidate.addrStart, 'Start address'),
+            addrEnd: this.resolveAddress(candidate.addrEnd, 'End address'),
+        };
+    }
+
+    private resolveAddress(value: string | number, label: string): number {
+        if (typeof value === 'number') { return value; }
+        if (typeof value !== 'string') { throw new Error(`${label}: Expression must be a string`); }
+        if (value.length > 256) { throw new Error(`${label}: Expression exceeds 256 characters`); }
+        try {
+            return evaluateSymbolExpression(value, name => this.symbols.requireSymbolAddress(name));
+        } catch (error) {
+            throw new Error(`${label}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    private async loadSymbols(): Promise<void> {
+        const project = this.activeProjectService.getActiveProject();
+        if (!project?.run.debugArtifact) {
+            this.symbols.clear();
+            return;
+        }
+        try {
+            await this.symbols.load(project.run.debugArtifact, project.run.executable);
+        } catch (error) {
+            this.symbols.clear();
+            this.logger.warn(`performance: debug metadata unavailable: ${error instanceof Error ? error.message : String(error)}`);
+        }
     }
 
     private report(operation: string, error: unknown): void {
         const message = error instanceof Error ? error.message : String(error);
         this.logger.error(`performance: ${message}`);
-        this.post({ type: 'operation', operation, ok: false, message });
+        this.post({ type: 'operation', operation, ok: false, message, field: performanceErrorField(message) });
         this.post({ type: 'state', state: 'error', message, canMutate: false });
     }
 
@@ -228,7 +278,7 @@ export class PerformancePanel implements vscode.Disposable {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${cssUri}"><title>Performance</title></head>
 <body><div class="toolbar"><input id="query" type="search" maxlength="256" aria-label="Search performance tests by name" placeholder="Search by name"><span id="count"></span></div>
-<div id="status" role="status">No active emulator session</div><div id="table" role="grid" aria-label="Performance tests"><div class="header" role="row"><span role="columnheader">Activity</span><span role="columnheader">Name</span><span role="columnheader">Start Address</span><span role="columnheader">End Address</span><span role="columnheader">Statistics</span></div><div id="rows"></div></div><div id="empty" tabindex="0">No performance tests</div><div id="live" class="sr-only" aria-live="polite"></div>
+<div id="status" role="status">No active emulator session</div><div id="table" role="grid" aria-label="Performance tests"><div class="header" role="row"><span role="columnheader">Activity</span><span role="columnheader">Name</span><span role="columnheader">Start</span><span role="columnheader">End</span><span role="columnheader">Statistics</span></div><div id="rows"></div></div><div id="empty" tabindex="0">No performance tests</div><div id="live" class="sr-only" aria-live="polite"></div>
 <div id="menu" role="menu" hidden><button role="menuitem" data-action="disable">Disable</button><button role="menuitem" data-action="disableAll">Disable All</button><button role="menuitem" data-action="delete">Delete</button><button role="menuitem" data-action="deleteAll">Delete All</button></div>
 <div id="list-menu" role="menu" hidden><button role="menuitem" data-action="add">Add</button><button role="menuitem" data-action="disableAll">Disable All</button><button role="menuitem" data-action="deleteAll">Delete All</button></div>
 <script nonce="${nonce}" src="${jsUri}"></script></body></html>`;
@@ -237,3 +287,8 @@ export class PerformancePanel implements vscode.Disposable {
 
 function validId(value: number): boolean { return Number.isSafeInteger(value) && value >= 0 && value <= 0x7FFFFFFF; }
 function formatAddress(value: number): string { return `0x${value.toString(16).toUpperCase().padStart(4, '0')}`; }
+function performanceErrorField(message: string): 'addrStart' | 'addrEnd' | undefined {
+    if (/^(Start address|addrStart)[: ]/.test(message)) { return 'addrStart'; }
+    if (/^(End address|addrEnd)[: ]/.test(message)) { return 'addrEnd'; }
+    return undefined;
+}

@@ -168,6 +168,10 @@ export class EmulatorLifecycle extends EventEmitter {
                 this.logger.info(`v6emul: FDD mounted from "${fddPath}"`);
             }
 
+            if (serverInfo.commands.includes(IpcCommand.DEBUG_ATTACH)) {
+                await this.client.send(IpcCommand.DEBUG_ATTACH, { data: true });
+            }
+
             // Set speed if specified
             if (project.run.speed && SPEED_VALUES[project.run.speed] !== undefined) {
                 await this.client.send(IpcCommand.SET_CPU_SPEED, {
