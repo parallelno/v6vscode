@@ -41,6 +41,7 @@ const POLL_INTERVAL_MS = 20;
 const VARREF_REGISTERS = 1;
 const VARREF_FLAGS = 2;
 const VARREF_STACK = 3;
+const UNKNOWN_SOURCE_REFERENCE = 1;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -155,6 +156,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             case 'configurationDone':    await this.onConfigurationDone(req); break;
             case 'threads':              await this.onThreads(req); break;
             case 'stackTrace':           await this.onStackTrace(req); break;
+            case 'source':                await this.onSource(req); break;
             case 'scopes':               await this.onScopes(req); break;
             case 'variables':            await this.onVariables(req); break;
             case 'continue':             await this.onContinue(req); break;
@@ -355,8 +357,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             id: 1,
             name: frameName,
             instructionPointerReference: hex4(pc),
-            line: 0,
-            column: 0,
+            line: 1,
+            column: 1,
         };
 
         if (srcLoc) {
@@ -368,11 +370,27 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             };
             frame.line = srcLoc.line;
             frame.column = srcLoc.column;
+        } else {
+            frame.source = {
+                name: 'Unknown Source',
+                sourceReference: UNKNOWN_SOURCE_REFERENCE,
+            };
         }
 
         this.sendResponseBody(req, {
             stackFrames: [frame],
             totalFrames: 1,
+        });
+    }
+
+    private async onSource(req: any): Promise<void> {
+        if (req.arguments?.sourceReference !== UNKNOWN_SOURCE_REFERENCE) {
+            this.sendResponse(req, false, 'Unknown source reference');
+            return;
+        }
+        this.sendResponseBody(req, {
+            content: 'Source is unavailable for the current CPU address.',
+            mimeType: 'text/plain',
         });
     }
 
