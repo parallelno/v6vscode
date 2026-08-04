@@ -79,7 +79,7 @@ export class SymbolLinkProvider implements vscode.DocumentLinkProvider {
                 `command:${CMD_REVEAL_SYMBOL_SOURCE}?${encodeURIComponent(JSON.stringify(source))}`,
             );
             const link = new vscode.DocumentLink(range, target);
-            link.tooltip = 'Follow link (Ctrl+Click)';
+            link.tooltip = 'Follow link';
             links.push(link);
         }
         return links;
