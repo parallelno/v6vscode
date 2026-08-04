@@ -5,7 +5,13 @@ import { V6Project } from '../../project/model/v6-project';
 import { V6emulLocator } from '../launcher/v6emul-locator';
 import { V6emulLauncher, EmulatorProcess } from '../launcher/v6emul-launcher';
 import { IpcClient } from '../client/ipc-client';
-import { GetServerInfoResponse, IpcCommand, PingResponse, SPEED_VALUES } from '../protocol/ipc-commands';
+import {
+    GetServerInfoResponse,
+    IpcCommand,
+    PingResponse,
+    SetMemRequest,
+    SPEED_VALUES,
+} from '../protocol/ipc-commands';
 import { getServerInfo, validateDebuggerServer } from '../protocol/ipc-server-info';
 import { Logger } from '../../platform/logging/logger';
 import { PathService } from '../../platform/files/path-service';
@@ -261,6 +267,26 @@ export class EmulatorLifecycle extends EventEmitter {
             autorun: false,
         });
         this.logger.info(`v6emul: debug ROM loaded at 0x${addr.toString(16)}`);
+    }
+
+    async reloadDebugRom(request: DebugLaunchRequest): Promise<void> {
+        if (!this.connected) {
+            throw new V6Error(ErrorCode.EMULATOR_LAUNCH_FAILED, 'Debug emulator is not connected');
+        }
+        if (!request.program.toLowerCase().endsWith('.rom')) {
+            throw new V6Error(ErrorCode.EMULATOR_LAUNCH_FAILED, 'Reload ROM is only available for ROM debug sessions');
+        }
+
+        const data: SetMemRequest = {
+            data: Array.from(fs.readFileSync(request.program)),
+            addr: request.loadAddr ? parseInt(request.loadAddr, 16) : 0x100,
+            autorun: false,
+        };
+        const response = await this.client.send(IpcCommand.SET_MEM, data, 5000, 'critical');
+        if (!response.ok) {
+            throw new V6Error(ErrorCode.EMULATOR_LAUNCH_FAILED, response.error ?? 'Unable to reload debug ROM');
+        }
+        this.logger.info(`v6emul: debug ROM reloaded at 0x${data.addr.toString(16)}`);
     }
 
     setExecutionRunning(running: boolean): void {

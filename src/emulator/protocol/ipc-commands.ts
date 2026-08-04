@@ -151,6 +151,16 @@ export interface LoadRomRequest {
     autorun: boolean;
 }
 
+export interface SetMemRequest {
+    addr: number;
+    data: number[];
+    autorun: boolean;
+}
+
+export interface DebugResetRequest {
+    resetRecorder: boolean;
+}
+
 export interface MountFddRequest {
     data: number[];
     driveIdx: number;

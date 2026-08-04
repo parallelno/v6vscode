@@ -5,6 +5,7 @@ import { EmulatorProcess } from '../../emulator/launcher/v6emul-launcher';
 import { DebugLaunchRequest, EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
 import { EmulatorPanel } from '../../emulator/panel/emulator-panel';
 import {
+    DebugResetRequest,
     IpcCommand,
     GetRegsResponse,
     IsRunningResponse,
@@ -916,6 +917,57 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         } catch (error) {
             this.sendResponse(req, false, error instanceof Error ? error.message : String(error));
         }
+    }
+
+    async reset(): Promise<void> {
+        if (!this.client) { throw new Error('No active emulator session'); }
+
+        const resume = this.sessionState === 'running';
+        this.prepareForRestart();
+        await this.sendControl(IpcCommand.STOP, 'Emulator stop failed');
+        await this.sendControl(IpcCommand.RESET, 'Emulator reset failed');
+        this.sessionState = 'paused';
+        this.lifecycle.setExecutionRunning(false);
+        if (resume) {
+            await this.run();
+        } else {
+            await this.refreshRegs();
+        }
+    }
+
+    async reloadRom(): Promise<void> {
+        if (!this.client) { throw new Error('No active emulator session'); }
+        if (!this.launchRequest?.program.toLowerCase().endsWith('.rom')) {
+            throw new Error('Reload ROM is only available for ROM debug sessions');
+        }
+
+        this.prepareForRestart();
+        await this.sendControl(IpcCommand.STOP, 'Emulator stop failed');
+        await this.sendControl(IpcCommand.RESET, 'Emulator reset failed');
+        await this.sendControl(IpcCommand.RESTART, 'Emulator restart failed');
+        await this.lifecycle.reloadDebugRom(this.launchRequest);
+        const debugResetRequest: DebugResetRequest = { resetRecorder: true };
+        await this.sendControl(
+            IpcCommand.DEBUG_RESET,
+            'Debugger reset failed',
+            debugResetRequest,
+        );
+        this.sessionState = 'paused';
+        this.lifecycle.setExecutionRunning(false);
+        await this.run();
+    }
+
+    private prepareForRestart(): void {
+        this.stopPoll();
+        this.pendingPause = false;
+        this.pendingStep = false;
+        this.pendingStepOverAddr = undefined;
+        this.cachedRegs = null;
+    }
+
+    private async sendControl(command: IpcCommand, errorMessage: string, data?: unknown): Promise<void> {
+        const response = await this.client!.send(command, data, 5000, 'critical');
+        if (!response.ok) { throw new Error(response.error ?? errorMessage); }
     }
 
     // -----------------------------------------------------------------------

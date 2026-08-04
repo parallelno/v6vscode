@@ -232,4 +232,41 @@ describe('EmulatorLifecycle session ownership', () => {
             data: { data: [0x00, 0x76], addr: 0x200, autorun: false },
         }]);
     });
+
+    it('copies a reloaded debug ROM directly to RAM', async () => {
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v6-debug-reload-'));
+        const romPath = path.join(tempDir, 'test.rom');
+        fs.writeFileSync(romPath, Buffer.from([0x00, 0x76]));
+        const requests: Array<{ command: IpcCommand; data: any }> = [];
+        const lifecycle = new EmulatorLifecycle(
+            {} as any,
+            {} as any,
+            {
+                connected: true,
+                disconnect: () => {},
+                send: async (command: IpcCommand, data: any) => {
+                    requests.push({ command, data });
+                    return { ok: true };
+                },
+            } as any,
+            { info: () => {}, error: () => {} } as any,
+            {} as any,
+        );
+        (lifecycle as any)._state = 'connected';
+
+        try {
+            await lifecycle.reloadDebugRom({
+                program: romPath,
+                bootRomPath: 'boot.bin',
+                loadAddr: '0x200',
+            });
+        } finally {
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+
+        expect(requests).to.deep.equal([{
+            command: IpcCommand.SET_MEM,
+            data: { data: [0x00, 0x76], addr: 0x200, autorun: false },
+        }]);
+    });
 });

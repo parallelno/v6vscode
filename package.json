@@ -35,6 +35,18 @@
         "category": "V6"
       },
       {
+        "command": "v6.debug.reset",
+        "title": "Reset",
+        "category": "V6",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "v6.debug.reloadRom",
+        "title": "Reload ROM",
+        "category": "V6",
+        "icon": "$(sync)"
+      },
+      {
         "command": "v6.refreshHardwareStatistics",
         "title": "Refresh Hardware Statistics",
         "category": "V6",
@@ -154,6 +166,18 @@
       ]
     },
     "menus": {
+      "debug/toolBar": [
+        {
+          "command": "v6.debug.reset",
+          "when": "debugType == v6",
+          "group": "navigation@2"
+        },
+        {
+          "command": "v6.debug.reloadRom",
+          "when": "debugType == v6",
+          "group": "navigation@3"
+        }
+      ],
       "view/title": [
         {
           "command": "v6.refreshHardwareStatistics",
