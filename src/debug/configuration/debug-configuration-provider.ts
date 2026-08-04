@@ -92,11 +92,11 @@ export class V6DebugConfigurationProvider implements vscode.DebugConfigurationPr
             }
             config.program = resolved;
 
-            if (!config.debugArtifact) {
-                const project = await this.getOrResolveProject();
-                if (project?.run.debugArtifact) {
-                    config.debugArtifact = project.run.debugArtifact;
-                }
+            const project = await this.getOrResolveProject();
+            if (project?.run.debugArtifact) {
+                config.debugArtifact = project.run.debugArtifact;
+            } else {
+                delete config.debugArtifact;
             }
         }
 
@@ -124,7 +124,6 @@ export class V6DebugConfigurationProvider implements vscode.DebugConfigurationPr
             request: 'launch',
             name: 'Launch V6 ROM',
             program: 'out/${workspaceFolderBasename}.rom',
-            debugArtifact: '',
             stopOnEntry: false,
         };
     }

@@ -15,7 +15,7 @@ A project can declare its executable and default companion ELF together:
 }
 ```
 
-Paths are resolved relative to the `*.project.json` file. An explicit `debugArtifact` in `.vscode/launch.json` overrides the project default.
+Paths are resolved relative to the `*.project.json` file. Debug metadata is always loaded from the active project's `run.debugArtifact`; launch configurations cannot override it.
 
 ## Starting A Session
 

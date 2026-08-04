@@ -229,21 +229,19 @@ Initial launch fields:
 - `project` or `program`.
 - `cwd`.
 - `bootRom`, `loadAddress`, `speed`, and `viewMode` overrides.
-- `debugArtifact`, the final linked or direct-build companion ELF path.
 - `stopOnEntry`.
 - `trace`.
 
 Initial attach fields:
 
 - `host`, `port`.
-- `debugArtifact`, the final linked or direct-build companion ELF path.
 - Optional project association.
 - Whether disconnect should terminate or leave the emulator running.
 
 Implement a `DebugConfigurationProvider` that:
 
 1. Resolves defaults from the active `*.project.json`.
-2. Delegates final-ELF selection to a `DebugArtifactResolver`, using explicit `debugArtifact` first and a same-stem sibling ELF only when the loaded ROM and build workflow make that relationship unambiguous.
+2. Loads the final ELF from the active project's validated `run.debugArtifact`.
 3. Assigns a free port for launch instead of assuming `9876`.
 4. Rejects incompatible combinations early.
 5. Keeps debug-only settings in `launch.json` initially; add project-schema fields only after stable use cases are proven.

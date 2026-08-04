@@ -80,7 +80,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
     // Debug metadata
     private debugIndex: DebugIndex | null = null;
-    private debugMetadataError = 'No debug artifact was configured. Set debugArtifact in launch.json.';
+    private debugMetadataError = 'No debug artifact was configured in the active project.';
     private workspaceRoot = '';
 
     // Session state
@@ -203,7 +203,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         const args = req.arguments ?? {};
         try {
             this.debugIndex = null;
-            this.debugMetadataError = 'No debug artifact was configured. Set debugArtifact in launch.json.';
+            this.debugMetadataError = 'No debug artifact was configured in the active project.';
             const bootRomPath = args.bootRom
                 ? String(args.bootRom)
                 : this.pathService.resolveExtensionPath('res/boot/boots.bin');

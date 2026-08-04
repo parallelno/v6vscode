@@ -245,11 +245,6 @@
                 "description": "Absolute path to the ROM (.rom) or FDD (.fdd) executable to launch.",
                 "default": "out/${workspaceFolderBasename}.rom"
               },
-              "debugArtifact": {
-                "type": "string",
-                "description": "Path to the ELF companion file produced by v6asm -g or the V6C linker. Required for source breakpoints.",
-                "default": ""
-              },
               "bootRom": {
                 "type": "string",
                 "description": "Override path to the boot ROM mapped at address 0 on startup. Leave empty to use the default.",
@@ -290,11 +285,6 @@
                 "type": "string",
                 "default": "127.0.0.1",
                 "description": "Host of the running v6emul server."
-              },
-              "debugArtifact": {
-                "type": "string",
-                "description": "Path to the ELF companion file for source breakpoints.",
-                "default": ""
               }
             }
           }
@@ -305,7 +295,6 @@
             "request": "launch",
             "name": "Launch V6 ROM",
             "program": "out/${workspaceFolderBasename}.rom",
-            "debugArtifact": "",
             "stopOnEntry": false
           }
         ],
@@ -318,7 +307,6 @@
               "request": "launch",
               "name": "Launch ${1:project}.rom",
               "program": "out/${1:project}.rom",
-              "debugArtifact": "out/${1:project}.elf",
               "stopOnEntry": false
             }
           },
