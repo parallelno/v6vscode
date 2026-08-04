@@ -176,7 +176,7 @@ export class SymbolsPanel implements vscode.Disposable {
                 id: symbol.id,
                 name: symbol.name,
                 value: formatValue(symbol.address),
-                canFindSource: this.symbols.sourceAtExactAddress(symbol.address) !== undefined,
+                canFindSource: this.symbols.sourceForSymbol(symbol.id) !== undefined,
             })),
         });
     }
@@ -194,7 +194,7 @@ export class SymbolsPanel implements vscode.Disposable {
     }
 
     private async findSource(symbol: IndexedSymbol): Promise<void> {
-        const source = this.symbols.sourceAtExactAddress(symbol.address);
+        const source = this.symbols.sourceForSymbol(symbol.id);
         if (!source) {
             this.post({ type: 'state', state: 'ready', message: `No DWARF source line for ${symbol.name}` });
             return;

@@ -9,7 +9,8 @@
 
 import * as fs from 'fs';
 import { parseElf32 } from './elf32-reader';
-import { parseDwarf4LineSection } from './dwarf4-line-reader';
+import { parseDwarf4LineFiles, parseDwarf4LineSection } from './dwarf4-line-reader';
+import { parseDwarf4VariableDeclarations } from './dwarf4-info-reader';
 import { buildDebugIndex, DebugIndex } from './debug-index';
 
 // ---------------------------------------------------------------------------
@@ -86,9 +87,16 @@ export async function loadDebugArtifact(elfPath: string, romPath = ''): Promise<
     const rows = debugLine
         ? parseDwarf4LineSection(debugLine.data, elf.addressSize, compDir)
         : [];
+    const files = debugLine ? parseDwarf4LineFiles(debugLine.data, compDir) : [];
+    const debugInfo = elf.sections.find(section => section.name === '.debug_info');
+    const debugAbbrev = elf.sections.find(section => section.name === '.debug_abbrev');
+    const debugStrings = elf.sections.find(section => section.name === '.debug_str');
+    const declarations = debugInfo && debugAbbrev && debugStrings
+        ? parseDwarf4VariableDeclarations(debugInfo.data, debugAbbrev.data, debugStrings.data, files)
+        : [];
 
     // Build index
-    const index = buildDebugIndex(rows, elf.symbols, compDir);
+    const index = buildDebugIndex(rows, elf.symbols, compDir, declarations);
 
     // Validate ROM/ELF match
     const validationWarning = validateRomElf(elf, romPath);

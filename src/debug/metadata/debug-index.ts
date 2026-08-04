@@ -10,7 +10,8 @@
 
 import * as path from 'path';
 import { LineRow } from './dwarf4-line-reader';
-import { Elf32Symbol, STT_FUNC, STT_OBJECT } from './elf32-reader';
+import { Elf32Symbol, SHN_ABS, STT_FUNC, STT_NOTYPE, STT_OBJECT } from './elf32-reader';
+import { DwarfVariableDeclaration } from './dwarf4-info-reader';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,6 +30,7 @@ export interface SymbolInfo {
     size: number;
     type: number;   // STT_FUNC or STT_OBJECT
     binding: number;
+    declaration?: SourceLocation;
 }
 
 export interface DebugIndex {
@@ -71,6 +73,7 @@ export function buildDebugIndex(
     rows: LineRow[],
     symbols: Elf32Symbol[],
     compDir: string,
+    declarations: DwarfVariableDeclaration[] = [],
 ): DebugIndex {
     // ---- Normalize all file paths relative to compDir ----
     const norm = (f: string) => normalizePath(f, compDir);
@@ -109,15 +112,30 @@ export function buildDebugIndex(
     }
 
     // ---- Unique source files ----
-    const sourceFiles = [...new Set(normalizedRows.map(r => r.file))].sort();
+    const normalizedDeclarations = declarations.map(declaration => ({
+        ...declaration,
+        file: norm(declaration.file),
+    }));
+    const sourceFiles = [...new Set([
+        ...normalizedRows.map(row => row.file),
+        ...normalizedDeclarations.map(declaration => declaration.file),
+    ])].sort();
 
     // ---- Symbol indexes ----
     const symbolsByName = new Map<string, SymbolInfo[]>();
     const symbolsByAddr: SymbolInfo[] = [];
     for (const s of symbols) {
         if (!s.name || s.section === 0) { continue; }
-        if (s.type !== STT_FUNC && s.type !== STT_OBJECT) { continue; }
-        const info: SymbolInfo = { name: s.name, address: s.value, size: s.size, type: s.type, binding: s.binding };
+        const isCodeOrObject = s.type === STT_FUNC || s.type === STT_OBJECT;
+        const isAbsoluteConstant = s.type === STT_NOTYPE && s.section === SHN_ABS;
+        if (!isCodeOrObject && !isAbsoluteConstant) { continue; }
+        const declaration = isAbsoluteConstant
+            ? normalizedDeclarations.find(item => item.name === s.name && item.value === s.value)
+            : undefined;
+        const info: SymbolInfo = {
+            name: s.name, address: s.value, size: s.size, type: s.type, binding: s.binding,
+            declaration: declaration && { file: declaration.file, line: declaration.line, column: 0, isStmt: false },
+        };
         const named = symbolsByName.get(s.name) ?? [];
         named.push(info);
         symbolsByName.set(s.name, named);

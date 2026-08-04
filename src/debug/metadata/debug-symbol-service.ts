@@ -77,4 +77,9 @@ export class DebugSymbolService {
     sourceAtExactAddress(address: number): SourceLocation | undefined {
         return this.index?.resolveAddress(address);
     }
+
+    sourceForSymbol(id: string): SourceLocation | undefined {
+        const symbol = this.symbolById(id);
+        return symbol?.declaration ?? this.index?.resolveAddress(symbol?.address ?? -1);
+    }
 }

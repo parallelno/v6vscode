@@ -2,8 +2,8 @@ import { expect } from 'chai';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { parseElf32, readULEB128, readSLEB128, ELFCLASS32, ELFDATA2LSB, SHT_SYMTAB } from '../../../src/debug/metadata/elf32-reader';
-import { parseDwarf4LineSection } from '../../../src/debug/metadata/dwarf4-line-reader';
+import { parseElf32, readULEB128, readSLEB128, ELFCLASS32, ELFDATA2LSB, SHN_ABS, SHT_SYMTAB } from '../../../src/debug/metadata/elf32-reader';
+import { parseDwarf4LineFiles, parseDwarf4LineSection } from '../../../src/debug/metadata/dwarf4-line-reader';
 import { buildDebugIndex } from '../../../src/debug/metadata/debug-index';
 import { loadDebugArtifact } from '../../../src/debug/metadata/debug-artifact-loader';
 
@@ -114,10 +114,13 @@ describe('readSLEB128', () => {
         }
     });
 
-    it('all rows reference main.asm', () => {
-        for (const r of rows) {
-            expect(r.file).to.include('main.asm');
-        }
+    it('includes source files from main and included assembly files', () => {
+        const files = new Set(rows.map(row => row.file));
+        expect(files).to.include('src/main.asm');
+        expect(files).to.include('src/sub/rnd.asm');
+        const elf = parseElf32(fs.readFileSync(ELF_PATH));
+        const debugLine = elf.sections.find(section => section.name === '.debug_line')!;
+        expect(parseDwarf4LineFiles(debugLine.data)).to.include.members([...files]);
     });
 
     it('first is_stmt row has address >= 0x100 (ROM load address)', () => {
@@ -134,17 +137,14 @@ describe('readSLEB128', () => {
 
 (ELF_EXISTS ? describe : describe.skip)('DebugIndex against demo1.elf', () => {
     let index: ReturnType<typeof buildDebugIndex>;
-    let statementAddresses: Map<number, number>;
+    let rows: ReturnType<typeof parseDwarf4LineSection>;
 
     before(() => {
         const elfBuf = fs.readFileSync(ELF_PATH);
         const elf = parseElf32(elfBuf);
         const dl = elf.sections.find(s => s.name === '.debug_line')!;
-        const rows = parseDwarf4LineSection(dl.data, elf.addressSize);
+        rows = parseDwarf4LineSection(dl.data, elf.addressSize);
         index = buildDebugIndex(rows, elf.symbols, '');
-        statementAddresses = new Map(
-            rows.filter(row => row.isStmt).map(row => [row.line, row.address]),
-        );
     });
 
     it('reports at least one source file', () => {
@@ -176,9 +176,10 @@ describe('readSLEB128', () => {
 
     it('resolves an absolute editor path against a DWARF-relative source path', () => {
         const sourcePath = path.join(__dirname, '..', '..', '..', 'temp', 'project', 'src', 'main.asm');
-        expect(index.resolveBreakpoint(sourcePath, 46)).to.deep.equal({
-            address: statementAddresses.get(46),
-            verifiedLine: 46,
+        const firstMainRow = rows.find(row => row.isStmt && row.file === 'src/main.asm')!;
+        expect(index.resolveBreakpoint(sourcePath, firstMainRow.line)).to.deep.equal({
+            address: firstMainRow.address,
+            verifiedLine: firstMainRow.line,
         });
     });
 
@@ -191,11 +192,9 @@ describe('readSLEB128', () => {
     });
 
     it('resolves the fill_random function symbol from demo1 metadata', () => {
-        expect(index.symbol('fill_random')).to.include({
-            name: 'fill_random',
-            address: 0x0141,
-            size: 27,
-        });
+        const elf = parseElf32(fs.readFileSync(ELF_PATH));
+        const expected = elf.symbols.find(symbol => symbol.name === 'fill_random')!;
+        expect(index.symbol('fill_random')).to.include({ name: expected.name, address: expected.value, size: expected.size });
     });
 
     it('returns symbols in an inclusive range without losing duplicate-name candidates', () => {
@@ -220,6 +219,21 @@ describe('readSLEB128', () => {
 
         expect(orderedIndex.allSymbols().map(symbol => symbol.name)).to.deep.equal(['reset', 'alpha', 'beta', 'zeta']);
     });
+
+    it('includes absolute STT_NOTYPE constants but excludes other untyped symbols', () => {
+        const indexWithConstant = buildDebugIndex([], [
+            { name: 'CONSTANT', value: 0x4000, size: 0, type: 0, binding: 0, section: SHN_ABS },
+            { name: 'untypedLabel', value: 0x0100, size: 0, type: 0, binding: 0, section: 1 },
+        ], '');
+
+        expect(indexWithConstant.symbol('CONSTANT')).to.include({ name: 'CONSTANT', address: 0x4000, size: 0 });
+        expect(indexWithConstant.symbol('untypedLabel')).to.equal(undefined);
+    });
+
+    it('includes debug constants from the demo ELF', () => {
+        expect(index.symbol('ARRAY_ADDR')).to.include({ name: 'ARRAY_ADDR', address: 0x4000, size: 0 });
+        expect(index.symbol('OPCODE_EI')).to.include({ name: 'OPCODE_EI', address: 0x00FB, size: 0 });
+    });
 });
 
 (ELF_EXISTS ? describe : describe.skip)('Debug artifact loader against demo1.elf', () => {
@@ -229,13 +243,26 @@ describe('readSLEB128', () => {
         const result = await loadDebugArtifact(ELF_PATH, romPath);
         const elf = parseElf32(fs.readFileSync(ELF_PATH));
         const debugLine = elf.sections.find(section => section.name === '.debug_line')!;
-        const expectedAddress = parseDwarf4LineSection(debugLine.data, elf.addressSize)
-            .find(row => row.isStmt && row.line === 46)?.address;
+        const expected = parseDwarf4LineSection(debugLine.data, elf.addressSize)
+            .find(row => row.isStmt && row.file === 'src/main.asm')!;
 
         expect(result.compDir).to.equal('');
-        expect(result.index.resolveBreakpoint(sourcePath, 46)).to.deep.equal({
-            address: expectedAddress,
-            verifiedLine: 46,
+        expect(result.index.resolveBreakpoint(sourcePath, expected.line)).to.deep.equal({
+            address: expected.address,
+            verifiedLine: expected.line,
+        });
+    });
+
+    it('maps constants to their DWARF declaration locations and file-table entries', async () => {
+        const romPath = path.join(path.dirname(ELF_PATH), 'demo1.rom');
+        const result = await loadDebugArtifact(ELF_PATH, romPath);
+
+        expect(result.index.sourceFiles).to.include(path.join('src', 'sub', 'rnd.asm'));
+        expect(result.index.symbol('DISPLAY_ADDR')?.declaration).to.deep.equal({
+            file: path.join('src', 'main.asm'), line: 12, column: 0, isStmt: false,
+        });
+        expect(result.index.symbol('PALETTE_LEN')?.declaration).to.deep.equal({
+            file: path.join('src', 'sub', 'palette.asm'), line: 4, column: 0, isStmt: false,
         });
     });
 

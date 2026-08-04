@@ -33,6 +33,8 @@ export const STT_FUNC    = 2;
 export const STT_SECTION = 3;
 export const STT_FILE    = 4;
 
+export const SHN_ABS = 0xFFF1;
+
 export const SHF_ALLOC    = 0x2;
 export const SHF_EXECINSTR = 0x4;
 

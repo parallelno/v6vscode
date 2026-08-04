@@ -82,6 +82,38 @@ export function parseDwarf4LineSection(
     return rows;
 }
 
+/** Return every source file declared by DWARF v4 line-program file tables. */
+export function parseDwarf4LineFiles(data: Buffer, compDir = ''): string[] {
+    const files: string[] = [];
+    let base = 0;
+    while (base + 10 <= data.length) {
+        const unitLength = data.readUInt32LE(base);
+        if (unitLength === 0 || base + 4 + unitLength > data.length) { break; }
+        let offset = base + 10;
+        offset += 6 + data[offset + 5] - 1; // fixed header fields and standard-opcode lengths
+        const dirs: string[] = [''];
+        while (data[offset] !== 0) {
+            const directory = readCString(data, offset);
+            offset += Buffer.byteLength(directory) + 1;
+            dirs.push(directory);
+        }
+        offset++;
+        while (data[offset] !== 0) {
+            const file = readCString(data, offset);
+            offset += Buffer.byteLength(file) + 1;
+            const [dirIndex, dirLength] = readULEB128(data, offset);
+            offset += dirLength;
+            const [, timeLength] = readULEB128(data, offset);
+            offset += timeLength;
+            const [, sizeLength] = readULEB128(data, offset);
+            offset += sizeLength;
+            files.push(resolveFilePath(file, dirIndex, dirs, compDir));
+        }
+        base += 4 + unitLength;
+    }
+    return [...new Set(files)];
+}
+
 function parseOneLineProgram(
     data: Buffer,
     base: number,
