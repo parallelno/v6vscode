@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { Logger } from './platform/logging/logger';
 import { PathService } from './platform/files/path-service';
 import { WorkspaceService } from './platform/files/workspace-service';
@@ -29,6 +30,7 @@ import { ProjectDiscovery } from './project/discovery/project-discovery';
 import { ProjectRepository } from './project/persistence/project-repository';
 import { ActiveProjectService } from './project/active/active-project-service';
 import { IncludeLinkProvider } from './language/includes/include-link-provider';
+import { CMD_REVEAL_SYMBOL_SOURCE, SymbolLinkProvider } from './language/symbols/symbol-link-provider';
 import { V6emulLocator } from './emulator/launcher/v6emul-locator';
 import { V6emulLauncher } from './emulator/launcher/v6emul-launcher';
 import { IpcClient } from './emulator/client/ipc-client';
@@ -74,6 +76,8 @@ import {
     CMD_REFRESH_PERFORMANCE,
     PerformancePanel,
 } from './debug/views/performance-panel';
+import { SourceLocation } from './debug/metadata/debug-index';
+import { revealDebugSource } from './debug/views/debug-source-navigation';
 
 export function activate(context: vscode.ExtensionContext): void {
     const store = new DisposableStore();
@@ -278,6 +282,20 @@ export function activate(context: vscode.ExtensionContext): void {
     store.add(
         vscode.languages.registerDocumentLinkProvider(asmSelector, new IncludeLinkProvider())
     );
+    store.add(
+        vscode.languages.registerDocumentLinkProvider(
+            asmSelector,
+            new SymbolLinkProvider(activeProjectService, debugSymbols),
+        ),
+    );
+    store.add(vscode.commands.registerCommand(CMD_REVEAL_SYMBOL_SOURCE, async (source: unknown) => {
+        if (!isSourceLocation(source)) { return; }
+        const project = activeProjectService.getActiveProject()
+            ?? await activeProjectService.resolve();
+        if (project) {
+            await revealDebugSource(source, path.dirname(project.uri.fsPath));
+        }
+    }));
 
     store.add(
         vscode.commands.registerCommand(CMD_CREATE_PROJECT, () => createProjectCmd.execute())
@@ -315,4 +333,13 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export function deactivate(): void {
     // Cleanup handled by DisposableStore via context.subscriptions.
+}
+
+function isSourceLocation(value: unknown): value is SourceLocation {
+    if (!value || typeof value !== 'object') { return false; }
+    const source = value as Partial<SourceLocation>;
+    return typeof source.file === 'string'
+        && typeof source.line === 'number' && Number.isInteger(source.line) && source.line > 0
+        && typeof source.column === 'number' && Number.isInteger(source.column) && source.column >= 0
+        && typeof source.isStmt === 'boolean';
 }

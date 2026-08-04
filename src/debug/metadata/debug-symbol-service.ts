@@ -74,6 +74,10 @@ export class DebugSymbolService {
         return this.index?.symbolsInRange(start, end) ?? [];
     }
 
+    sourceFiles(): ReadonlyArray<string> {
+        return this.index?.sourceFiles ?? [];
+    }
+
     sourceAtExactAddress(address: number): SourceLocation | undefined {
         return this.index?.resolveAddress(address);
     }
