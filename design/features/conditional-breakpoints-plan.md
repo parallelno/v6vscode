@@ -1,7 +1,7 @@
 # Conditional, Hit-Count, Logpoint, and Triggered Breakpoints Plan
 
 **Status:** Proposed
-**Date:** 2026-08-04
+**Date:** 2026-08-05
 **Owners:** v6vscode maintainers
 **Related work:** `debug-adapter-and-debug-views-plan.md`, Step 3.11; `stop-record-extension-improvements.md`; `v6emul-stop-record-design.md`
 
@@ -28,7 +28,7 @@ VS Code also supports **Wait for Breakpoint**, commonly called a triggered break
 Support four breakpoint behaviors:
 
 1. Register comparison conditions translated exactly to v6emul.
-2. Positive-integer hit conditions counted by the adapter.
+2. Positive-integer hit conditions enforced by v6emul.
 3. Source logpoints interpolated and emitted by the adapter without a visible stop.
 4. VS Code-managed triggered breakpoints activated through stable DAP IDs and exact hit attribution.
 
@@ -41,7 +41,7 @@ Log Message: frame={HL}, color={A}
 Wait for Breakpoint: main.asm:42
 ```
 
-Conditions and hit counts may be combined with logpoints. Evaluation order is condition, hit count, then final action:
+Conditions and hit counts may be combined with logpoints. v6emul applies the condition and counter before the adapter selects the final action:
 
 - An ordinary breakpoint emits `stopped`.
 - A logpoint emits `output` and resumes.
@@ -53,7 +53,7 @@ Unsupported or malformed input must never degrade to an unconditional stopping b
 
 ### 1.3 Breakpoint Identity Invariant
 
-There is exactly one adapter breakpoint for each 16-bit CPU address. The address is the canonical identity for backend installation, stop attribution, condition state, hit-count state, and logpoint state.
+There is exactly one adapter breakpoint for each 16-bit CPU address. The address is the canonical identity for backend installation, stop attribution, requested hit condition, and logpoint state. The backend owns the mutable remaining counter.
 
 ```ts
 interface AdapterBreakpoint {
@@ -61,7 +61,6 @@ interface AdapterBreakpoint {
     address: number;
     condition?: ParsedBreakpointCondition;
     hitCondition?: number;
-    hitCount: number;
     logMessage?: ParsedLogMessage;
     backendInstalled: boolean;
 }
@@ -83,7 +82,7 @@ The existing adapter tracks IDs and source ownership through address maps and se
 
 - DAP condition and logpoint fields are ignored.
 - Configuration-only changes are not reconciled.
-- No hit counter exists.
+- The server-side `counter` field is not yet used.
 - Stop handling publishes every backend breakpoint stop immediately.
 - Stable IDs and exact hit attribution are not yet tested as a triggered-breakpoint contract.
 - Capability advertising correctly remains disabled.
@@ -97,9 +96,9 @@ Use each layer only for behavior it can implement exactly:
 - Parse and validate DAP input in the adapter.
 - Translate register comparisons into `BreakpointAddRequest` fields.
 - Let v6emul evaluate register conditions while executing.
-- Count qualifying stops in the adapter.
+- Pass hit thresholds to v6emul as the structured breakpoint `counter` field.
 - Interpolate logpoint messages from one captured stopped-state snapshot.
-- Resume internally for hidden hits and logpoints.
+- Resume internally for logpoints.
 - Publish visible stops with stable canonical DAP IDs.
 - Let VS Code activate triggered dependents after their trigger point stops.
 
@@ -116,13 +115,11 @@ backend breakpoint stop
 lookup breakpoint by address
         |
         v
-increment hitCount once for this stop sequence
+    v6emul has already matched condition and counter
         |
-        +-- threshold not met --------> resume internally
+        +-- logpoint -> interpolate, emit output, resume
         |
-        +-- threshold met + logpoint -> interpolate, emit output, resume
-        |
-        +-- threshold met + ordinary -> emit visible stopped event
+        +-- ordinary -> emit visible stopped event
 ```
 
 When the visible ordinary breakpoint is a trigger point, VS Code observes its DAP ID in `hitBreakpointIds`, activates the dependent for the current session, and resends the affected source breakpoint set. The adapter installs the newly submitted dependent like any other source breakpoint.
@@ -171,26 +168,24 @@ hitCondition := [1-9][0-9]*
 
 The value must be a safe JavaScript integer. Zero, negative values, hexadecimal values, relational operators, and modulo expressions are rejected.
 
-An absent or empty hit condition means every qualifying backend hit reaches the final action. Internally it remains `undefined` rather than being normalized to `1`.
+An absent or empty hit condition means the request omits `counter`, allowing v6emul to use its default of `1`.
 
-For threshold `N`, the final action occurs when `hitCount >= N`. Thus `5` stops or logs on hit 5 and every qualifying hit thereafter. Future exact-hit or modulo syntax must be explicit and must not change this rule.
+For threshold `N`, v6emul decrements `counter` for every matching visit, stops when it reaches zero, and remains stopping on later matching visits until replaced, disabled, or deleted. Thus `5` stops or logs on hit 5 and every qualifying hit thereafter. Future exact-hit or modulo syntax must be explicit and must not change this rule.
 
 ### 2.5 Counter Semantics and Lifecycle
 
-Each `AdapterBreakpoint` owns one monotonically increasing `hitCount` for its current configuration and debug session.
+v6emul owns the mutable remaining `counter`; the adapter stores only the requested normalized hit condition. An unchanged `setBreakpoints` request must not re-add the backend breakpoint, so its remaining counter is preserved in v6emul.
 
-The counter is preserved when VS Code resends an unchanged breakpoint at the same address with the same normalized condition, hit condition, and log message.
-
-The counter resets when:
+v6emul initializes or replaces the counter when:
 
 - The breakpoint is created.
-- Its normalized condition, hit condition, or log message changes.
+- Its normalized condition or hit condition changes.
 - Its resolved address changes.
 - It is removed and recreated.
 - The emulator is restarted, reset, reloaded, replaced, or disconnected.
-- Breakpoints are reapplied into a new backend session.
+- The adapter reapplies breakpoints into a new backend session.
 
-Pause, continue, Step Into, and Step Over do not reset counters.
+Log-message-only changes must preserve the server counter: update adapter-side logpoint state without reinstalling the backend breakpoint. Pause, continue, Step Into, and Step Over do not reset counters.
 
 ### 2.6 Logpoint Syntax and Interpolation
 
@@ -237,9 +232,8 @@ If interpolation unexpectedly fails at runtime, emit one concise error output co
 
 Conditions and hit counts gate log messages in DAP order:
 
-1. v6emul applies the register condition.
-2. The adapter increments and applies the hit threshold.
-3. The adapter formats and emits the message.
+1. v6emul applies the register condition and decrements its counter.
+2. The adapter formats and emits the message after a server-side qualifying stop.
 
 Logpoints apply only to `SourceBreakpoint`; DAP `InstructionBreakpoint` has no `logMessage` field.
 
@@ -261,7 +255,7 @@ Adapter requirements are:
 - Remove an activated dependent when a later source replacement omits it.
 - Leave dependency lifecycle and pending state to VS Code.
 
-A trigger point must produce a visible stop. A logpoint never emits `stopped`, and a hit below threshold is intentionally hidden, so neither activates a dependent. A trigger point with a condition or hit count activates dependents only on a qualifying visible stop.
+A trigger point must produce a visible stop. A logpoint never emits `stopped`, and a visit before its server-side counter reaches zero produces no stop, so neither activates a dependent. A trigger point with a condition or hit count activates dependents only on a qualifying visible stop.
 
 There is no DAP `supportsTriggeredBreakpoints` capability to advertise. Support is verified through VS Code UI behavior and the standard ID and stopped-event contract.
 
@@ -274,10 +268,9 @@ For a breakpoint record:
 1. Extract `breakpointAddress` from the stop record.
 2. Look up the one `AdapterBreakpoint` by address.
 3. If none exists, publish an unattributed backend breakpoint stop. Never auto-resume an unknown or external breakpoint.
-4. Increment `hitCount` exactly once for the new sequence.
-5. If the threshold is not met, resume internally.
-6. If the threshold is met and a log message exists, emit output and resume internally.
-7. Otherwise complete normal stop handling and emit the breakpoint's DAP ID.
+4. The server has already applied the condition and counter before producing this record.
+5. If a log message exists, emit output and resume internally.
+6. Otherwise complete normal stop handling and emit the breakpoint's DAP ID.
 
 The internal resume path must:
 
@@ -290,7 +283,7 @@ The internal resume path must:
 
 If internal resume fails, expose the actual paused state. Refresh registers, emit `stopped` with reason `breakpoint`, and describe the failed automatic action. Log the failure.
 
-Hit conditions and logpoints require authoritative stop records. Older backends remain usable for ordinary and backend-translated conditional breakpoints but do not advertise client-side filtering features.
+Logpoints require authoritative stop records for address attribution. Hit conditions require structured breakpoint schema 1 with its `counter` field. Older backends remain usable for ordinary breakpoints but do not advertise unavailable features.
 
 ### 2.9 Reconciliation
 
@@ -302,9 +295,10 @@ address + normalized condition + normalized hit condition + normalized log messa
 
 Outcomes:
 
-- **New address:** allocate one DAP ID, set `hitCount = 0`, and add the backend breakpoint.
-- **Unchanged configuration:** preserve ID and counter; do not resend the add.
-- **Changed configuration:** delete and re-add with the same ID; reset the counter after success.
+- **New address:** allocate one DAP ID and add the backend breakpoint, including `counter` when requested.
+- **Unchanged configuration:** preserve ID and do not resend the add, preserving the server's remaining counter.
+- **Condition or hit-condition change:** replace the backend configuration with the same ID; v6emul initializes a new counter.
+- **Log-message-only change:** update adapter state without replacing the backend breakpoint or resetting its counter.
 - **Removed final reference:** delete the backend breakpoint and discard its state.
 - **Compatible duplicate:** reuse the existing breakpoint and ID.
 - **Conflicting duplicate:** retain acknowledged state and return the conflict as unverified.
@@ -322,11 +316,12 @@ makeBreakpointAdd(address, comment, {
     operand: parsedCondition?.operand ?? 'A',
     condition: parsedCondition?.condition ?? 'ANY',
     value: parsedCondition?.value ?? 0,
+    ...(parsedHitCondition === undefined ? {} : { counter: parsedHitCondition }),
     autoDelete: false,
 });
 ```
 
-Hit conditions and log messages remain adapter state. Backend comments continue to identify adapter ownership and DAP ID.
+Log messages remain adapter state. The optional backend `counter` is a positive unsigned integer and defaults to `1` when omitted. Backend comments continue to identify adapter ownership and DAP ID.
 
 ### 2.11 DAP Responses and Diagnostics
 
@@ -359,7 +354,7 @@ Advertise backend-translated conditions with structured breakpoint support:
 supportsConditionalBreakpoints: true
 ```
 
-Advertise client-side filtering only with structured source breakpoints and authoritative stop records:
+Advertise server-side hit conditions with structured breakpoint schema 1 and its advertised counter limits. Advertise logpoints only with structured source breakpoints and authoritative stop records:
 
 ```ts
 supportsHitConditionalBreakpoints: true
@@ -404,13 +399,13 @@ Extend the shared request builder. Verify exact wire fields and ordinary `ANY` b
 
 ### Step 3.6 - Reconcile Complete Configuration [ ]
 
-Detect condition-only, hit-condition-only, and log-message-only changes. Preserve IDs, preserve counters for unchanged requests, and reset counters after successful changes.
+Detect condition-only, hit-condition-only, and log-message-only changes. Preserve IDs, preserve the server counter for unchanged and log-message-only requests, and install a new counter only when backend configuration changes.
 
 > **Implementation Notes:**
 
-### Step 3.7 - Filter Hit-Count Stops [ ]
+### Step 3.7 - Send Server-Side Hit Counters [ ]
 
-Resolve one breakpoint by address, increment once per sequence, and resume below threshold without DAP state events.
+Send each parsed hit condition as `counter` in `DEBUG_BREAKPOINT_ADD`. Verify v6emul produces no stop before the counter reaches zero and continues stopping after it does.
 
 > **Implementation Notes:**
 
@@ -428,7 +423,7 @@ Verify a pending dependent is absent initially, a visible trigger stop reports t
 
 ### Step 3.10 - Reset Runtime State [ ]
 
-Reset counters on changes, removal, restart, reset, reload, disconnect, and backend replacement. Leave dependency state to VS Code.
+Do not mutate server counters from the adapter. Verify server lifecycle behavior for reset, restart, reload, disconnect, and replacement; reapplying a backend configuration initializes a new server counter. Leave dependency state to VS Code.
 
 > **Implementation Notes:**
 
@@ -496,11 +491,11 @@ For `A == 0x10`, v6emul stops only when A is `0x10`; the adapter reports the can
 
 ### 4.2 Hit Count
 
-For hit condition `5`, hits 1 through 4 are hidden. Hit 5 and later qualifying hits perform the final action.
+For hit condition `5`, v6emul continues through matching visits 1 through 4 without a stop. Hit 5 and later matching visits produce a breakpoint stop for the adapter to process.
 
 ### 4.3 Combined Condition and Hit Count
 
-For `A == 0` with hit condition `3`, only backend-qualified hits increment the counter.
+For `A == 0` with hit condition `3`, only backend-qualified visits decrement the server counter. The third and later qualifying visits stop.
 
 ### 4.4 Logpoint
 
@@ -519,10 +514,9 @@ Unchanged requests preserve ID and count. Successful configuration changes prese
 | Risk | Mitigation |
 |---|---|
 | Users expect unsupported hit-count syntax. | Document the decimal subset and reject other syntax. |
-| Internal resume emits contradictory events. | Use a dedicated path and assert event order. |
-| A stop is counted twice. | Gate by authoritative stop sequence. |
-| Resume failure leaves frontend state running. | Publish the actual paused state. |
-| Repeated requests reset counters. | Compare normalized complete configuration. |
+| Logpoint resume emits contradictory events. | Use a dedicated logpoint path and assert event order. |
+| Adapter re-adds a breakpoint and resets its server counter unexpectedly. | Compare normalized backend configuration and avoid an add for unchanged or log-only changes. |
+| Backend counter semantics differ from DAP expectations. | Test threshold, subsequent-stop, and condition-order semantics against v6emul. |
 | Changes leave stale backend state. | Use acknowledged delete-then-add replacement. |
 | Two requests configure one address differently. | Reject the conflict. |
 | Step Over collides with a user breakpoint. | Never overwrite canonical user state. |
@@ -544,20 +538,20 @@ Unchanged requests preserve ID and count. Successful configuration changes prese
 - Backend payload construction.
 - Address deduplication and conflicts.
 - Complete reconciliation.
-- Counter lifecycle.
-- Hidden-hit and logpoint event sequences.
+- Server-counter request payload and lifecycle.
+- Logpoint event sequences.
 - Resume and interpolation failures.
 - Stable IDs and hit attribution.
 
 ### 6.2 Integration Coverage
 
 - Mock IPC delete/add ordering.
-- One sequence increments one counter.
-- Hidden hits send `RUN` without state events.
+- Server `counter` reaches zero only after matching visits.
+- Pre-threshold visits create no stop record or DAP state event.
 - Logpoints emit one located output and resume.
 - Visible stops emit the canonical ID.
 - VS Code submits a dependent only after its trigger stop.
-- Restart and reconnect reset adapter state.
+- Reconnect and backend reapplication initialize a new server counter.
 
 ### 6.3 Regression Coverage
 
@@ -574,7 +568,7 @@ Unchanged requests preserve ID and count. Successful configuration changes prese
 
 - Failed register conditions remain backend-side.
 - Runtime processing uses one address-map lookup.
-- Hidden hits avoid register, stack, panel, and UI refreshes.
+- Pre-threshold visits create no adapter work, register refresh, stack sample, panel update, or UI event.
 - Logpoints refresh registers only when interpolation needs them.
 - Triggered dependents add no adapter work while pending.
 
@@ -584,17 +578,17 @@ Unchanged requests preserve ID and count. Successful configuration changes prese
 2. Exactly one adapter breakpoint exists per CPU address.
 3. Every accepted condition maps exactly to one backend comparison.
 4. Unsupported conditions and templates are never installed as ordinary stopping breakpoints.
-5. Positive integer `N` performs the final action on qualifying hit `N` and later hits.
+5. Positive integer `N` is sent to v6emul as `counter` and performs the final action on qualifying hit `N` and later hits.
 6. Combined conditions count only backend-qualified hits.
-7. Hidden hits emit neither `stopped` nor `continued`.
+7. Pre-threshold visits produce neither an emulator stop record nor a DAP `stopped` or `continued` event.
 8. A qualifying logpoint emits one located output event and no visible stop.
 9. Interpolation errors remain non-stopping unless resume fails.
 10. Failed automatic resume exposes the paused state.
-11. Each stop sequence increments at most once.
-12. Unchanged reconciliation preserves IDs and counters; changes reset counters.
+11. The adapter does not count or resume pre-threshold visits.
+12. Unchanged and log-message-only reconciliation preserves the server counter; backend condition or threshold changes initialize a new server counter.
 13. Unknown or external breakpoint stops are never auto-resumed.
 14. Triggered dependents remain absent until a visible trigger stop reports the canonical ID.
-15. Hidden hits and logpoints do not activate dependents.
+15. Pre-threshold visits and logpoints do not activate dependents.
 16. No triggered-breakpoint capability or request field is invented.
 17. Ordinary breakpoints, stepping, watchpoints, exceptions, and older backends do not regress.
 18. Unit, regression, and real-emulator verification pass.
@@ -645,14 +639,14 @@ This feature completes the condition, hit-condition, logpoint, and triggered-bre
 - [ ] Apply translated conditions through `DEBUG_BREAKPOINT_ADD`.
 - [ ] Reconcile condition, hit, and log-message changes.
 - [ ] Preserve IDs across successful replacement.
-- [ ] Preserve counters across unchanged requests.
-- [ ] Reset counters at all documented lifecycle boundaries.
+- [ ] Preserve the server counter across unchanged and log-message-only requests.
+- [ ] Verify server-counter lifecycle behavior at reset, restart, reload, disconnect, and backend replacement.
 - [ ] Deduplicate compatible requests at one address.
 - [ ] Reject conflicts at one address.
 - [ ] Protect user breakpoints from Step Over collisions.
 - [ ] Filter stops using one direct lookup.
-- [ ] Increment once per stop sequence.
-- [ ] Resume hidden hits without DAP state events.
+- [ ] Send each hit condition as the backend `counter` field.
+- [ ] Verify pre-threshold visits create no stop record or DAP state event.
 - [ ] Emit one located output per qualifying logpoint.
 - [ ] Resume logpoints without DAP state events.
 - [ ] Keep interpolation failures non-stopping.
@@ -665,7 +659,7 @@ This feature completes the condition, hit-condition, logpoint, and triggered-bre
 - [ ] Verify all four workflows in an Extension Development Host.
 - [ ] Verify pending dependents are absent initially.
 - [ ] Verify trigger hit IDs cause dependent submission.
-- [ ] Verify hidden hits and logpoints do not activate dependents.
+- [ ] Verify pre-threshold visits and logpoints do not activate dependents.
 - [ ] Add parser and backend-payload unit tests.
 - [ ] Add reconciliation and lifecycle tests.
 - [ ] Add filtering and event-sequence tests.
