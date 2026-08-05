@@ -1,5 +1,8 @@
 import { expect } from 'chai';
-import { findLabelDefinition, findSymbolTokens } from '../../../src/language/symbols/symbol-link-provider';
+import {
+    findLabelDefinition,
+    findSymbolTokens,
+} from '../../../src/language/symbols/symbol-link-provider';
 
 describe('Symbol link provider helpers', () => {
     it('finds assembler symbols but skips quoted strings and comments', () => {

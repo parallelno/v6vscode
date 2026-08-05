@@ -17,6 +17,10 @@ export interface SymbolToken {
     length: number;
 }
 
+export function revealSymbolCommandUri(source: SourceLocation): string {
+    return `command:${CMD_REVEAL_SYMBOL_SOURCE}?${encodeURIComponent(JSON.stringify(source))}`;
+}
+
 /** Return assembler identifiers outside quoted strings and ';' comments. */
 export function findSymbolTokens(text: string): SymbolToken[] {
     const tokens: SymbolToken[] = [];
@@ -44,45 +48,84 @@ export function findLabelDefinition(text: string, name: string): SourceLocation 
     return undefined;
 }
 
-export class SymbolLinkProvider implements vscode.DocumentLinkProvider {
+export class SymbolLinkProvider implements vscode.HoverProvider, vscode.DefinitionProvider {
     constructor(
         private readonly activeProjectService: ActiveProjectService,
         private readonly symbols: DebugSymbolService,
     ) {}
 
-    async provideDocumentLinks(
+    async provideHover(
         document: vscode.TextDocument,
+        position: vscode.Position,
         token: vscode.CancellationToken,
-    ): Promise<vscode.DocumentLink[]> {
+    ): Promise<vscode.Hover | undefined> {
+        const symbolToken = findSymbolTokens(document.getText()).find(candidate =>
+            candidate.line === position.line
+            && candidate.start <= position.character
+            && position.character < candidate.start + candidate.length,
+        );
+        if (!symbolToken) { return undefined; }
+
         const project = this.activeProjectService.getActiveProject()
             ?? await this.activeProjectService.resolve();
-        if (token.isCancellationRequested || !project?.run.debugArtifact) { return []; }
+        if (token.isCancellationRequested || !project?.run.debugArtifact) { return undefined; }
 
         try {
             await this.symbols.load(project.run.debugArtifact, project.run.executable);
         } catch {
-            return [];
+            return undefined;
         }
-        if (token.isCancellationRequested) { return []; }
+        if (token.isCancellationRequested) { return undefined; }
 
-        const links: vscode.DocumentLink[] = [];
-        for (const symbolToken of findSymbolTokens(document.getText())) {
-            const resolution = this.symbols.resolveSymbol(symbolToken.name);
-            if (resolution.kind !== 'found') { continue; }
-            const source = this.sourceForSymbol(resolution.symbol, path.dirname(project.uri.fsPath));
-            if (!source) { continue; }
-            const range = new vscode.Range(
-                new vscode.Position(symbolToken.line, symbolToken.start),
-                new vscode.Position(symbolToken.line, symbolToken.start + symbolToken.length),
-            );
-            const target = vscode.Uri.parse(
-                `command:${CMD_REVEAL_SYMBOL_SOURCE}?${encodeURIComponent(JSON.stringify(source))}`,
-            );
-            const link = new vscode.DocumentLink(range, target);
-            link.tooltip = 'Follow link';
-            links.push(link);
+        const resolution = this.symbols.resolveSymbol(symbolToken.name);
+        if (resolution.kind !== 'found') { return undefined; }
+        const source = this.sourceForSymbol(resolution.symbol, path.dirname(project.uri.fsPath));
+        if (!source) { return undefined; }
+
+        const markdown = new vscode.MarkdownString();
+        markdown.appendText(`Value: 0x${resolution.symbol.address.toString(16).toUpperCase().padStart(4, '0')}\n`);
+        markdown.appendMarkdown(`[Go to Definition](${revealSymbolCommandUri(source)}) (ctrl + click)`);
+        markdown.isTrusted = true;
+        const range = new vscode.Range(
+            new vscode.Position(symbolToken.line, symbolToken.start),
+            new vscode.Position(symbolToken.line, symbolToken.start + symbolToken.length),
+        );
+        return new vscode.Hover(markdown, range);
+    }
+
+    async provideDefinition(
+        document: vscode.TextDocument,
+        position: vscode.Position,
+        token: vscode.CancellationToken,
+    ): Promise<vscode.Location | undefined> {
+        const symbolToken = findSymbolTokens(document.getText()).find(candidate =>
+            candidate.line === position.line
+            && candidate.start <= position.character
+            && position.character < candidate.start + candidate.length,
+        );
+        if (!symbolToken) { return undefined; }
+
+        const project = this.activeProjectService.getActiveProject()
+            ?? await this.activeProjectService.resolve();
+        if (token.isCancellationRequested || !project?.run.debugArtifact) { return undefined; }
+
+        try {
+            await this.symbols.load(project.run.debugArtifact, project.run.executable);
+        } catch {
+            return undefined;
         }
-        return links;
+        if (token.isCancellationRequested) { return undefined; }
+
+        const resolution = this.symbols.resolveSymbol(symbolToken.name);
+        if (resolution.kind !== 'found') { return undefined; }
+        const source = this.sourceForSymbol(resolution.symbol, path.dirname(project.uri.fsPath));
+        if (!source) { return undefined; }
+
+        const target = new vscode.Position(Math.max(0, source.line - 1), Math.max(0, source.column - 1));
+        return new vscode.Location(
+            vscode.Uri.file(resolveDebugSourcePath(source.file, path.dirname(project.uri.fsPath))),
+            target,
+        );
     }
 
     private sourceForSymbol(symbol: SymbolInfo, projectRoot: string): SourceLocation | undefined {

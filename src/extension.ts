@@ -283,7 +283,13 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.languages.registerDocumentLinkProvider(asmSelector, new IncludeLinkProvider())
     );
     store.add(
-        vscode.languages.registerDocumentLinkProvider(
+        vscode.languages.registerHoverProvider(
+            asmSelector,
+            new SymbolLinkProvider(activeProjectService, debugSymbols),
+        ),
+    );
+    store.add(
+        vscode.languages.registerDefinitionProvider(
             asmSelector,
             new SymbolLinkProvider(activeProjectService, debugSymbols),
         ),
