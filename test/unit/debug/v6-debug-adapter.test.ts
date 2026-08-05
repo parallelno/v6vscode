@@ -2,6 +2,27 @@ import * as assert from 'assert';
 import { V6DebugAdapter } from '../../../src/debug/adapter/v6-debug-adapter';
 
 describe('V6DebugAdapter', () => {
+    it('formats byte and word register evaluations at their native widths', async () => {
+        const adapter = new V6DebugAdapter(
+            {} as any,
+            {} as any,
+            { debug() {}, error() {} } as any,
+            {} as any,
+            () => ({} as any),
+        );
+        (adapter as any).cachedRegs = {
+            af: 0x1002, bc: 0, de: 0, hl: 0x0100, sp: 0, pc: 0, m: 0,
+        };
+        const responses: any[] = [];
+        adapter.onDidSendMessage(message => responses.push(message));
+
+        await sendRequest(adapter, { seq: 1, command: 'evaluate', arguments: { expression: 'A' } });
+        await sendRequest(adapter, { seq: 2, command: 'evaluate', arguments: { expression: 'HL' } });
+
+        assert.strictEqual(responses[0].body.result, '0x10');
+        assert.strictEqual(responses[1].body.result, '0x0100');
+    });
+
     it('exposes machine-state scopes for an unmapped CPU frame', async () => {
         const adapter = new V6DebugAdapter(
             {} as any,

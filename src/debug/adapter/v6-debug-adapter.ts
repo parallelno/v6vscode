@@ -42,6 +42,7 @@ const VARREF_REGISTERS = 1;
 const VARREF_FLAGS = 2;
 const VARREF_STACK = 3;
 const UNKNOWN_SOURCE_REFERENCE = 1;
+const BYTE_REGISTER_EXPRESSIONS = new Set(['A', 'F', 'B', 'C', 'D', 'E', 'H', 'L', 'M']);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -187,7 +188,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             supportsConfigurationDoneRequest: true,
             supportsStepInTargetsRequest: false,
             supportsSetVariable: false,
-            supportsEvaluateForHovers: true,
+            supportsEvaluateForHovers: false,
             supportsInstructionBreakpoints: true,
             supportsBreakpointLocationsRequest: false,
             supportsTerminateRequest: true,
@@ -870,7 +871,9 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             const val = this.evalExpression(expr, regs);
             if (val !== undefined) {
                 this.sendResponseBody(req, {
-                    result: typeof val === 'number' ? hex4(val) : val,
+                    result: typeof val === 'number'
+                        ? BYTE_REGISTER_EXPRESSIONS.has(expr) ? hex2(val) : hex4(val)
+                        : val,
                     variablesReference: 0,
                 });
                 return;

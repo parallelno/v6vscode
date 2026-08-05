@@ -9,6 +9,9 @@ import { resolveDebugSourcePath } from '../../debug/metadata/debug-source-path';
 export const CMD_REVEAL_SYMBOL_SOURCE = 'v6.revealSymbolSource';
 
 const SYMBOL_PATTERN = /[A-Za-z_.@][A-Za-z0-9_.@$]*/g;
+const BYTE_REGISTERS = new Set(['A', 'F', 'B', 'C', 'D', 'E', 'H', 'L', 'M']);
+const WORD_REGISTERS = new Set(['AF', 'BC', 'DE', 'HL', 'SP', 'PC']);
+const PAIR_OPERAND_MNEMONICS = new Set(['LXI', 'DAD', 'INX', 'DCX', 'PUSH', 'POP', 'LDAX', 'STAX']);
 
 export interface SymbolToken {
     name: string;
@@ -19,6 +22,23 @@ export interface SymbolToken {
 
 export function revealSymbolCommandUri(source: SourceLocation): string {
     return `command:${CMD_REVEAL_SYMBOL_SOURCE}?${encodeURIComponent(JSON.stringify(source))}`;
+}
+
+export function registerExpressionForHover(line: string, token: string): string | undefined {
+    const register = token.toUpperCase();
+    if (!BYTE_REGISTERS.has(register) && !WORD_REGISTERS.has(register) && register !== 'PSW') {
+        return undefined;
+    }
+
+    const code = codeBeforeComment(line).trim().toUpperCase();
+    const instruction = /^(?:[A-Z_.@][A-Z0-9_.@$]*:\s*)?([A-Z]+)\s+([A-Z]+)\b/.exec(code);
+    if (instruction
+        && PAIR_OPERAND_MNEMONICS.has(instruction[1])
+        && instruction[2] === register) {
+        return ({ B: 'BC', D: 'DE', H: 'HL', PSW: 'AF' } as Record<string, string>)[register]
+            ?? register;
+    }
+    return register === 'PSW' ? undefined : register;
 }
 
 /** Return assembler identifiers outside quoted strings and ';' comments. */
@@ -65,6 +85,30 @@ export class SymbolLinkProvider implements vscode.HoverProvider, vscode.Definiti
             && position.character < candidate.start + candidate.length,
         );
         if (!symbolToken) { return undefined; }
+
+        const registerExpression = registerExpressionForHover(
+            document.lineAt(position.line).text,
+            symbolToken.name,
+        );
+        const debugSession = vscode.debug.activeDebugSession;
+        if (registerExpression && debugSession?.type === 'v6') {
+            try {
+                const evaluation = await debugSession.customRequest('evaluate', {
+                    expression: registerExpression,
+                    context: 'hover',
+                });
+                if (token.isCancellationRequested || typeof evaluation?.result !== 'string') {
+                    return undefined;
+                }
+                const range = new vscode.Range(
+                    new vscode.Position(symbolToken.line, symbolToken.start),
+                    new vscode.Position(symbolToken.line, symbolToken.start + symbolToken.length),
+                );
+                return new vscode.Hover(evaluation.result, range);
+            } catch {
+                return undefined;
+            }
+        }
 
         const project = this.activeProjectService.getActiveProject()
             ?? await this.activeProjectService.resolve();

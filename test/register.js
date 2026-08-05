@@ -70,6 +70,9 @@ const mockVscode = {
     languages: {
         registerDocumentLinkProvider: (_selector, _provider) => ({ dispose: () => {} }),
     },
+    debug: {
+        activeDebugSession: undefined,
+    },
     Position: class Position {
         constructor(line, character) { this.line = line; this.character = character; }
     },
@@ -85,6 +88,9 @@ const mockVscode = {
     },
     DocumentLink: class DocumentLink {
         constructor(range, target) { this.range = range; this.target = target; }
+    },
+    Hover: class Hover {
+        constructor(contents, range) { this.contents = contents; this.range = range; }
     },
 };
 

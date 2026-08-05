@@ -1,10 +1,48 @@
 import { expect } from 'chai';
+import * as vscode from 'vscode';
 import {
     findLabelDefinition,
     findSymbolTokens,
+    registerExpressionForHover,
+    SymbolLinkProvider,
 } from '../../../src/language/symbols/symbol-link-provider';
 
 describe('Symbol link provider helpers', () => {
+    it('uses the hovered instruction to distinguish register pairs from bytes', () => {
+        expect(registerExpressionForHover('lxi h, main', 'h')).to.equal('HL');
+        expect(registerExpressionForHover('loop: inx d', 'd')).to.equal('DE');
+        expect(registerExpressionForHover('stax b', 'b')).to.equal('BC');
+        expect(registerExpressionForHover('mvi h, 0', 'h')).to.equal('H');
+        expect(registerExpressionForHover('mov a, h', 'h')).to.equal('H');
+        expect(registerExpressionForHover('lxi sp, 0x8000', 'sp')).to.equal('SP');
+    });
+
+    it('evaluates the pair selected by the hovered instruction', async () => {
+        const expressions: string[] = [];
+        (vscode.debug as any).activeDebugSession = {
+            type: 'v6',
+            customRequest: async (_command: string, args: { expression: string }) => {
+                expressions.push(args.expression);
+                return { result: '0x0100', variablesReference: 0 };
+            },
+        };
+        const provider = new SymbolLinkProvider({} as any, {} as any);
+        const document = {
+            getText: () => 'lxi h, main',
+            lineAt: () => ({ text: 'lxi h, main' }),
+        } as any;
+
+        const hover = await provider.provideHover(
+            document,
+            new vscode.Position(0, 4),
+            { isCancellationRequested: false } as any,
+        );
+
+        expect(expressions).to.deep.equal(['HL']);
+        expect((hover as any).contents).to.equal('0x0100');
+        (vscode.debug as any).activeDebugSession = undefined;
+    });
+
     it('finds assembler symbols but skips quoted strings and comments', () => {
         const tokens = findSymbolTokens([
             'main: lxi h, DISPLAY_ADDR ; OPCODE_EI',
