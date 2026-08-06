@@ -84,15 +84,18 @@ describe('V6DebugAdapter stop records', () => {
             id: 7,
             address: 0x1234,
             logMessage: {
-                text: 'PC={PC}',
-                segments: [{ literal: 'PC=' }, { expression: 'PC' }],
+                text: 'B={B}, C={C}',
+                segments: [
+                    { literal: 'B=' }, { expression: 'B' },
+                    { literal: ', C=' }, { expression: 'C' },
+                ],
             },
         });
         (adapter as any).client = {
             send: async (command: IpcCommand) => {
                 commands.push(command);
                 if (command === IpcCommand.GET_REGS) {
-                    return { ok: true, data: { pc: 0x1234, af: 0, bc: 0, de: 0, hl: 0, sp: 0, cc: 0 } };
+                    return { ok: true, data: { pc: 0x1234, af: 0, bc: 0x0E00, de: 0, hl: 0, sp: 0, cc: 0 } };
                 }
                 return { ok: true };
             },
@@ -106,7 +109,7 @@ describe('V6DebugAdapter stop records', () => {
             breakpointAddress: 0x1234,
         } satisfies StopRecord);
 
-        expect(messages.find(message => message.event === 'output').body.output).to.equal('PC=0x1234\n');
+        expect(messages.find(message => message.event === 'output').body.output).to.equal('B=0x0E, C=0x00\n');
         expect(messages.find(message => message.event === 'stopped')).to.equal(undefined);
         expect(commands).to.include(IpcCommand.RUN);
     });

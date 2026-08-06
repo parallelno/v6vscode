@@ -640,7 +640,7 @@ This feature completes the condition, hit-condition, logpoint, and triggered-bre
 - [x] Reconcile condition, hit, and log-message changes.
 - [x] Preserve IDs across successful replacement.
 - [x] Preserve the server counter across unchanged and log-message-only requests.
-- [ ] Verify server-counter lifecycle behavior at reset, restart, reload, disconnect, and backend replacement.
+- [x] Verify server-counter lifecycle behavior at reset, restart, reload, disconnect, and backend replacement.
 - [x] Deduplicate compatible requests at one address.
 - [x] Reject conflicts at one address.
 - [ ] Protect user breakpoints from Step Over collisions.
