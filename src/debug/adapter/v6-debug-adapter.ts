@@ -13,6 +13,7 @@ import {
 } from '../../emulator/protocol/ipc-commands';
 import {
     BreakpointOperand,
+    BreakpointEntry,
     DebugCondition,
     makeBreakpointAdd,
     decodeStopRecord,
@@ -145,6 +146,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private breakpointsByAddress = new Map<number, AdapterBreakpoint>();
     private sourceBpAddresses = new Map<string, Set<number>>();
     private instructionBpAddresses = new Set<number>();
+    private serverBreakpointIds = new Map<number, number>();
     private watchpointIdToDapId = new Map<number, number>();
     private dapWatchpointIds = new Set<number>();
 
@@ -224,6 +226,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             supportsSetVariable: false,
             supportsEvaluateForHovers: false,
             supportsInstructionBreakpoints: true,
+            supportsBreakpointEvents: true,
             supportsBreakpointLocationsRequest: false,
             supportsTerminateRequest: true,
             supportTerminateDebuggee: true,
@@ -483,8 +486,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         if (ref === VARREF_REGISTERS) {
             this.sendResponseBody(req, {
                 variables: [
-                    mkVar('A',  hex2(a),         0, 'register'),
                     mkVar('F',  hex2(f),         0, 'register'),
+                    mkVar('A',  hex2(a),         0, 'register'),
                     mkVar('B',  hex2(b),         0, 'register'),
                     mkVar('C',  hex2(c),         0, 'register'),
                     mkVar('D',  hex2(d),         0, 'register'),
@@ -553,6 +556,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
     private async run(): Promise<void> {
         if (!this.client) { return; }
+        await this.syncServerBreakpoints();
         await this.captureStopBaseline();
         this.watchpointsProvider?.showStop([]);
         this.cachedRegs = null;
@@ -584,27 +588,36 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private async onNext(req: any): Promise<void> {
         if (!this.client) { this.sendResponseBody(req, {}); return; }
 
-        this.sendResponseBody(req, {});
         this.pendingStep = true;
         this.cachedRegs = null;
 
         try {
             // Ask backend for step-over address (address after current instruction / CALL target)
             const soResp = await this.client.send<GetStepOverAddrResponse>(IpcCommand.GET_STEP_OVER_ADDR);
-            const soAddr = soResp.ok && soResp.data ? soResp.data.addr : 0;
+            const soAddr = soResp.ok && typeof soResp.data?.data === 'number' ? soResp.data.data : 0;
 
             if (soAddr > 0 && soAddr !== 0xFFFF) {
                 // Set a temporary auto-delete breakpoint at the step-over address
+                const addResp = await this.client.send(
+                    IpcCommand.DEBUG_BREAKPOINT_ADD,
+                    makeBreakpointAdd(soAddr, '__dap_next', { autoDelete: true }),
+                );
+                if (!addResp.ok) {
+                    this.pendingStep = false;
+                    this.sendResponse(req, false, addResp.error ?? 'Unable to set the temporary step-over breakpoint');
+                    return;
+                }
                 this.pendingStepOverAddr = soAddr;
-                await this.client.send(IpcCommand.DEBUG_BREAKPOINT_ADD,
-                    makeBreakpointAdd(soAddr, '__dap_next', { autoDelete: true }));
+                this.sendResponseBody(req, {});
                 await this.run();
             } else {
                 // Fallback: single instruction step
+                this.sendResponseBody(req, {});
                 await this.singleStep();
             }
-        } catch {
-            await this.singleStep();
+        } catch (error) {
+            this.pendingStep = false;
+            this.sendResponse(req, false, error instanceof Error ? error.message : String(error));
         }
     }
 
@@ -1305,15 +1318,18 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // -----------------------------------------------------------------------
 
     private async onStop(record?: StopRecord): Promise<void> {
-        // Clean up any pending step-over breakpoint that was not auto-deleted
-        if (this.pendingStepOverAddr !== undefined) {
+        await this.refreshRegs();
+
+        const stoppedAtStepOver = this.pendingStepOverAddr !== undefined
+            && ((record?.reason === 'breakpoint' && record.breakpointAddress === this.pendingStepOverAddr)
+                || (record === undefined && this.cachedRegs?.pc === this.pendingStepOverAddr));
+        if (stoppedAtStepOver && this.pendingStepOverAddr !== undefined) {
             await this.client?.send(IpcCommand.DEBUG_BREAKPOINT_DEL, {
                 addr: this.pendingStepOverAddr,
             }).catch(() => {});
             this.pendingStepOverAddr = undefined;
         }
-
-        await this.refreshRegs();
+        await this.syncServerBreakpoints();
         if (record) {
             if (record.reason === 'breakpoint' && record.breakpointAddress !== undefined) {
                 const breakpoint = this.breakpointsByAddress.get(record.breakpointAddress);
@@ -1461,6 +1477,49 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    private async syncServerBreakpoints(): Promise<void> {
+        if (!this.client) { return; }
+        try {
+            const response = await this.client.send<BreakpointEntry[]>(IpcCommand.DEBUG_BREAKPOINT_GET_ALL);
+            if (!response.ok || !Array.isArray(response.data)) { return; }
+
+            const serverAddresses = new Set(response.data.map(breakpoint => breakpoint.addr));
+            for (const breakpoint of response.data) {
+                if (this.bpAddrToId.has(breakpoint.addr) || this.serverBreakpointIds.has(breakpoint.addr)) {
+                    continue;
+                }
+                const id = this.nextBpId++;
+                this.serverBreakpointIds.set(breakpoint.addr, id);
+                const sourceLocation = this.debugIndex?.resolveAddress(breakpoint.addr);
+                const sourcePath = sourceLocation
+                    ? resolveDebugSourcePath(sourceLocation.file, this.workspaceRoot)
+                    : undefined;
+                this.sendEvent('breakpoint', {
+                    reason: 'new',
+                    breakpoint: {
+                        id,
+                        verified: breakpoint.status === 'ACTIVE',
+                        instructionReference: hex4(breakpoint.addr),
+                        message: breakpoint.comment || undefined,
+                        source: sourcePath
+                            ? { name: path.basename(sourcePath), path: sourcePath, sourceReference: 0 }
+                            : { name: `Breakpoint ${hex4(breakpoint.addr)}`, sourceReference: UNKNOWN_SOURCE_REFERENCE },
+                        line: sourceLocation?.line,
+                        column: sourceLocation?.column,
+                    },
+                });
+            }
+
+            for (const [addr, id] of this.serverBreakpointIds) {
+                if (serverAddresses.has(addr)) { continue; }
+                this.serverBreakpointIds.delete(addr);
+                this.sendEvent('breakpoint', { reason: 'removed', breakpoint: { id } });
+            }
+        } catch (error) {
+            this.logger.debug(`v6-debug: breakpoint synchronization unavailable: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
 
     private async refreshRegs(): Promise<void> {
         if (!this.client) { return; }

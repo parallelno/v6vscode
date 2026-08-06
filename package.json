@@ -44,7 +44,7 @@
         "command": "v6.debug.reloadRom",
         "title": "Reload ROM",
         "category": "V6",
-        "icon": "$(sync)"
+          "icon": "res/images/reload-rom.svg"
       },
       {
         "command": "v6.refreshHardwareStatistics",

@@ -261,7 +261,7 @@ export interface IsRunningResponse {
 
 /** GET_STEP_OVER_ADDR (command 28) response. */
 export interface GetStepOverAddrResponse {
-    addr: number;
+    data: number;
 }
 
 /** GET_STACK_SAMPLE (command 18) response. */

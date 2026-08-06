@@ -1,5 +1,6 @@
 import * as assert from 'assert';
 import { V6DebugAdapter } from '../../../src/debug/adapter/v6-debug-adapter';
+import { IpcCommand } from '../../../src/emulator/protocol/ipc-commands';
 
 describe('V6DebugAdapter', () => {
     it('formats byte and word register evaluations at their native widths', async () => {
@@ -50,6 +51,161 @@ describe('V6DebugAdapter', () => {
 
         await sendRequest(adapter, { seq: 3, command: 'source', arguments: { sourceReference: 1 } });
         assert.strictEqual(responses[2].body.content, 'Source is unavailable for the current CPU address.');
+    });
+
+    it('steps over by adding an auto-delete breakpoint at the backend address', async () => {
+        const adapter = new V6DebugAdapter(
+            { setExecutionRunning() {} } as any,
+            {} as any,
+            { debug() {}, error() {} } as any,
+            {} as any,
+            () => ({} as any),
+        );
+        const calls: Array<{ command: IpcCommand; data: unknown }> = [];
+        (adapter as any).client = {
+            send: async (command: IpcCommand, data: unknown) => {
+                calls.push({ command, data });
+                return command === IpcCommand.GET_STEP_OVER_ADDR
+                    ? { ok: true, data: { data: 0x1234 } }
+                    : { ok: true };
+            },
+        };
+        (adapter as any).stopRecordsSupported = false;
+        (adapter as any).startPoll = () => {};
+
+        await (adapter as any).onNext({ seq: 1, command: 'next' });
+
+        assert.deepStrictEqual(calls, [
+            { command: IpcCommand.GET_STEP_OVER_ADDR, data: undefined },
+            {
+                command: IpcCommand.DEBUG_BREAKPOINT_ADD,
+                data: {
+                    addr: 0x1234,
+                    memPages: 8589934591,
+                    status: 'ACTIVE',
+                    autoDelete: true,
+                    operand: 'A',
+                    condition: 'ANY',
+                    value: 0,
+                    comment: '__dap_next',
+                },
+            },
+            { command: IpcCommand.DEBUG_BREAKPOINT_GET_ALL, data: undefined },
+            { command: IpcCommand.RUN, data: undefined },
+        ]);
+    });
+
+    it('publishes server-only breakpoints when execution resumes', async () => {
+        const adapter = new V6DebugAdapter(
+            { setExecutionRunning() {} } as any,
+            {} as any,
+            { debug() {}, error() {} } as any,
+            {} as any,
+            () => ({} as any),
+        );
+        const messages: any[] = [];
+        adapter.onDidSendMessage(message => messages.push(message));
+        (adapter as any).workspaceRoot = 'C:\\project';
+        (adapter as any).debugIndex = {
+            resolveAddress: () => ({ file: 'src\\main.asm', line: 58, column: 1 }),
+        };
+        (adapter as any).client = {
+            send: async (command: IpcCommand) => {
+                if (command === IpcCommand.DEBUG_BREAKPOINT_GET_ALL) {
+                    return {
+                        ok: true,
+                        data: [{
+                            addr: 0x1234,
+                            memPages: 8589934591,
+                            status: 'ACTIVE',
+                            autoDelete: true,
+                            operand: 'A',
+                            condition: 'ANY',
+                            value: 0,
+                            comment: '__dap_next',
+                        }],
+                    };
+                }
+                return { ok: true };
+            },
+        };
+        (adapter as any).stopRecordsSupported = false;
+        (adapter as any).startPoll = () => {};
+
+        await (adapter as any).run();
+
+        assert.deepStrictEqual(messages[0], {
+            type: 'event',
+            event: 'breakpoint',
+            body: {
+                reason: 'new',
+                breakpoint: {
+                    id: 1,
+                    verified: true,
+                    instructionReference: '0x1234',
+                    message: '__dap_next',
+                    source: { name: 'main.asm', path: 'C:\\project\\src\\main.asm', sourceReference: 0 },
+                    line: 58,
+                    column: 1,
+                },
+            },
+        });
+    });
+
+    it('keeps a temporary step-over breakpoint after a manual pause', async () => {
+        const adapter = new V6DebugAdapter(
+            { setExecutionRunning() {} } as any,
+            {} as any,
+            { debug() {}, error() {} } as any,
+            {} as any,
+            () => ({} as any),
+        );
+        const calls: IpcCommand[] = [];
+        (adapter as any).pendingStepOverAddr = 0x1234;
+        (adapter as any).client = {
+            send: async (command: IpcCommand) => {
+                calls.push(command);
+                if (command === IpcCommand.DEBUG_BREAKPOINT_GET_ALL) {
+                    return { ok: true, data: [] };
+                }
+                return { ok: true };
+            },
+        };
+
+        await (adapter as any).onStop({ reason: 'pause', pc: 0x1200 });
+
+        assert.strictEqual((adapter as any).pendingStepOverAddr, 0x1234);
+        assert.strictEqual(calls.includes(IpcCommand.DEBUG_BREAKPOINT_DEL), false);
+    });
+
+    it('does not execute when the temporary step-over breakpoint is rejected', async () => {
+        const adapter = new V6DebugAdapter(
+            { setExecutionRunning() {} } as any,
+            {} as any,
+            { debug() {}, error() {} } as any,
+            {} as any,
+            () => ({} as any),
+        );
+        const calls: IpcCommand[] = [];
+        const responses: any[] = [];
+        adapter.onDidSendMessage(message => responses.push(message));
+        (adapter as any).client = {
+            send: async (command: IpcCommand) => {
+                calls.push(command);
+                return command === IpcCommand.GET_STEP_OVER_ADDR
+                    ? { ok: true, data: { data: 0x1234 } }
+                    : { ok: false, error: 'Breakpoint rejected' };
+            },
+        };
+
+        await (adapter as any).onNext({ seq: 1, command: 'next' });
+
+        assert.deepStrictEqual(calls, [
+            IpcCommand.GET_STEP_OVER_ADDR,
+            IpcCommand.DEBUG_BREAKPOINT_ADD,
+        ]);
+        assert.strictEqual(responses[0].success, false);
+        assert.strictEqual(responses[0].message, 'Breakpoint rejected');
     });
 });
 
