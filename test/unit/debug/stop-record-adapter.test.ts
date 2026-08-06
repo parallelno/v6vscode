@@ -76,6 +76,41 @@ describe('V6DebugAdapter stop records', () => {
         expect(messages.find(message => message.event === 'stopped').body.reason).to.equal('exception');
     });
 
+    it('emits a logpoint and resumes without a stopped event', async () => {
+        const { adapter, messages } = makeAdapter();
+        const commands: IpcCommand[] = [];
+        (adapter as any).bpAddrToId.set(0x1234, 7);
+        (adapter as any).breakpointsByAddress.set(0x1234, {
+            id: 7,
+            address: 0x1234,
+            logMessage: {
+                text: 'PC={PC}',
+                segments: [{ literal: 'PC=' }, { expression: 'PC' }],
+            },
+        });
+        (adapter as any).client = {
+            send: async (command: IpcCommand) => {
+                commands.push(command);
+                if (command === IpcCommand.GET_REGS) {
+                    return { ok: true, data: { pc: 0x1234, af: 0, bc: 0, de: 0, hl: 0, sp: 0, cc: 0 } };
+                }
+                return { ok: true };
+            },
+        };
+
+        await (adapter as any).onStop({
+            sequence: 4,
+            reason: 'breakpoint',
+            pc: 0x1234,
+            globalInstructionAddress: 0x1234,
+            breakpointAddress: 0x1234,
+        } satisfies StopRecord);
+
+        expect(messages.find(message => message.event === 'output').body.output).to.equal('PC=0x1234\n');
+        expect(messages.find(message => message.event === 'stopped')).to.equal(undefined);
+        expect(commands).to.include(IpcCommand.RUN);
+    });
+
     it('polls IS_RUNNING before reading stop details', async () => {
         const { adapter, messages } = makeAdapter();
         const commands: IpcCommand[] = [];

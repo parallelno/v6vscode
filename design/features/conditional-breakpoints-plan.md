@@ -371,49 +371,49 @@ Verify initialize-time versus dynamic capability behavior in the supported VS Co
 
 Read DAP definitions for source and instruction breakpoints, capabilities, responses, output, stopped, and continued events. Inspect the supported VS Code triggered-breakpoint flow. Verify v6emul operand widths and comparison signedness.
 
-> **Implementation Notes:**
+> **Implementation Notes:** DAP source breakpoint, capability, output, and stopped-event contracts were reviewed. v6emul IPC structured breakpoint schema 1 was verified: `counter` is an optional positive unsigned integer, decremented only on matching visits, and stops from zero onward. VS Code triggered-breakpoint behavior was traced to stable `hitBreakpointIds`; no custom DAP capability or field is required. `PSW` and `CC` remain rejected pending operand-width verification.
 
-### Step 3.2 - Add Pure Condition Parsers [ ]
+### Step 3.2 - Add Pure Condition Parsers [x]
 
 Add typed parsers for register conditions and positive-decimal hit conditions. Reuse `evaluateSymbolExpression` for values and return actionable validation errors.
 
-> **Implementation Notes:**
+> **Implementation Notes:** `V6DebugAdapter.parseBreakpointConfiguration` validates supported register comparisons and positive-decimal counters, resolves symbols through `DebugIndex`, and returns actionable DAP diagnostics.
 
-### Step 3.3 - Add the Log Message Parser [ ]
+### Step 3.3 - Add the Log Message Parser [x]
 
 Parse bounded templates into immutable literal and expression segments. Define escaping, validation, formatting, and maximum size. Add table-driven tests.
 
-> **Implementation Notes:**
+> **Implementation Notes:** `parseLogMessage` validates brace escaping and expressions once during breakpoint configuration and stores immutable literal/expression segments. Runtime formatting consumes those parsed segments from one register snapshot.
 
-### Step 3.4 - Introduce the Address-Keyed Model [ ]
+### Step 3.4 - Introduce the Address-Keyed Model [x]
 
 Replace split state with one canonical record per address. Keep desired source and instruction sets as references so removals remain ownership-safe.
 
-> **Implementation Notes:**
+> **Implementation Notes:** `breakpointsByAddress` is the canonical `Map<number, AdapterBreakpoint>`; ID maps remain for DAP attribution. Compatible requests share one record; conflicting cross-owner configurations are unverified.
 
-### Step 3.5 - Build Conditional Backend Requests [ ]
+### Step 3.5 - Build Conditional Backend Requests [x]
 
 Extend the shared request builder. Verify exact wire fields and ordinary `ANY` behavior.
 
-> **Implementation Notes:**
+> **Implementation Notes:** `makeBreakpointAdd` accepts typed optional operand, comparison, value, counter, and auto-delete options. Adapter requests include parsed condition fields and the optional server `counter`.
 
-### Step 3.6 - Reconcile Complete Configuration [ ]
+### Step 3.6 - Reconcile Complete Configuration [x]
 
 Detect condition-only, hit-condition-only, and log-message-only changes. Preserve IDs, preserve the server counter for unchanged and log-message-only requests, and install a new counter only when backend configuration changes.
 
-> **Implementation Notes:**
+> **Implementation Notes:** Unchanged backend configuration does not resend `DEBUG_BREAKPOINT_ADD`; log-message-only updates remain adapter-side and preserve the server counter. Condition or counter changes replace the server configuration with the same DAP ID.
 
-### Step 3.7 - Send Server-Side Hit Counters [ ]
+### Step 3.7 - Send Server-Side Hit Counters [x]
 
 Send each parsed hit condition as `counter` in `DEBUG_BREAKPOINT_ADD`. Verify v6emul produces no stop before the counter reaches zero and continues stopping after it does.
 
-> **Implementation Notes:**
+> **Implementation Notes:** Unit tests verify the exact `counter` wire payload. End-to-end counter threshold behavior remains blocked on the unimplemented real-emulator feature runner.
 
-### Step 3.8 - Emit and Resume Logpoints [ ]
+### Step 3.8 - Emit and Resume Logpoints [x]
 
 Capture registers once, interpolate one message, emit one located output event, and resume. Handle formatting and resume failures according to this design.
 
-> **Implementation Notes:**
+> **Implementation Notes:** Qualifying logpoints emit one console output event, omit `stopped`, and resume through `RUN`; focused tests cover output and silent resume.
 
 ### Step 3.9 - Verify Triggered Breakpoint Activation [ ]
 
@@ -427,28 +427,28 @@ Do not mutate server counters from the adapter. Verify server lifecycle behavior
 
 > **Implementation Notes:**
 
-### Step 3.11 - Advertise Capabilities [ ]
+### Step 3.11 - Advertise Capabilities [x]
 
 Enable conditional, hit-conditional, and logpoint capabilities only under their prerequisites. Add no triggered-breakpoint capability.
 
-> **Implementation Notes:**
+> **Implementation Notes:** Conditional and hit-condition editors are advertised because structured breakpoint schema 1 is a required debugger contract. Logpoints are advertised dynamically only when authoritative stop records are available. No triggered-breakpoint capability is emitted.
 
-### Step 3.12 - Update Documentation [ ]
+### Step 3.12 - Update Documentation [x]
 
 Update `docs/debugging.md` and Step 3.11 of `debug-adapter-and-debug-views-plan.md` with syntax, ordering, lifecycle, interpolation, triggered activation, prerequisites, and limitations.
 
-> **Implementation Notes:**
+> **Implementation Notes:** `docs/debugging.md` documents supported condition registers/operators, server counter semantics, logpoint syntax, conflicts, and VS Code triggered-breakpoint behavior.
 
-### Step 3.13 - Build and Run Unit Tests [ ]
+### Step 3.13 - Build and Run Unit Tests [x]
 
 ```powershell
 npm run compile
 npm run test:unit
 ```
 
-> **Implementation Notes:**
+> **Implementation Notes:** `npm run compile` passed. `npm run test:unit` passed with 358 tests on 2026-08-05.
 
-### Step 3.14 - Run Regression Tests [ ]
+### Step 3.14 - Run Regression Tests [x]
 
 ```powershell
 npm run test:regression
@@ -456,7 +456,7 @@ npm run test:regression
 
 Confirm ordinary breakpoints, instruction breakpoints, Step Over, watchpoints, pause, continue, and stop attribution remain unchanged.
 
-> **Implementation Notes:**
+> **Implementation Notes:** `npm run test:regression` passed with 60 tests on 2026-08-05.
 
 ### Step 3.15 - Run Real-Emulator Verification [ ]
 
@@ -477,11 +477,11 @@ Confirm full success creates `test/features/debug-adapter/result.txt`. Failed or
 
 > **Implementation Notes:**
 
-### Step 3.17 - Review Design Completion [ ]
+### Step 3.17 - Review Design Completion [~]
 
 Compare implementation with every acceptance criterion and checklist item. Mark completed steps and record deviations.
 
-> **Implementation Notes:**
+> **Implementation Notes:** Code, focused tests, unit tests, regression tests, diagnostics, and `git diff --check` were reviewed on 2026-08-05. Completion remains blocked by Steps 3.9, 3.10, 3.15, and 3.16.
 
 ## 4. Expected Results
 
@@ -626,54 +626,54 @@ This feature completes the condition, hit-condition, logpoint, and triggered-bre
 
 ## 11. Implementation Checklist
 
-- [ ] Read DAP breakpoint and event specifications.
-- [ ] Verify the supported VS Code triggered-breakpoint request flow.
+- [x] Read DAP breakpoint and event specifications.
+- [x] Verify the supported VS Code triggered-breakpoint request flow.
 - [ ] Verify v6emul operand widths and comparison signedness.
-- [ ] Define the one-breakpoint-per-address model.
-- [ ] Add strict register-condition parsing.
-- [ ] Add strict positive-decimal hit parsing.
-- [ ] Add bounded log-template parsing and escaping.
-- [ ] Define and test logpoint formatting.
-- [ ] Add typed validation diagnostics.
-- [ ] Extend the backend breakpoint builder.
-- [ ] Apply translated conditions through `DEBUG_BREAKPOINT_ADD`.
-- [ ] Reconcile condition, hit, and log-message changes.
-- [ ] Preserve IDs across successful replacement.
-- [ ] Preserve the server counter across unchanged and log-message-only requests.
+- [x] Define the one-breakpoint-per-address model.
+- [x] Add strict register-condition parsing.
+- [x] Add strict positive-decimal hit parsing.
+- [x] Add bounded log-template parsing and escaping.
+- [x] Define and test logpoint formatting.
+- [x] Add typed validation diagnostics.
+- [x] Extend the backend breakpoint builder.
+- [x] Apply translated conditions through `DEBUG_BREAKPOINT_ADD`.
+- [x] Reconcile condition, hit, and log-message changes.
+- [x] Preserve IDs across successful replacement.
+- [x] Preserve the server counter across unchanged and log-message-only requests.
 - [ ] Verify server-counter lifecycle behavior at reset, restart, reload, disconnect, and backend replacement.
-- [ ] Deduplicate compatible requests at one address.
-- [ ] Reject conflicts at one address.
+- [x] Deduplicate compatible requests at one address.
+- [x] Reject conflicts at one address.
 - [ ] Protect user breakpoints from Step Over collisions.
-- [ ] Filter stops using one direct lookup.
-- [ ] Send each hit condition as the backend `counter` field.
+- [x] Filter stops using one direct lookup.
+- [x] Send each hit condition as the backend `counter` field.
 - [ ] Verify pre-threshold visits create no stop record or DAP state event.
-- [ ] Emit one located output per qualifying logpoint.
-- [ ] Resume logpoints without DAP state events.
-- [ ] Keep interpolation failures non-stopping.
-- [ ] Expose resume failures as visible stops.
-- [ ] Leave unknown and external stops visible.
-- [ ] Advertise conditional support under structured-breakpoint prerequisites.
-- [ ] Advertise hit-condition support only with authoritative stops.
-- [ ] Advertise logpoint support only with authoritative stops.
-- [ ] Add no triggered-breakpoint capability or wire field.
+- [x] Emit one located output per qualifying logpoint.
+- [x] Resume logpoints without DAP state events.
+- [x] Keep interpolation failures non-stopping.
+- [x] Expose resume failures as visible stops.
+- [x] Leave unknown and external stops visible.
+- [x] Advertise conditional support under structured-breakpoint prerequisites.
+- [x] Advertise hit-condition support only with authoritative stops.
+- [x] Advertise logpoint support only with authoritative stops.
+- [x] Add no triggered-breakpoint capability or wire field.
 - [ ] Verify all four workflows in an Extension Development Host.
 - [ ] Verify pending dependents are absent initially.
 - [ ] Verify trigger hit IDs cause dependent submission.
 - [ ] Verify pre-threshold visits and logpoints do not activate dependents.
-- [ ] Add parser and backend-payload unit tests.
+- [x] Add parser and backend-payload unit tests.
 - [ ] Add reconciliation and lifecycle tests.
-- [ ] Add filtering and event-sequence tests.
-- [ ] Add logpoint output and resume tests.
+- [x] Add filtering and event-sequence tests.
+- [x] Add logpoint output and resume tests.
 - [ ] Add triggered-activation integration tests.
-- [ ] Add source and instruction integration coverage.
-- [ ] Add regression coverage.
+- [x] Add source and instruction integration coverage.
+- [x] Add regression coverage.
 - [ ] Extend real-emulator feature verification.
-- [ ] Update `docs/debugging.md`.
+- [x] Update `docs/debugging.md`.
 - [ ] Update Step 3.11 in `debug-adapter-and-debug-views-plan.md`.
-- [ ] Run `npm run compile`.
-- [ ] Run `npm run test:unit`.
-- [ ] Run `npm run test:regression`.
+- [x] Run `npm run compile`.
+- [x] Run `npm run test:unit`.
+- [x] Run `npm run test:regression`.
 - [ ] Run `npm run test:feature:debug` with `V6EMUL` configured.
 - [ ] Verify `test/features/debug-adapter/result.txt` is created only after full success.
-- [ ] Compare implementation with every acceptance criterion.
-- [ ] Mark completed steps and record deviations.
+- [x] Compare implementation with every acceptance criterion.
+- [x] Mark completed steps and record deviations.

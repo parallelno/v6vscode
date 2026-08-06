@@ -12,6 +12,8 @@ import {
     PingResponse,
 } from '../../emulator/protocol/ipc-commands';
 import {
+    BreakpointOperand,
+    DebugCondition,
     makeBreakpointAdd,
     decodeStopRecord,
     GetStepOverAddrResponse,
@@ -26,7 +28,7 @@ import { Logger } from '../../platform/logging/logger';
 import { PathService } from '../../platform/files/path-service';
 import { getServerInfo, supportsStopRecords, validateDebuggerServer } from '../../emulator/protocol/ipc-server-info';
 import { WatchpointService } from '../watchpoints/watchpoint-service';
-import { evaluateSymbolExpression } from '../utilities/symbol-expression';
+import { evaluateSymbolExpression, validateSymbolExpression } from '../utilities/symbol-expression';
 import { WatchpointsProvider } from '../views/watchpoints-provider';
 
 // ---------------------------------------------------------------------------
@@ -43,6 +45,37 @@ const VARREF_FLAGS = 2;
 const VARREF_STACK = 3;
 const UNKNOWN_SOURCE_REFERENCE = 1;
 const BYTE_REGISTER_EXPRESSIONS = new Set(['A', 'F', 'B', 'C', 'D', 'E', 'H', 'L', 'M']);
+const BYTE_BREAKPOINT_OPERANDS = new Set<BreakpointOperand>(['A', 'F', 'B', 'C', 'D', 'E', 'H', 'L']);
+const WORD_BREAKPOINT_OPERANDS = new Set<BreakpointOperand>(['BC', 'DE', 'HL', 'SP']);
+const BREAKPOINT_OPERANDS = new Set<BreakpointOperand>([
+    'A', 'F', 'B', 'C', 'D', 'E', 'H', 'L', 'BC', 'DE', 'HL', 'SP',
+]);
+const CONDITION_OPERATORS: ReadonlyArray<readonly [string, DebugCondition]> = [
+    ['==', 'EQU'], ['!=', 'NOT_EQU'], ['<=', 'LESS_EQU'], ['>=', 'GREATER_EQU'],
+    ['<', 'LESS'], ['>', 'GREATER'],
+];
+
+interface ParsedBreakpointCondition {
+    operand: BreakpointOperand;
+    condition: DebugCondition;
+    value: number;
+    text: string;
+}
+
+type LogMessageSegment = { literal: string } | { expression: string };
+
+interface ParsedLogMessage {
+    text: string;
+    segments: readonly LogMessageSegment[];
+}
+
+interface AdapterBreakpoint {
+    id: number;
+    address: number;
+    condition?: ParsedBreakpointCondition;
+    hitCondition?: number;
+    logMessage?: ParsedLogMessage;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -109,6 +142,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private nextBpId = 1;
     private bpAddrToId = new Map<number, number>();
     private bpIdToAddr = new Map<number, number>();
+    private breakpointsByAddress = new Map<number, AdapterBreakpoint>();
     private sourceBpAddresses = new Map<string, Set<number>>();
     private instructionBpAddresses = new Set<number>();
     private watchpointIdToDapId = new Map<number, number>();
@@ -194,6 +228,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             supportsTerminateRequest: true,
             supportTerminateDebuggee: true,
             supportsRestartRequest: true,
+            supportsConditionalBreakpoints: true,
+            supportsHitConditionalBreakpoints: true,
         });
         // 'initialized' is sent from onLaunch/onAttach after the ELF is loaded,
         // so that VS Code doesn't send setBreakpoints before the debug index is ready.
@@ -561,7 +597,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                 // Set a temporary auto-delete breakpoint at the step-over address
                 this.pendingStepOverAddr = soAddr;
                 await this.client.send(IpcCommand.DEBUG_BREAKPOINT_ADD,
-                    makeBreakpointAdd(soAddr, '__dap_next', true));
+                    makeBreakpointAdd(soAddr, '__dap_next', { autoDelete: true }));
                 await this.run();
             } else {
                 // Fallback: single instruction step
@@ -606,6 +642,147 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // setBreakpoints — source breakpoints (Step 3.11 full impl requires ELF/DWARF)
     // -----------------------------------------------------------------------
 
+    private parseBreakpointConfiguration(requested: any, allowLogpoint: boolean): Omit<AdapterBreakpoint, 'id' | 'address'> {
+        const conditionText = String(requested.condition ?? '').trim();
+        const hitText = String(requested.hitCondition ?? '').trim();
+        const logMessageText = String(requested.logMessage ?? '');
+        if (logMessageText && !allowLogpoint) {
+            throw new Error('Logpoints are supported only for source breakpoints.');
+        }
+        const logMessage = logMessageText ? this.parseLogMessage(logMessageText) : undefined;
+
+        let condition: ParsedBreakpointCondition | undefined;
+        if (conditionText) {
+            const match = /^([A-Za-z]+)\s*(==|!=|<=|>=|<|>)\s*(.+)$/.exec(conditionText);
+            if (!match) {
+                throw new Error('Unsupported breakpoint condition. Expected: REGISTER comparison value.');
+            }
+            const operand = match[1].toUpperCase() as BreakpointOperand;
+            if (!BREAKPOINT_OPERANDS.has(operand)) {
+                throw new Error(`Unsupported breakpoint register: ${match[1].toUpperCase()}.`);
+            }
+            const operator = CONDITION_OPERATORS.find(([text]) => text === match[2])?.[1];
+            if (!operator) {
+                throw new Error('Unsupported breakpoint comparison operator.');
+            }
+            const value = evaluateSymbolExpression(match[3], name => {
+                const symbol = this.debugIndex?.symbol(name);
+                if (!symbol) { throw new Error(`Unknown symbol: ${name}`); }
+                return symbol.address;
+            });
+            const max = BYTE_BREAKPOINT_OPERANDS.has(operand) ? 0xFF
+                : WORD_BREAKPOINT_OPERANDS.has(operand) ? 0xFFFF : Number.MAX_SAFE_INTEGER;
+            if (value < 0 || value > max) {
+                throw new Error(`Breakpoint value ${hex4(value)} does not fit register ${operand}.`);
+            }
+            condition = { operand, condition: operator, value, text: `${operand} ${match[2]} ${match[3].trim()}` };
+        }
+
+        let hitCondition: number | undefined;
+        if (hitText) {
+            if (!/^[1-9][0-9]*$/.test(hitText)) {
+                throw new Error('Hit condition must be a positive decimal integer.');
+            }
+            hitCondition = Number(hitText);
+            if (!Number.isSafeInteger(hitCondition)) {
+                throw new Error('Hit condition is outside the safe integer range.');
+            }
+        }
+        return { condition, hitCondition, ...(logMessage ? { logMessage } : {}) };
+    }
+
+    private parseLogMessage(logMessage: string): ParsedLogMessage {
+        const segments: LogMessageSegment[] = [];
+        let literal = '';
+        const appendLiteral = () => {
+            if (literal) { segments.push({ literal }); literal = ''; }
+        };
+        for (let index = 0; index < logMessage.length; index++) {
+            const char = logMessage[index];
+            if (char === '{' && logMessage[index + 1] === '{') { literal += '{'; index++; continue; }
+            if (char === '}' && logMessage[index + 1] === '}') { literal += '}'; index++; continue; }
+            if (char === '}') { throw new Error("Log message contains an unmatched '}'."); }
+            if (char !== '{') { literal += char; continue; }
+            const end = logMessage.indexOf('}', index + 1);
+            if (end < 0) { throw new Error("Log message contains an unmatched '{'."); }
+            const expression = logMessage.slice(index + 1, end).trim();
+            if (!expression) { throw new Error('Log message contains an empty expression.'); }
+            const error = validateSymbolExpression(expression);
+            if (error) { throw new Error(`Unsupported logpoint expression: ${expression}.`); }
+            appendLiteral();
+            segments.push({ expression });
+            index = end;
+        }
+        appendLiteral();
+        return { text: logMessage, segments };
+    }
+
+    private formatLogMessage(logMessage: ParsedLogMessage): string {
+        const registers = this.cachedRegs;
+        const values: Record<string, number> = registers ? {
+            A: (registers.af >> 8) & 0xFF, F: registers.af & 0xFF,
+            B: (registers.bc >> 8) & 0xFF, C: registers.bc & 0xFF,
+            D: (registers.de >> 8) & 0xFF, E: registers.de & 0xFF,
+            H: (registers.hl >> 8) & 0xFF, L: registers.hl & 0xFF,
+            PSW: registers.af, BC: registers.bc, DE: registers.de, HL: registers.hl,
+            SP: registers.sp, PC: registers.pc, CC: registers.cc,
+        } : {};
+        let output = '';
+        for (const segment of logMessage.segments) {
+            if ('literal' in segment) { output += segment.literal; continue; }
+            const expression = segment.expression;
+            const value = evaluateSymbolExpression(expression, name => {
+                const register = values[name.toUpperCase()];
+                if (register !== undefined) { return register; }
+                const symbol = this.debugIndex?.symbol(name);
+                if (!symbol) { throw new Error(`Unknown symbol: ${name}`); }
+                return symbol.address;
+            });
+            output += BYTE_REGISTER_EXPRESSIONS.has(expression.toUpperCase()) ? hex2(value) : hex4(value);
+        }
+        return output.endsWith('\n') ? output : `${output}\n`;
+    }
+
+    private sameBackendConfiguration(
+        first: Pick<AdapterBreakpoint, 'condition' | 'hitCondition'>,
+        second: Pick<AdapterBreakpoint, 'condition' | 'hitCondition'>,
+    ): boolean {
+        return first.hitCondition === second.hitCondition
+            && first.condition?.operand === second.condition?.operand
+            && first.condition?.condition === second.condition?.condition
+            && first.condition?.value === second.condition?.value;
+    }
+
+    private sameBreakpointConfiguration(
+        first: Pick<AdapterBreakpoint, 'condition' | 'hitCondition' | 'logMessage'>,
+        second: Pick<AdapterBreakpoint, 'condition' | 'hitCondition' | 'logMessage'>,
+    ): boolean {
+        return this.sameBackendConfiguration(first, second)
+            && first.logMessage?.text === second.logMessage?.text;
+    }
+
+    private hasOtherSourceReference(address: number, sourceKey: string): boolean {
+        return [...this.sourceBpAddresses.entries()]
+            .some(([key, addresses]) => key !== sourceKey && addresses.has(address));
+    }
+
+    private breakpointMessage(breakpoint: AdapterBreakpoint): string {
+        const details = [`CPU address: ${hex4(breakpoint.address)}`];
+        if (breakpoint.condition) { details.push(`condition: ${breakpoint.condition.text}`); }
+        if (breakpoint.hitCondition) { details.push(`hit count: ${breakpoint.hitCondition}`); }
+        if (breakpoint.logMessage) { details.push('logpoint'); }
+        return details.join('; ');
+    }
+
+    private makeBreakpointRequest(breakpoint: AdapterBreakpoint): ReturnType<typeof makeBreakpointAdd> {
+        return makeBreakpointAdd(breakpoint.address, `dap:${breakpoint.id}`, {
+            operand: breakpoint.condition?.operand,
+            condition: breakpoint.condition?.condition,
+            value: breakpoint.condition?.value,
+            counter: breakpoint.hitCondition,
+        });
+    }
+
     private async onSetBreakpoints(req: any): Promise<void> {
         const args = req.arguments ?? {};
         const source: string = args.source?.path ?? args.source?.name ?? '';
@@ -643,16 +820,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             resolved: this.debugIndex!.resolveBreakpoint(source, bp.line),
         }));
         const previousAddresses = this.sourceBpAddresses.get(sourceKey) ?? new Set<number>();
-        const desiredAddresses = new Set(
-            resolvedBreakpoints.flatMap(bp => bp.resolved ? [bp.resolved.address] : []),
-        );
-        this.sourceBpAddresses.set(sourceKey, desiredAddresses);
-
-        for (const addr of previousAddresses) {
-            if (!desiredAddresses.has(addr) && !this.isBreakpointAddressReferenced(addr)) {
-                await this.deleteBackendBreakpoint(addr);
-            }
-        }
+        const desiredAddresses = new Set<number>();
+        const requestedConfigurations = new Map<number, Omit<AdapterBreakpoint, 'id' | 'address'>>();
 
         const result: any[] = [];
         for (const { requested: bp, resolved } of resolvedBreakpoints) {
@@ -665,37 +834,73 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                 });
                 continue;
             }
-            const existingId = this.bpAddrToId.get(resolved.address);
-            if (existingId !== undefined) {
-                result.push({
-                    id: existingId,
-                    verified: true,
-                    line: resolved.verifiedLine,
-                    instructionReference: hex4(resolved.address),
-                    message: `CPU address: ${hex4(resolved.address)}`,
-                });
+            desiredAddresses.add(resolved.address);
+            let configuration: Omit<AdapterBreakpoint, 'id' | 'address'>;
+            try {
+                configuration = this.parseBreakpointConfiguration(bp, true);
+            } catch (error) {
+                result.push({ id: this.nextBpId++, verified: false, message: String(error instanceof Error ? error.message : error), line: bp.line });
                 continue;
             }
 
-            const id = this.nextBpId++;
-            const addResp = await this.client.send(
-                IpcCommand.DEBUG_BREAKPOINT_ADD,
-                makeBreakpointAdd(resolved.address, `dap:src:${id}`),
-            ).catch(() => ({ ok: false }));
-
-            if (addResp.ok) {
-                this.bpAddrToId.set(resolved.address, id);
-                this.bpIdToAddr.set(id, resolved.address);
+            const priorRequest = requestedConfigurations.get(resolved.address);
+            if (priorRequest && !this.sameBreakpointConfiguration(priorRequest, configuration)) {
+                const existing = this.breakpointsByAddress.get(resolved.address);
                 result.push({
-                    id,
-                    verified: true,
-                    line: resolved.verifiedLine,
-                    instructionReference: hex4(resolved.address),
-                    message: `CPU address: ${hex4(resolved.address)}`,
+                    id: existing?.id ?? this.nextBpId++,
+                    verified: false,
+                    message: `Breakpoint address ${hex4(resolved.address)} already has a different configuration.`,
+                    line: bp.line,
                 });
-            } else {
-                desiredAddresses.delete(resolved.address);
-                result.push({ id, verified: false, message: 'Backend rejected breakpoint', line: bp.line });
+                continue;
+            }
+            requestedConfigurations.set(resolved.address, configuration);
+
+            const existing = this.breakpointsByAddress.get(resolved.address);
+            if (existing && !this.sameBreakpointConfiguration(existing, configuration)
+                && (!previousAddresses.has(resolved.address)
+                    || this.hasOtherSourceReference(resolved.address, sourceKey)
+                    || this.instructionBpAddresses.has(resolved.address))) {
+                result.push({
+                    id: existing.id,
+                    verified: false,
+                    message: `Breakpoint address ${hex4(resolved.address)} already has a different configuration.`,
+                    line: bp.line,
+                });
+                continue;
+            }
+            const breakpoint: AdapterBreakpoint = existing ?? {
+                id: this.nextBpId++, address: resolved.address, ...configuration,
+            };
+            const backendChanged = !existing || !this.sameBackendConfiguration(existing, configuration);
+            if (backendChanged) {
+                Object.assign(breakpoint, configuration);
+                const addResp = await this.client.send(
+                    IpcCommand.DEBUG_BREAKPOINT_ADD,
+                    this.makeBreakpointRequest(breakpoint),
+                ).catch(() => ({ ok: false }));
+                if (!addResp.ok) {
+                    result.push({ id: breakpoint.id, verified: false, message: 'Backend rejected breakpoint', line: bp.line });
+                    continue;
+                }
+                this.breakpointsByAddress.set(resolved.address, breakpoint);
+                this.bpAddrToId.set(resolved.address, breakpoint.id);
+                this.bpIdToAddr.set(breakpoint.id, resolved.address);
+            } else if (existing) {
+                existing.logMessage = configuration.logMessage;
+            }
+            result.push({
+                id: breakpoint.id,
+                verified: true,
+                line: resolved.verifiedLine,
+                instructionReference: hex4(resolved.address),
+                message: this.breakpointMessage(breakpoint),
+            });
+        }
+        this.sourceBpAddresses.set(sourceKey, desiredAddresses);
+        for (const addr of previousAddresses) {
+            if (!desiredAddresses.has(addr) && !this.isBreakpointAddressReferenced(addr)) {
+                await this.deleteBackendBreakpoint(addr);
             }
         }
         if (desiredAddresses.size === 0) {
@@ -715,10 +920,11 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         }
 
         const args = req.arguments ?? {};
-        const desired: number[] = (args.breakpoints ?? []).map((bp: any) => {
-            const ref = String(bp.instructionReference ?? '0x0');
-            return parseInt(ref, 16) & 0xFFFF;
-        });
+        const requestedBreakpoints = (args.breakpoints ?? []).map((requested: any) => ({
+            requested,
+            address: parseInt(String(requested.instructionReference ?? '0x0'), 16) & 0xFFFF,
+        }));
+        const desired = requestedBreakpoints.map((breakpoint: { address: number }) => breakpoint.address);
 
         // Remove instruction breakpoints that are no longer desired and are not source-owned.
         const previousAddresses = this.instructionBpAddresses;
@@ -731,30 +937,68 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
         // Add newly requested breakpoints
         const result: any[] = [];
-        for (const addr of desired) {
-            let id = this.bpAddrToId.get(addr);
-            if (!id) {
-                id = this.nextBpId++;
+        for (const { requested, address: addr } of requestedBreakpoints) {
+            let configuration: Omit<AdapterBreakpoint, 'id' | 'address'>;
+            try {
+                configuration = this.parseBreakpointConfiguration(requested, false);
+            } catch (error) {
+                result.push({
+                    id: this.nextBpId++,
+                    verified: false,
+                    message: String(error instanceof Error ? error.message : error),
+                    instructionReference: hex4(addr),
+                });
+                this.instructionBpAddresses.delete(addr);
+                continue;
+            }
+            const existing = this.breakpointsByAddress.get(addr);
+            if (existing && !this.sameBreakpointConfiguration(existing, configuration)
+                && (!previousAddresses.has(addr)
+                    || [...this.sourceBpAddresses.values()].some(addresses => addresses.has(addr)))) {
+                result.push({
+                    id: existing.id,
+                    verified: false,
+                    message: `Breakpoint address ${hex4(addr)} already has a different configuration.`,
+                    instructionReference: hex4(addr),
+                });
+                continue;
+            }
+            const breakpoint: AdapterBreakpoint = existing ?? {
+                id: this.nextBpId++, address: addr, ...configuration,
+            };
+            if (!existing || !this.sameBackendConfiguration(existing, configuration)) {
+                Object.assign(breakpoint, configuration);
                 const addResp = await this.client.send(
                     IpcCommand.DEBUG_BREAKPOINT_ADD,
-                    makeBreakpointAdd(addr, `dap:${id}`),
+                    this.makeBreakpointRequest(breakpoint),
                 ).catch(() => ({ ok: false }));
 
                 if (addResp.ok) {
-                    this.bpAddrToId.set(addr, id);
-                    this.bpIdToAddr.set(id, addr);
-                    result.push({ id, verified: true, instructionReference: hex4(addr) });
+                    this.breakpointsByAddress.set(addr, breakpoint);
+                    this.bpAddrToId.set(addr, breakpoint.id);
+                    this.bpIdToAddr.set(breakpoint.id, addr);
+                    result.push({
+                        id: breakpoint.id,
+                        verified: true,
+                        instructionReference: hex4(addr),
+                        message: this.breakpointMessage(breakpoint),
+                    });
                 } else {
                     this.instructionBpAddresses.delete(addr);
                     result.push({
-                        id,
+                        id: breakpoint.id,
                         verified: false,
                         message: 'Failed to set breakpoint in emulator.',
                         instructionReference: hex4(addr),
                     });
                 }
             } else {
-                result.push({ id, verified: true, instructionReference: hex4(addr) });
+                result.push({
+                    id: breakpoint.id,
+                    verified: true,
+                    instructionReference: hex4(addr),
+                    message: this.breakpointMessage(breakpoint),
+                });
             }
         }
 
@@ -771,6 +1015,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         const id = this.bpAddrToId.get(addr);
         this.bpAddrToId.delete(addr);
         if (id !== undefined) { this.bpIdToAddr.delete(id); }
+        this.breakpointsByAddress.delete(addr);
     }
 
     private async onDataBreakpointInfo(req: any): Promise<void> {
@@ -1070,6 +1315,18 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
         await this.refreshRegs();
         if (record) {
+            if (record.reason === 'breakpoint' && record.breakpointAddress !== undefined) {
+                const breakpoint = this.breakpointsByAddress.get(record.breakpointAddress);
+                if (breakpoint?.logMessage) {
+                    try {
+                        this.sendEvent('output', { category: 'console', output: this.formatLogMessage(breakpoint.logMessage) });
+                    } catch (error) {
+                        this.sendEvent('output', { category: 'stderr', output: `V6: logpoint ${hex4(breakpoint.address)} failed: ${String(error)}\n` });
+                    }
+                    await this.resumeLogpoint();
+                    return;
+                }
+            }
             this.pendingStep = false;
             this.pendingPause = false;
             const reason = mapStopReason(record.reason);
@@ -1106,6 +1363,21 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
         this.stopReason = reason;
         this.emitStopped(reason, hitBreakpointIds);
+    }
+
+    private async resumeLogpoint(): Promise<void> {
+        await this.captureStopBaseline();
+        this.cachedRegs = null;
+        this.sessionState = 'running';
+        this.lifecycle.setExecutionRunning(true);
+        const response = await this.client?.send(IpcCommand.RUN, undefined, 5000, 'critical');
+        if (!response?.ok) {
+            this.sessionState = 'paused';
+            this.lifecycle.setExecutionRunning(false);
+            this.emitStopped('breakpoint', undefined, 'Logpoint automatic resume failed.');
+            return;
+        }
+        this.startPoll();
     }
 
     private emitStopped(reason: StopReason, hitBreakpointIds?: number[], description?: string): void {
@@ -1166,6 +1438,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             capabilities: {
                 supportsDataBreakpoints: this.dataBreakpointsSupported(),
                 supportsExceptionInfoRequest: true,
+                supportsLogPoints: this.stopRecordsSupported,
             },
         });
     }
@@ -1238,6 +1511,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
         this.bpAddrToId.clear();
         this.bpIdToAddr.clear();
+        this.breakpointsByAddress.clear();
         this.sourceBpAddresses.clear();
         this.instructionBpAddresses.clear();
         this.watchpointIdToDapId.clear();

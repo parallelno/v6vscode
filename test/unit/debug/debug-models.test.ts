@@ -27,8 +27,20 @@ describe('structured breakpoint schema', () => {
         expect(request).not.to.have.any.keys('data0', 'data1', 'data2');
     });
 
-    it('marks step-over breakpoints for automatic deletion', () => {
-        expect(makeBreakpointAdd(0x0100, '__dap_next', true).autoDelete).to.equal(true);
+    it('includes requested conditions and counters without changing ordinary payloads', () => {
+        expect(makeBreakpointAdd(0x0100, 'conditional', {
+            autoDelete: true,
+            operand: 'HL',
+            condition: 'GREATER_EQU',
+            value: 0x1000,
+            counter: 5,
+        })).to.include({
+            autoDelete: true,
+            operand: 'HL',
+            condition: 'GREATER_EQU',
+            value: 0x1000,
+            counter: 5,
+        });
     });
 
     it('models named status, operand, and condition fields', () => {

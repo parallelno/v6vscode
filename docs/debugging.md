@@ -59,6 +59,37 @@ Closing the display panel terminates the active debug launch and closes the Run 
 
 Verified source breakpoints show their resolved CPU address in the breakpoint tooltip.
 
+## Breakpoint Conditions, Hit Counts, and Logpoints
+
+Source and instruction breakpoints support one register comparison condition:
+
+```text
+REGISTER == value
+REGISTER != value
+REGISTER < value
+REGISTER > value
+REGISTER <= value
+REGISTER >= value
+```
+
+Supported registers are `A`, `F`, `B`, `C`, `D`, `E`, `H`, `L`, `BC`, `DE`, `HL`, and `SP`. Register names are case-insensitive. Byte registers require a value from `0` through `0xFF`; word registers require `0` through `0xFFFF`. Values use the same safe expression syntax as Watch: decimal, `0x`, `$`, and `h` literals; symbols; unary signs; parentheses; `+`, `-`, and `*`.
+
+Each hit condition is a positive decimal integer such as `5`. v6emul evaluates the register condition and owns the counter: it stops on the fifth matching visit and every matching visit after that. Repeated unchanged breakpoint requests and log-message-only changes preserve the remaining server counter. Changing a condition or hit count replaces the backend breakpoint and initializes a new counter.
+
+Source breakpoints can also be logpoints. A non-empty log message writes to the Debug Console and resumes without a visible stop:
+
+```text
+frame={HL}, color={A}
+buffer end={buffer + 16}
+literal braces: {{value}}
+```
+
+Expressions in braces can use the same numeric and symbol syntax plus supported register names. `{{` and `}}` represent literal braces. Logpoints are not available for instruction breakpoints. A logpoint never emits a DAP `stopped` event, so it cannot activate a VS Code **Wait for Breakpoint** dependency.
+
+VS Code owns triggered-breakpoint lifecycle. The adapter provides stable breakpoint IDs and reports the exact ID in visible breakpoint stops; VS Code sends the dependent breakpoint only after the selected trigger point visibly stops.
+
+Two requests resolving to one CPU address must use the same condition, hit count, and log message. A conflicting request is unverified and leaves the acknowledged breakpoint unchanged.
+
 ## Debug Metadata Errors
 
 Source breakpoints remain unverified when the ELF is missing, malformed, or does not match the loaded ROM. The breakpoint tooltip and Debug Console report the artifact error. `No executable code at line ...` is used only after metadata loaded successfully and the source file/line has no applicable statement row.
@@ -69,6 +100,7 @@ Older backends without stop-record schema 1 use running-state detection. Consequ
 
 - Stop reasons are inferred and are not authoritative for every stop cause.
 - DAP data breakpoints and exception details are not enabled.
+- Logpoints are not enabled because their address attribution requires stop records.
 - The Hex Viewer reports an unsupported backend instead of falling back to repeated per-byte requests when `GET_MEM` is unavailable.
 - Semantic caller frames, C locals, and Step Out require variable-location and unwind metadata not currently emitted by the toolchain.
 - Debug attach does not yet share an externally owned emulator session with the display panel.

@@ -18,19 +18,33 @@ export interface BreakpointAddRequest {
     operand: BreakpointOperand;
     condition: DebugCondition;
     value: number;
+    counter?: number;
     comment: string;
 }
 
+export interface BreakpointAddOptions {
+    autoDelete?: boolean;
+    operand?: BreakpointOperand;
+    condition?: DebugCondition;
+    value?: number;
+    counter?: number;
+}
+
 /** Build a DEBUG_BREAKPOINT_ADD request for a standard active breakpoint. */
-export function makeBreakpointAdd(addr: number, comment: string, autoDel = false): BreakpointAddRequest {
+export function makeBreakpointAdd(
+    addr: number,
+    comment: string,
+    options: BreakpointAddOptions = {},
+): BreakpointAddRequest {
     return {
         addr,
         memPages: BP_ALL_PAGES,
         status: 'ACTIVE',
-        autoDelete: autoDel,
-        operand: 'A',
-        condition: 'ANY',
-        value: 0,
+        autoDelete: options.autoDelete ?? false,
+        operand: options.operand ?? 'A',
+        condition: options.condition ?? 'ANY',
+        value: options.value ?? 0,
+        ...(options.counter === undefined ? {} : { counter: options.counter }),
         comment,
     };
 }
@@ -44,6 +58,7 @@ export interface BreakpointEntry {
     operand: BreakpointOperand;
     condition: DebugCondition;
     value: number;
+    counter?: number;
     comment: string;
 }
 
