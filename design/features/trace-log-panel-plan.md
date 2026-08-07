@@ -16,7 +16,7 @@ The TCP protocol exposes only:
 - `DEBUG_TRACE_LOG_ENABLE` (89), which starts writing a trace file on the server filesystem.
 - `DEBUG_TRACE_LOG_DISABLE` (90), which stops writing that file.
 
-Neither command returns trace rows. `GET_SERVER_INFO` does not advertise a trace-log schema, limits, coherent running responses, or query support. v6vscode has no trace model, service, panel, query parser, or action bridge.
+Neither command returns trace rows. `GET_SERVER_INFO` does not advertise a trace-log schema, filter/window commands, or limits. v6vscode has no trace model, service, panel, query parser, or action bridge.
 
 Existing standalone tools such as Display, Hex Viewer, Memory Edits, Performance, Symbols, Ports, and Watchpoints are editor `WebviewPanel` instances. Their open state is controlled through the `v6emul` **Panels** launcher, a toggle command, an open-state context key, and direct-tab-close synchronization.
 
@@ -26,13 +26,13 @@ The debug adapter owns breakpoint identity, source/instruction ownership, server
 
 Add a standalone **Trace Log** panel to the existing `v6emul` Panels launcher. The panel contains:
 
-1. A filter using the grammar `<optional offset> <address pattern> <instruction pattern>`.
+1. A filter using the grammar `<address pattern> <instruction pattern>`.
 2. A virtualized table with **Offset**, **Address**, and **Assembly Instruction** columns.
 3. Clipboard, source-navigation, Hex Viewer, breakpoint, and Run To Line actions.
 4. Exact-symbol decoration for instruction addresses and immediate operands.
-5. Live, bounded refresh while execution runs and a coherent paused snapshot.
+5. Bounded refresh only while emulation is paused.
 
-The panel must remain responsive against the complete 300,000-entry trace, must not copy the entire ring buffer on every refresh, and must reject stale results when execution advances or the emulator reconnects.
+The panel must remain responsive against the complete 300,000-entry trace, must not copy the entire ring buffer on every paused refresh, and must clear stale results when execution resumes or the emulator reconnects.
 
 ### 1.3 Root cause
 
@@ -42,12 +42,12 @@ The existing trace buffer is an in-process C++ UI facility, not a versioned serv
 
 ### 2.1 Approach: structured server query plus extension-side presentation
 
-Add a schema-1 v6emul trace query that returns a bounded number of structured instruction records. Parse and validate the user query in v6vscode, then send normalized address/instruction glob patterns, the optional offset range, and an app-calculated visible-line limit to the server. The server performs filtering while walking the ring buffer so an unbounded query does not transfer 300,000 rows to the extension.
+Add schema-1 v6emul operations that create an immutable filtered result and retrieve indexed windows from it. Parse and validate the user query in v6vscode, create a server filter from normalized address/instruction glob patterns, then request only the visible result rows plus overscan. The server returns the total match count so the webview can provide a virtual scrollbar without transferring 300,000 rows.
 
 Keep responsibilities separated:
 
-- v6emul owns execution-order history, coherent responses, disassembly facts, bounded result limits, and query matching.
-- `TraceLogService` owns capability validation, IPC, immutable result snapshots, generation handling, and refresh scheduling.
+- v6emul owns execution-order history, immutable filtered results, disassembly facts, bounded window limits, and query matching.
+- `TraceLogService` owns capability validation, filter creation, indexed window retrieval, window caching, generation handling, and cancellation.
 - `TraceLogPanel` owns panel lifecycle, symbol decoration, source/Hex navigation, message validation, and debugger-action routing.
 - Pure query/format modules own grammar, wildcard compilation, and display rules.
 - The webview owns virtualization, selection, focus, tooltips, and the accessible context menu.
@@ -55,8 +55,8 @@ Keep responsibilities separated:
 
 ### 2.2 Why this works
 
-- Server-side filtering and an application-controlled line limit keep IPC and DOM work bounded.
-- A response snapshot prevents rows from mixing different ring-buffer heads.
+- One server-side filter scan followed by indexed visible-window requests keeps IPC and DOM work bounded while supporting arbitrary scrolling.
+- Paused-only refreshes avoid mixing an advancing ring-buffer head into one result.
 - Structured operands allow one immediate value to be decorated or activated without parsing rendered assembly text.
 - Numeric canonical fields keep filtering stable when ELF symbols are loaded, missing, or ambiguous.
 - Reusing adapter breakpoint reconciliation avoids invisible breakpoint drift and races with DAP requests.
@@ -64,7 +64,7 @@ Keep responsibilities separated:
 
 ### 2.3 Summary of changes
 
-- Extend v6emul with trace schema 1, `DEBUG_TRACE_LOG_QUERY`, capability metadata, and coherent bounded responses.
+- Extend v6emul with trace schema 1, `DEBUG_TRACE_LOG_FILTER`, `DEBUG_TRACE_LOG_WINDOW`, capability metadata, and immutable paused filtered results.
 - Add typed trace models, codecs, query parsing, and `TraceLogService` to v6vscode.
 - Add the Trace Log launcher item, toggle/refresh commands, context key, panel owner, and webview assets.
 - Load ELF/DWARF symbols through `DebugSymbolService` and decorate only unique exact matches.
@@ -101,16 +101,14 @@ Use:
 - Tab title: `Trace Log`.
 - `ViewColumn.Beside` and `retainContextWhenHidden: true`.
 
-Maintain one panel instance. `open()` reveals it, toggle disposes it, and direct tab disposal clears both the launcher check and context key. Hiding or closing the panel stops polling, but it does not clear the server trace. A disconnected/new emulator session clears all client rows and increments the session generation.
+Maintain one panel instance. `open()` reveals it, toggle disposes it, and direct tab disposal clears both the launcher check and context key. Hiding or closing the panel cancels pending filter/window requests and clears its cache, but it does not clear the server trace. A disconnected/new emulator session clears all client rows and increments the session generation.
 
 ### 3.2 Filter grammar
 
 Use this grammar:
 
 ```ebnf
-query               = [ offset-range, whitespace ], address-pattern,
-                      [ whitespace, instruction-pattern ] ;
-offset-range        = "-", non-zero-decimal ;
+query               = address-pattern, [ whitespace, instruction-pattern ] ;
 address-pattern     = "*" | address-glob ;
 instruction-pattern = glob-text ;
 ```
@@ -118,10 +116,6 @@ instruction-pattern = glob-text ;
 Rules:
 
 - Empty input shows all available trace rows.
-- A leading negative decimal is recognized only as the optional offset range.
-- `-N` means offsets `-N` through `-1`, inclusive. `-1` means only the newest instruction.
-- Offset zero, positive offsets, signs without digits, fractions, and values beyond the advertised trace capacity are invalid.
-- If offset is omitted, no offset constraint is applied.
 - The address field is required when a non-empty query is used. Use `*` to skip address filtering.
 - Address matching is case-insensitive against canonical `0xNNNN` CPU-address text. `*` matches zero or more characters; every other character is literal.
 - The remaining normalized text is one case-insensitive glob over the complete canonical assembly instruction, including mnemonic and operands.
@@ -135,14 +129,13 @@ Examples:
 
 | Query | Meaning |
 |---|---|
-| `-10 0x1000 LDA 0x100` | Match `LDA 0x100` rows at `0x1000` among offsets `-10..-1`. |
-| `-10 0x1000 LDA*` | Match `LDA` rows at `0x1000` among offsets `-10..-1`. |
+| `0x1000 LDA 0x100` | Match `LDA 0x100` rows at `0x1000`. |
+| `0x1000 LDA*` | Match `LDA` rows at `0x1000`. |
 | `* JMP*` | Match `JMP` with any operands at any address. |
 | `* J*` | Match mnemonics beginning with `J`, including `JMP`, `JP`, `JZ`, and `JNZ`. |
 | `0x10* *` | Match any instruction whose canonical address begins with `0x10`. |
-| `-1 *` | Show only the most recently executed instruction. |
 
-Persist the last valid query in workspace state, bounded to 64 characters. Do not persist trace rows or server sequences.
+Persist the last valid query in workspace state, bounded to 64 characters. Do not persist trace rows.
 
 ### 3.3 Query history
 
@@ -162,15 +155,17 @@ Use one unframed tool surface with a full-width filter, compact status/result co
 
 | Column | Canonical value | Display behavior |
 |---|---|---|
-| Offset | `-1`, `-2`, ... | Always numeric; `-1` is newest in the query snapshot. |
+| Offset | `-1`, `-2`, ... | Always numeric; `-1` is the newest retained instruction. Offset is display data, not a filter. |
 | Address | `0xNNNN` | Replace with a unique exact symbol; tooltip retains `0xNNNN`. |
 | Assembly Instruction | Complete canonical instruction and operands | Replace an address-like immediate with a unique exact symbol; tooltip retains the numeric value. |
 
-Rows are newest first. Use fixed row height, sticky headers, stable column widths, and a small render overscan. Do not create 300,000 DOM rows.
+Rows are newest first. Use fixed row height, sticky headers, stable column widths, one spacer sized from `totalMatches * rowHeight`, and windowed rendering with overscan. Never create one DOM row per match.
 
-On initial render, resize, filter change, refresh, or visibility restoration, the webview calculates `visibleLines = ceil(tableViewportHeight / rowHeight) + overscan`. It sends this number to the extension host, which clamps it to the advertised `maxLines` and includes it as required `lines` in every `DEBUG_TRACE_LOG_QUERY` request. `lines` is an internal response limit, not part of the user's filter and has no user-visible input. The server returns at most that many newest matching rows; the status text indicates when older matches exist outside the visible response.
+After a valid filter change while paused, call `DEBUG_TRACE_LOG_FILTER`, store its `filterId` and `totalMatches`, clear cached windows, and reset scroll position to zero. On initial render, scroll, resize, refresh, or visibility restoration, calculate the first required filtered-result index and `visibleLines = ceil(tableViewportHeight / rowHeight) + overscan`. Request `{ filterId, start, lines }`, clamping `start` to the result and `lines` to `maxLines`.
 
-Preserve selection and focus by the server record sequence, not by offset, because offsets move when new instructions execute.
+Debounce scroll requests by approximately 50 ms. Cache the current, preceding, and following windows; prefetch only an adjacent window when the viewport approaches its cached boundary. Discard distant windows and ignore responses whose client filter generation, `filterId`, `start`, or requested range no longer matches current state. `start` and `lines` are app-controlled and have no user-visible inputs.
+
+Preserve focus while its filtered-result index remains rendered; otherwise return focus to the table. Clear filter state, windows, rows, and selection when emulation resumes.
 
 Each cell is keyboard focusable and independently copyable. Copy uses the displayed text. The numeric address remains available through its tooltip and **Find in Hex Viewer**.
 
@@ -195,7 +190,7 @@ Add a `symbolsAtExactAddress(address)` API to `DebugSymbolService`/`DebugIndex`;
 - Plain double-click on an immediate token still opens the row instruction source; Ctrl is required to follow the operand.
 - Use `revealDebugSource()` and resolve project-relative paths exactly as Symbols and Performance do.
 - If no exact source row exists, retain panel state and report `No DWARF source line for 0xNNNN` in the status area.
-- Never accept a file path or source line from the webview. The webview sends only the trace sequence and target kind; the host re-resolves the authoritative row and address.
+- Never accept a file path or source line from the webview. The webview sends only the current result-row index and target kind; the host validates the index against the current cached result and re-resolves the authoritative address.
 
 ### 3.7 Context menu
 
@@ -265,53 +260,56 @@ flowchart LR
     Server --> Ring[TraceLog ring buffer]
 ```
 
-`TraceLogService` must be independent of VS Code and DOM APIs. `TraceLogPanel` treats webview messages as untrusted and re-resolves every sequence/target against the current immutable result cache. The active adapter remains the only owner of breakpoint and run-state mutations.
+`TraceLogService` must be independent of VS Code and DOM APIs. `TraceLogPanel` treats webview messages as untrusted and re-resolves every row-index/target pair against the current immutable result cache. The active adapter remains the only owner of breakpoint and run-state mutations.
 
 ### 4.2 Server interface
 
-The v6emul client-facing contract is defined in `v6emul-trace-log-query-design.md`. Every extension request contains the required app-controlled `lines` value, alongside normalized optional offset, address, and instruction filters. The response carries at most that many newest matching records, a `hasMore` indicator, and opaque sequence values.
+The v6emul client-facing contract is defined in `v6emul-trace-log-query-design.md`. `DEBUG_TRACE_LOG_FILTER` accepts normalized address and instruction patterns and returns an opaque `filterId` plus `totalMatches`. `DEBUG_TRACE_LOG_WINDOW` accepts `{ filterId, start, lines }` and returns that indexed window.
 
-The extension does not use cursors or paging for this panel. A resize or refresh replaces the bounded result with a new query using the current visible-line count.
+The extension treats `filterId` as opaque. It uses `totalMatches` only for virtual-scroll geometry and bounds. Resume, reset, reconnect, emulator replacement, or a new filter invalidates all prior windows.
 
 ### 4.3 Extension request flow
 
 ```text
-filter input, history recall, resize, refresh, or panel reveal
+filter input, history recall, refresh, or panel reveal while paused
         |
         v
-parse valid user filter + calculate visible lines plus overscan
+parse valid user filter and send DEBUG_TRACE_LOG_FILTER
         |
         v
-clamp lines to server maxLines and send DEBUG_TRACE_LOG_QUERY
+store filterId + totalMatches; reset virtual scroll and window cache
         |
         v
-replace current immutable result only when generation/query still match
+on scroll/resize calculate start + visible lines + overscan
+        |
+        v
+send DEBUG_TRACE_LOG_WINDOW and render only the returned window
 ```
 
-The extension must reject stale responses after a filter, viewport, lifecycle, or generation change. A server response with `hasMore: true` is complete for the current visible area; it does not trigger hidden prefetching.
+The extension must reject stale responses after a filter, viewport, lifecycle, or generation change. It clears the active filter and all cached windows when execution resumes.
 
 ## 5. Implementation Steps
 
 ### Step 5.1 - Confirm protocol ID and schema contract [ ]
 
 - Review v6emul's current command tail before assigning the query ID.
-- Add the schema-1 request, response, operand, error, limits, and snapshot-lifetime contract to v6emul design documentation.
+- Add the schema-1 filter/window requests, responses, operand, error, limits, and filter-lifetime contract to v6emul design documentation.
 - Fix canonical I8080 spacing/case and address-like operand classification with golden examples for all 256 opcodes.
 
 > **Implementation Notes:**
 
 ### Step 5.2 - Verify server support before extension implementation [ ]
 
-- Verify the server advertises trace schema 1, the query command, limits, and running coherence.
-- Verify every response honors the extension's required `lines` limit and supplies structured records.
+- Verify the server advertises trace schema 1, both filter/query commands, and limits.
+- Verify filter creation returns `filterId`/`totalMatches` and every window response honors `start`/`lines`.
 
 > **Implementation Notes:**
 
 ### Step 5.3 - Add extension protocol models and codecs [ ]
 
-- Add the command enum and server capability fields.
+- Add both command enums and server capability fields.
 - Add strict request/response codecs and `validateTraceLogServer()`.
-- Reject duplicate/out-of-order sequences, malformed operands, unsafe numbers, invalid addresses, oversized responses, and inconsistent offsets.
+- Reject invalid filter IDs, totals, starts, malformed operands, unsafe numbers, invalid addresses, oversized responses, and inconsistent offsets.
 - Add mocked protocol and capability tests before panel work.
 
 > **Implementation Notes:**
@@ -320,18 +318,18 @@ The extension must reject stale responses after a filter, viewport, lifecycle, o
 
 - Add `trace-log-query.ts` with the grammar from section 3.2.
 - Return a typed normalized query or one field-specific diagnostic.
-- Test empty, offset-only boundaries, exact/wildcard addresses, instruction globs, whitespace, case, malformed offsets, over-capacity ranges, and the three requested examples.
+- Test empty, exact/wildcard addresses, instruction globs, whitespace, case, malformed queries, and the requested examples.
 - Share glob conformance vectors with v6emul so client validation and server matching cannot drift.
 
 > **Implementation Notes:**
 
 ### Step 5.5 - Implement TraceLogService [ ]
 
-- Add immutable bounded-result queries, refresh, cancellation/generation checks, and visible-only polling.
-- Send the app-calculated `lines` value in every request and clamp it to server limits.
-- Coalesce equivalent live refreshes; never coalesce distinct filters or visible-line values.
-- Clear rows on disconnect/reset/new session and retain the last coherent paused result only during recoverable read failures.
-- Add service tests for stale responses, reconnect, hidden state, resize, refresh, and query replacement.
+- Add filter creation, indexed window retrieval, paused-only refresh, cancellation/generation checks, and a bounded adjacent-window cache.
+- Send app-calculated `start`/`lines` in every window request and clamp them to `totalMatches`/server limits.
+- Coalesce equivalent window requests; never coalesce distinct filters or ranges.
+- Clear filter/window state when execution resumes, disconnects, resets, or starts a new session.
+- Add service tests for stale filter/window responses, reconnect, hidden state, scroll, resize, refresh, eviction, and filter replacement.
 
 > **Implementation Notes:**
 
@@ -348,7 +346,7 @@ The extension must reject stale responses after a filter, viewport, lifecycle, o
 
 ### Step 5.7 - Implement TraceLogPanel and symbol decoration [ ]
 
-- Add panel lifecycle, shared query/history restoration, typed message routing, status states, and result-cache lookup by sequence.
+- Add panel lifecycle, shared query/history restoration, typed message routing, status states, and result-cache lookup by row index.
 - Load/clear shared debug symbols with active project lifecycle.
 - Add indexed exact-address symbol lookup and deterministic ambiguity handling.
 - Implement source and Hex Viewer navigation without trusting webview locations.
@@ -359,7 +357,7 @@ The extension must reject stale responses after a filter, viewport, lifecycle, o
 ### Step 5.8 - Implement the virtualized webview [ ]
 
 - Add CSP-protected `trace-log.js` and `trace-log.css` assets.
-- Implement delayed filtering, shared Enter/Up/Down query history, visible-line measurement, loading/empty/error states, stable focus, and session reset.
+- Implement delayed filtering, shared Enter/Up/Down query history, virtual-scroll geometry, visible-window measurement, loading/empty/error states, stable focus, and session reset.
 - Render all server/symbol text through `textContent`.
 - Implement cell selection, per-cell copy, operand spans, tooltips, mouse/keyboard navigation, and the exact context-menu order.
 - Verify light, dark, high-contrast, reduced-motion, 200% zoom, and narrow panel behavior.
@@ -380,7 +378,7 @@ The extension must reject stale responses after a filter, viewport, lifecycle, o
 
 - Test row versus immediate double-click and Ctrl+double-click behavior.
 - Test target-sensitive Copy, Add Breakpoint, Find in Source, Find in Hex Viewer, and Run To Line.
-- Test menu keyboard access, disabled states, focus restoration, stale sequence rejection, and resize-driven line limits.
+- Test menu keyboard access, disabled states, focus restoration, stale-response rejection, and scroll/resize-driven windows.
 - Test Main RAM and RAM-disk global instruction navigation.
 
 > **Implementation Notes:**
@@ -397,7 +395,7 @@ The extension must reject stale responses after a filter, viewport, lifecycle, o
 
 - Run `npm run test:unit` and `npm run test:regression`.
 - Extend `test/features/debug-adapter` or add `test/features/trace-log` following `test/features/README.md`.
-- Verify real execution order, reset, live refresh, filtering, visible-line limits, breakpoint replacement, source/Hex navigation, and Run To Line.
+- Verify real execution order, reset, filtering, arbitrary virtual scrolling, window limits, breakpoint replacement, source/Hex navigation, and Run To Line.
 - Ensure `result.txt` is written only after every real-emulator assertion passes and contains stable scenario IDs, versions, and artifact hashes.
 
 > **Implementation Notes:**
@@ -406,8 +404,8 @@ The extension must reject stale responses after a filter, viewport, lifecycle, o
 
 - Verify first visible results under 100 ms for a warm paused 300,000-row trace on the development machine.
 - Verify filter results under 200 ms p95 and response payloads within the advertised maximum.
-- Run execution with Display and Trace Log visible and confirm trace polling does not regress debug stop latency targets.
-- Resize the panel through representative heights and confirm each response is limited to the requested visible-line count.
+- Run execution with Display and Trace Log visible and confirm the panel sends no filter/window requests until the emulator pauses.
+- Scroll across the complete 300,000-row unfiltered result and filtered results while confirming bounded DOM, cache, and response sizes.
 - Verify the complete workflow in an Extension Development Host.
 
 > **Implementation Notes:**
@@ -415,7 +413,7 @@ The extension must reject stale responses after a filter, viewport, lifecycle, o
 ### Step 5.14 - Update documentation and close the plan [ ]
 
 - Update `docs/commands.md`, `docs/debugging.md`, `docs/emulator.md`, and `docs/architecture.md`.
-- Document grammar, symbol rules, context actions, debug-session restrictions, server schema, HLT suppression, capacity, and snapshot expiry.
+- Document grammar, symbol rules, context actions, debug-session restrictions, server schema, HLT suppression, capacity, and filter invalidation.
 - Mark completed checklist items and record implementation deviations.
 
 > **Implementation Notes:**
@@ -444,16 +442,16 @@ Add Breakpoint and Run To Line update the backend and adapter atomically. The Br
 
 - Query grammar and wildcard conformance.
 - Trace capability and payload codecs.
-- Visible-line limiting, generation, resize, and request coalescing.
+- Filter identity/lifetime, total counts, indexed windows, generation, cache eviction, resize, and request coalescing.
 - Exact/ambiguous/missing symbol decoration.
-- Context-target resolution and stale sequence rejection.
+- Context-target resolution and stale-response rejection.
 - Breakpoint replacement and run-to-address state transitions.
 
 ### 7.2 Integration and regression tests
 
 - Contribution IDs, launcher ordering, toggle state, direct close, and refresh routing.
 - Host/webview message contracts and CSP.
-- Visible-line measurement, shared query history, keyboard menu behavior, and copy targets.
+- Virtual-scroll geometry, visible-window measurement, shared query history, keyboard menu behavior, and copy targets.
 - Source and Hex Viewer handoffs.
 - Existing panel visibility, Step Over, breakpoint reconciliation, and stop-record behavior remain unchanged.
 
@@ -461,23 +459,23 @@ Add Breakpoint and Run To Line update the backend and adapter atomically. The Br
 
 - All 256 opcodes serialize with stable canonical instructions and operand metadata.
 - Offsets remain correct across execution, reset, repeated HLT suppression, and ring wrap.
-- Queries return ordered matches limited to the app-requested visible lines.
+- Filters return complete counts and indexed queries return correct ordered windows throughout the result.
 - Add Breakpoint and Run To Line synchronize before execution resumes.
-- Concurrent Display frame polling does not starve trace or debug-control requests.
+- No trace filter/window request is sent while execution is running.
 
 ## 8. Risks and Mitigations
 
 | Risk | Mitigation |
 |---|---|
-| Copying/filtering 300,000 rows stalls the emulator | Filter server-side and limit each response to the app-requested visible lines. |
-| Offsets shift while running | Identify visible rows by opaque sequence and replace bounded results atomically. |
+| Copying/filtering 300,000 rows stalls the emulator | Scan once per filter and transfer only indexed visible windows plus small overscan. |
+| Delayed scroll response belongs to an old filter | Require opaque `filterId` and reject responses using client filter/range generations. |
+| A stale paused result is shown after execution resumes | Clear rows immediately when lifecycle state changes to running. |
 | Client and server wildcard behavior diverge | Share golden conformance vectors and keep the grammar deliberately limited to `*`. |
 | Rendered text must be reparsed for immediate actions | Return structured operands and address-like metadata. |
 | Symbol aliases produce misleading links | Decorate only one exact-address match; otherwise retain the number. |
 | A panel action corrupts DAP breakpoint ownership | Serialize actions through the active adapter and reconcile with `GET_ALL` before/after mutations. |
 | Run To Line destroys a user breakpoint at its target | Preserve complete configuration/ownership and restore it after every completion or cancellation path. |
-| Live trace traffic delays stop detection | Use bounded low-priority queries, visible-only polling, coalescing, and stop-latency performance tests. |
-| Very long sessions overflow JavaScript integers | Use opaque decimal-string sequences. |
+| Hidden or running panels generate unnecessary traffic | Cancel pending work when hidden and issue filter/window requests only while visible and paused. |
 | RAM-disk execution opens the wrong Hex Viewer bank | Carry both CPU and global instruction addresses in every row. |
 
 ## 9. Relationship to Other Improvements
@@ -518,16 +516,17 @@ The panel consumes the existing ELF/DWARF metadata and shared panel launcher int
 - [ ] Assign the next free IPC command ID.
 - [ ] Specify and advertise trace-log schema 1.
 - [ ] Add structured opcode/operand serialization.
-- [ ] Add bounded server-side offset/address/instruction filtering.
-- [ ] Add app-controlled `lines` response limiting.
+- [ ] Add bounded server-side address/instruction filtering and immutable filter IDs.
+- [ ] Return complete `totalMatches` for virtual-scroll geometry.
+- [ ] Add app-controlled `start`/`lines` window retrieval.
 - [ ] Add capacity/line/pattern limits.
 
 ### Extension protocol and service
 
-- [ ] Add command, capability, limit, request, response, and operand models.
+- [ ] Add both commands, capabilities, limits, filter/window requests, responses, and operand models.
 - [ ] Add strict runtime codecs and server validation.
 - [ ] Add pure query parsing and shared glob vectors.
-- [ ] Add TraceLogService visible-line measurement, refresh, generation, and cancellation.
+- [ ] Add TraceLogService filter lifecycle, indexed windows, adjacent cache, generation, and cancellation.
 - [ ] Add protocol, parser, and service unit tests.
 
 ### Panel integration
@@ -542,14 +541,14 @@ The panel consumes the existing ELF/DWARF metadata and shared panel launcher int
 
 - [ ] Implement the filter and exact requested examples.
 - [ ] Reuse the Hex Viewer/Symbols query-history contract.
-- [ ] Implement the three-column visible-line table.
+- [ ] Implement the three-column virtual table and full-result scrollbar.
 - [ ] Implement per-cell copy and numeric tooltips.
 - [ ] Implement unique-symbol decoration for row and immediate addresses.
 - [ ] Implement row and Ctrl+immediate source navigation.
 - [ ] Implement the exact context-menu order and target matrix.
 - [ ] Implement Find in Hex Viewer with global instruction addresses.
 - [ ] Implement keyboard access, focus preservation, and stale-result rejection.
-- [ ] Request and honor visible-line limits on initial render, resize, refresh, and reveal.
+- [ ] Request and honor indexed visible windows on scroll, resize, refresh, and reveal.
 
 ### Debug actions
 
@@ -568,7 +567,7 @@ The panel consumes the existing ELF/DWARF metadata and shared panel launcher int
 - [ ] Run `npm run test:regression`.
 - [ ] Run real-emulator trace feature verification.
 - [ ] Create `result.txt` only after complete real-emulator success.
-- [ ] Verify latency, memory, and stop-polling performance targets.
+- [ ] Verify latency, memory, cache bounds, and paused-only request behavior.
 - [ ] Verify the Extension Development Host workflow and accessibility states.
 - [ ] Update commands, debugging, emulator, and architecture documentation.
 - [ ] Compare implementation with every acceptance criterion and record deviations.
@@ -579,7 +578,7 @@ The panel consumes the existing ELF/DWARF metadata and shared panel launcher int
 
 #### Description
 
-The extension requires a versioned command that returns retained executed instructions as structured records containing stable sequence, offset, 16-bit CPU address, global instruction address, opcode bytes, canonical instruction text, and typed operand boundaries.
+The extension requires versioned filter and window-query commands that expose retained executed instructions as structured records containing offset, 16-bit CPU address, global instruction address, opcode bytes, canonical instruction text, and typed operand boundaries while emulation is paused.
 
 #### Current Server Solution
 
@@ -587,35 +586,35 @@ v6emul stores the required raw execution facts in `TraceLog::m_log`, and its in-
 
 #### Proposed Server Functionality and Recommendations
 
-Implement trace-log schema 1 and a structured `DEBUG_TRACE_LOG_QUERY` command. Keep file logging commands unchanged. Serialize raw canonical I8080 instructions without server symbol substitution and include typed operands so clients can safely decorate and activate immediate values.
+Implement trace-log schema 1 with structured `DEBUG_TRACE_LOG_FILTER` and `DEBUG_TRACE_LOG_WINDOW` commands. Keep file logging commands unchanged. Serialize raw canonical I8080 instructions without server symbol substitution and include typed operands so clients can safely decorate and activate immediate values.
 
-### 13.2 Bounded filtering and visible-line limiting
-
-#### Description
-
-The panel must query optional offset range, address glob, and complete-instruction glob across up to 300,000 retained records while transferring only the number of lines currently visible in its table plus overscan.
-
-#### Current Server Solution
-
-`TraceLog::GetDisasm(lines, filter)` performs an in-process scan using an instruction-type threshold. It has no text/address glob query, app-controlled `lines` response limit, `hasMore` indicator, payload bound, or TCP representation. Returning the complete ring on each filter change would be too expensive.
-
-#### Proposed Server Functionality and Recommendations
-
-Add a bounded glob matcher, normalized query request, required `lines` field, maximum line limit, and `hasMore` response indicator. Match canonical numeric data so filtering is independent of client symbols. Publish limits through `GET_SERVER_INFO`.
-
-### 13.3 Coherent running responses
+### 13.2 Bounded filtering and indexed windows
 
 #### Description
 
-Each bounded response must represent one execution-history head even while the hardware thread continues adding records. Rows need stable identities, and reset must invalidate prior client rows explicitly.
+The panel must filter by address and complete-instruction globs across up to 300,000 retained records, obtain the complete match count, and retrieve arbitrary visible windows plus overscan.
 
 #### Current Server Solution
 
-The hardware thread updates the circular buffer while the UI thread reads/disassembles it. Records have no public sequence or response-coherence contract, and the current API does not define memory ordering for remote clients.
+`TraceLog::GetDisasm(lines, filter)` performs an in-process scan using an instruction-type threshold. It has no text/address glob query, immutable filter identity, total match count, indexed window request, payload bound, or TCP representation. Returning the complete ring on each filter change would be too expensive.
 
 #### Proposed Server Functionality and Recommendations
 
-Return opaque sequence values and a coherent `newestSequence` for each query. Define reset, reconnect, repeated-HLT suppression, and wraparound behavior in the client contract.
+Add a normalized filter request returning opaque `filterId` and `totalMatches`, then accept bounded `{ filterId, start, lines }` window requests. Match canonical numeric data so filtering is independent of client symbols. Publish limits through `GET_SERVER_INFO`.
+
+### 13.3 Paused-state availability
+
+#### Description
+
+The panel requests rows only while emulation is paused. It must receive a bounded result for the current paused state, and reset or resume must invalidate prior client rows explicitly.
+
+#### Current Server Solution
+
+The current server has no remote trace-query command or declared paused-state availability contract.
+
+#### Proposed Server Functionality and Recommendations
+
+Keep each filtered result immutable while paused and invalidate it on replacement, reset, resume, reconnect, or emulator replacement. Define repeated-HLT suppression and wraparound behavior in the client contract.
 
 ### 13.4 Capability negotiation
 
@@ -629,4 +628,4 @@ The command list can reveal IDs 89 and 90, but those IDs indicate file logging o
 
 #### Proposed Server Functionality and Recommendations
 
-Advertise `traceLogSchema`, `traceLogQuery`, `traceLogCoherentWhileRunning`, and `traceLogLimits` in `GET_SERVER_INFO`, plus the new query command ID. Older servers must produce an explicit unsupported-panel state rather than a guessed fallback.
+Advertise `traceLogSchema`, `traceLogFilter`, `traceLogWindowQuery`, and `traceLogLimits` in `GET_SERVER_INFO`, plus both command IDs. Older servers must produce an explicit unsupported-panel state rather than a guessed fallback.
