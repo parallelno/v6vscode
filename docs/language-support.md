@@ -14,7 +14,8 @@ TextMate grammar and Oniguruma once, then provides:
 
 Source presentation includes resolved symbol links. Standalone assembly presentation returns
 classified spans with an empty link list. Both cache families are bounded and are disposed with
-the extension host.
+the extension host. Trace Log consumes these same operations: exact mapped addresses use source
+presentation, while unmapped addresses use standalone presentation for server disassembly.
 
 ### Performance baseline
 

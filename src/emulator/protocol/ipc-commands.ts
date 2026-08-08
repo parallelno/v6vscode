@@ -127,6 +127,8 @@ export const enum IpcCommand {
     DEBUG_MEMORY_EDIT_RESTORE = 100,
     DEBUG_CODE_PERF_GET_ALL = 101,
     DEBUG_CODE_PERF_EDIT = 102,
+    DEBUG_TRACE_LOG_FILTER = 103,
+    DEBUG_TRACE_LOG_WINDOW = 104,
 }
 
 // Speed value mapping: user-facing string → IPC integer
@@ -185,6 +187,33 @@ export interface KeyHandlingRequest {
     action: number;
 }
 
+export interface TraceLogFilterRequest {
+    addressPattern?: string;
+    instructionPattern?: string;
+}
+
+export interface TraceLogFilterResponse {
+    filterId: number;
+    totalMatches: number;
+}
+
+export interface TraceLogWindowRequest {
+    filterId: number;
+    start: number;
+    lines: number;
+}
+
+export interface TraceLogEntry {
+    address: number;
+    bytes: readonly number[];
+    instruction: string;
+}
+
+export interface TraceLogWindowResponse {
+    start: number;
+    entries: readonly TraceLogEntry[];
+}
+
 // --- Typed response interfaces ---
 
 export interface PingResponse {
@@ -230,6 +259,14 @@ export interface ServerCapabilities {
     paletteEntryMutation?: boolean;
     fddDismount?: boolean;
     runningHardwareMutations?: boolean;
+    traceLogSchema?: number;
+    traceLogFilter?: boolean;
+    traceLogWindowQuery?: boolean;
+    traceLogLimits?: {
+        capacity: number;
+        maxLines: number;
+        maxPatternBytes: number;
+    };
 }
 
 export interface GetServerInfoResponse {

@@ -49,6 +49,7 @@ Closing the display panel terminates the active debug launch and closes the Run 
 - A standalone Hex Viewer editor panel with numeric, symbol, and inclusive-range navigation when the backend advertises `GET_MEM` command 93. Inclusive ranges accept `11-14` and `11..14`. Clearing the search clears its highlight; clicking a visible symbol selects its range without scrolling.
 - A standalone Memory Edits editor panel for adding and managing server-owned original, entered, and current byte values across Main RAM and every RAM-disk bank. It supports current-value filtering, inline Activity/value/Auto-update changes, clipboard actions, Hex Viewer navigation, and singular/bulk delete-and-restore workflows when memory-edit schema 1 is available.
 - A standalone Performance editor panel for managing CodePerf ranges by stable server ID. It supports name filtering, inline name/start/end editing, Activity toggles, sampled average clock cycles and test counts, source navigation, and bulk disable/delete workflows when CodePerf schema 1 is available.
+- A standalone Trace Log editor panel for filtering and virtually scrolling retained execution history while paused. Exact mapped addresses show their complete source line with shared highlighting and symbol links; other rows show v6emul's undecorated instruction.
 - A standalone Symbols editor panel that incrementally filters ELF symbols and immutable absolute assembler constants by name or resolved value, supports case/whole-name matching and history, opens exact source/declaration rows, and hands resolved symbol ranges to Hex Viewer.
 - A standalone Watchpoints editor panel with structured add, edit, enable/disable, delete, bulk actions, bounded memory previews, and Hex Viewer navigation when the backend advertises watchpoint schema 1 and edit command 94.
 - The Hex Viewer clears all cached bytes and becomes an empty panel when the emulator session stops.
@@ -95,6 +96,8 @@ Two requests resolving to one CPU address must use the same condition, hit count
 Source breakpoints remain unverified when the ELF is missing, malformed, or does not match the loaded ROM. The breakpoint tooltip and Debug Console report the artifact error. `No executable code at line ...` is used only after metadata loaded successfully and the source file/line has no applicable statement row.
 
 ## Current Limitations
+
+The stable VS Code extension API exposes `SourceBreakpoint` but no instruction-breakpoint constructor. Trace Log can therefore toggle source-backed breakpoints through the authoritative Breakpoints view; the action is disabled for disassembly-only rows rather than sending breakpoint IPC directly or creating breakpoint state VS Code cannot track.
 
 Older backends without stop-record schema 1 use running-state detection. Consequently, with those backends:
 

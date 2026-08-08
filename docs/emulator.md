@@ -35,7 +35,7 @@ Webview-based display surface for the running emulator. Execution control remain
 
 During a debug launch the panel uses the lifecycle's existing connection. It does not open a second TCP client. Frame requests are low priority so continue, pause, stepping, breakpoint updates, and stop polling remain responsive.
 
-Using the debug toolbar's **Stop** control, including its **Alt+Disconnect** variant, clears all connection-backed panel state immediately, including retained hidden webviews. Display clears its last frame; Symbols, Hex Viewer, Memory Edits, Performance, Ports, Watchpoints, and Hardware Statistics clear their tables, caches, selections, and pending UI. Memory-edit and CodePerf records remain owned by the emulator process and are fetched again after reconnect. Settings retains active-project defaults because they are project configuration rather than emulator-session state.
+Using the debug toolbar's **Stop** control, including its **Alt+Disconnect** variant, clears all connection-backed panel state immediately, including retained hidden webviews. Display clears its last frame; Symbols, Hex Viewer, Memory Edits, Performance, Trace Log, Ports, Watchpoints, and Hardware Statistics clear their tables, caches, selections, and pending UI. Memory-edit and CodePerf records remain owned by the emulator process and are fetched again after reconnect. Settings retains active-project defaults because they are project configuration rather than emulator-session state.
 
 ## Hardware Statistics
 
@@ -68,6 +68,12 @@ Auto-update maps to an active readonly server record and protects the entered va
 `Performance` is a standalone editor panel for server-owned CodePerf ranges and sampled timing statistics. It searches by name, edits 16-bit start/end addresses, toggles collection activity, and displays `average cc: N, tests: M`. Visible panels refresh the complete ID-ordered collection once per second. Mutations are serialized and reconciled with the authoritative collection before the UI accepts them; source navigation resolves the acknowledged start address through loaded ELF/DWARF metadata.
 
 The panel requires CodePerf schema 1 with `codePerfServerAllocatedIds`, `codePerfEdit`, and `codePerfMutationsWhileRunning` set to true. The server must advertise limits for the 65536-address space, UTF-8 name bytes, live records, and test count, plus commands `79..83`, `101` (`DEBUG_CODE_PERF_GET_ALL`), and `102` (`DEBUG_CODE_PERF_EDIT`). Records, IDs, and completed statistics survive reset, restart, ROM loading, and reconnect while the same debugger instance remains alive; destroying it starts a new collection lifetime.
+
+## Trace Log
+
+`Trace Log` is a standalone paused-only editor panel backed by server-side immutable filters. A valid address/instruction glob creates one opaque filter ID; scrolling requests aligned windows through commands `103` (`DEBUG_TRACE_LOG_FILTER`) and `104` (`DEBUG_TRACE_LOG_WINDOW`). Both the extension host and webview retain at most three 512-row windows, while fixed-height virtualization gives the scrollbar the complete advertised result length.
+
+Rows contain only a 16-bit address, instruction bytes, and v6emul's undecorated instruction. When the active debug artifact has an exact address mapping, the host replaces the listing with that complete source line and applies the shared TextMate highlighting and source-symbol links. Resume, hide, disconnect, filter replacement, or stale response generation clears the active result. The server must advertise trace-log schema 1, filter/window capabilities, and positive capacity, line, and UTF-8 pattern limits.
 
 ## Watchpoints
 

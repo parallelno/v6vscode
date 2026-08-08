@@ -7,6 +7,7 @@ import {
     CMD_TOGGLE_PORTS,
     CMD_TOGGLE_SETTINGS,
     CMD_TOGGLE_SYMBOLS,
+    CMD_TOGGLE_TRACE_LOG,
     CMD_TOGGLE_WATCHPOINTS,
 } from '../../config/contribution-ids';
 
@@ -16,6 +17,7 @@ const PANELS = [
     { label: 'Hex Viewer', command: CMD_TOGGLE_HEX_VIEWER, icon: 'symbol-numeric' },
     { label: 'Memory Edits', command: CMD_TOGGLE_MEMORY_EDITS, icon: 'edit' },
     { label: 'Performance', command: CMD_TOGGLE_PERFORMANCE, icon: 'graph' },
+    { label: 'Trace Log', command: CMD_TOGGLE_TRACE_LOG, icon: 'list-ordered' },
     { label: 'Symbols', command: CMD_TOGGLE_SYMBOLS, icon: 'symbol-variable' },
     { label: 'Ports', command: CMD_TOGGLE_PORTS, icon: 'symbol-field' },
     { label: 'Watchpoints', command: CMD_TOGGLE_WATCHPOINTS, icon: 'eye' },

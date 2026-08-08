@@ -40,6 +40,10 @@ flowchart LR
 	Performance[Performance Panel] --> PerfService[Performance Service]
 	PerfService --> Lifecycle
 	Performance --> SymbolService
+	Trace[Trace Log Panel] --> TraceService[Trace Log Service]
+	TraceService --> Lifecycle
+	Trace --> Presentation[Language Presentation Service]
+	Trace --> SymbolService
 	Symbols[Symbols] --> SymbolService[Debug Symbol Service]
 	Hex --> SymbolService
 	Symbols --> Hex
@@ -59,6 +63,8 @@ The Hex Viewer is a standalone editor `WebviewPanel` opened from the `v6emul` vi
 The Memory Edits tool is a standalone editor `WebviewPanel` backed by the same `MemoryEditService` used for Hex Viewer writes. The service validates memory-edit schema 1 and advertised limits, serializes mutations, rejects stale connection responses, and replaces its immutable state from `DEBUG_MEMORY_EDIT_GET_ALL` after every mutation. Original/current values remain server-owned; panel disposal stops polling without changing backend records.
 
 The Performance tool is a standalone editor `WebviewPanel` backed by `PerformanceService`. The service validates CodePerf schema 1 and advertised limits, serializes ID-based mutations, rejects stale connection responses, and replaces immutable state from `DEBUG_CODE_PERF_GET_ALL` after every mutation. Start and end fields use the shared symbol-expression evaluator; the panel preserves the exact entered expressions by server ID while sending only evaluated numeric addresses over IPC. Visible panels poll once per second for sampled statistics; source navigation resolves the acknowledged start address through `DebugSymbolService`.
+
+The Trace Log tool is a standalone editor `WebviewPanel` backed by `TraceLogService`. The service validates trace-log schema 1, creates paused-only immutable filters, retrieves aligned indexed windows, and rejects stale session/filter generations. Host and browser caches retain three windows; the browser renders only visible fixed-height rows. `TraceLogPanel` resolves exact address metadata and delegates source or standalone listing preparation to `LanguagePresentationService`, keeping protocol, language, and DOM ownership separate.
 
 The Symbols tool is a standalone editor `WebviewPanel` backed by the same `DebugSymbolService` as Hex Viewer. Its pure query module unions configurable name matching with exact expression-value matches while preserving duplicate symbols through generation-scoped IDs. The provider owns artifact loading, clipboard/source actions, persistence, and typed Hex Viewer handoff; its webview owns history, incremental list rendering, and accessible menus.
 

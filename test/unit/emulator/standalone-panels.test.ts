@@ -29,6 +29,7 @@ describe('Standalone emulator panels', () => {
             'src/debug/views/hex-viewer-provider.ts',
             'src/debug/views/memory-edits-panel.ts',
             'src/debug/views/performance-panel.ts',
+            'src/debug/views/trace-log-panel.ts',
             'src/debug/views/ports-provider.ts',
             'src/debug/views/hardware-statistics-provider.ts',
             'src/debug/views/watchpoints-provider.ts',
@@ -52,7 +53,7 @@ describe('Standalone emulator panels', () => {
     });
 
     it('owns standalone debug tools as WebviewPanels with complete panel APIs', () => {
-        for (const provider of ['src/debug/views/hex-viewer-provider.ts', 'src/debug/views/memory-edits-panel.ts', 'src/debug/views/performance-panel.ts', 'src/debug/views/symbols-panel.ts', 'src/debug/views/ports-provider.ts', 'src/debug/views/watchpoints-provider.ts']) {
+        for (const provider of ['src/debug/views/hex-viewer-provider.ts', 'src/debug/views/memory-edits-panel.ts', 'src/debug/views/performance-panel.ts', 'src/debug/views/trace-log-panel.ts', 'src/debug/views/symbols-panel.ts', 'src/debug/views/ports-provider.ts', 'src/debug/views/watchpoints-provider.ts']) {
             const source = read(provider);
             expect(source).to.include('createWebviewPanel(');
             expect(source).to.include('this.panel.reveal();');

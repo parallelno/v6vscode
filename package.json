@@ -83,6 +83,12 @@
         "icon": "$(add)"
       },
       {
+        "command": "v6.refreshTraceLog",
+        "title": "Refresh Trace Log",
+        "category": "V6",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "v6.refreshPorts",
         "title": "Refresh Ports",
         "category": "V6",
@@ -123,6 +129,11 @@
       {
         "command": "v6emul.togglePerformance",
         "title": "Performance",
+        "category": "v6emul"
+      },
+      {
+        "command": "v6emul.toggleTraceLog",
+        "title": "Trace Log",
         "category": "v6emul"
       },
       {
@@ -210,6 +221,11 @@
           "command": "v6.refreshPerformance",
           "when": "activeWebviewPanelId == v6.performance",
           "group": "navigation@2"
+        },
+        {
+          "command": "v6.refreshTraceLog",
+          "when": "activeWebviewPanelId == v6.traceLog",
+          "group": "navigation"
         },
         {
           "command": "v6.refreshPorts",

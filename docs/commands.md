@@ -29,7 +29,7 @@ Templates live in `src/templates/` and use `{{key}}` placeholder expansion.
 
 ## v6emul Panel Toggles
 
-The `v6emul` Activity Bar container, also available through **View > Open View... > v6emul**, contains launchers for Settings, Display, Hex Viewer, Memory Edits, Performance, Symbols, Ports, and Watchpoints. Each launcher creates an editor panel when closed and disposes it when open. Open panels show a check icon and `Open` state; closing a panel tab clears that state. The same toggle commands remain available in the Command Palette under the `v6emul` category.
+The `v6emul` Activity Bar container, also available through **View > Open View... > v6emul**, contains launchers for Settings, Display, Hex Viewer, Memory Edits, Performance, Trace Log, Symbols, Ports, and Watchpoints. Each launcher creates an editor panel when closed and disposes it when open. Open panels show a check icon and `Open` state; closing a panel tab clears that state. The same toggle commands remain available in the Command Palette under the `v6emul` category.
 
 VS Code's extension API does not expose the built-in **View** menubar as a menu contribution location. A direct **View > v6emul** submenu cannot be contributed by an extension; `menubar/view` is ignored by the host.
 
@@ -46,6 +46,10 @@ The **v6emul: Symbols** toggle opens a standalone symbol browser backed by the a
 ## V6: Refresh Performance
 
 Refreshes the authoritative CodePerf test collection and sampled statistics. The standalone panel requires CodePerf schema 1 and commands `79..83`, `101`, and `102`. It supports name filtering, inline name/range editing, Activity toggles, source navigation from the start address, and row or collection disable/delete actions.
+
+## V6: Refresh Trace Log
+
+Recreates the current server-side trace filter and returns to the newest matching instruction. The standalone panel requires trace-log schema 1 and commands `103` and `104`; it sends no query while the emulator is running or the panel is hidden. Address and instruction globs are filtered by v6emul, while indexed windows keep the 300,000-entry result virtualized.
 
 ## V6: Refresh Ports
 

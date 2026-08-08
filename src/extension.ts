@@ -15,6 +15,7 @@ import {
     CMD_TOGGLE_PORTS,
     CMD_TOGGLE_SETTINGS,
     CMD_TOGGLE_SYMBOLS,
+    CMD_TOGGLE_TRACE_LOG,
     CMD_TOGGLE_WATCHPOINTS,
     CONTEXT_DISPLAY_OPEN,
     CONTEXT_HEX_VIEWER_OPEN,
@@ -23,6 +24,7 @@ import {
     CONTEXT_PORTS_OPEN,
     CONTEXT_SETTINGS_OPEN,
     CONTEXT_SYMBOLS_OPEN,
+    CONTEXT_TRACE_LOG_OPEN,
     CONTEXT_WATCHPOINTS_OPEN,
     OUTPUT_CHANNEL_NAME,
 } from './config/contribution-ids';
@@ -79,6 +81,8 @@ import {
 } from './debug/views/performance-panel';
 import { SourceLocation } from './debug/metadata/debug-index';
 import { revealDebugSource } from './debug/views/debug-source-navigation';
+import { TraceLogService } from './debug/trace-log/trace-log-service';
+import { CMD_REFRESH_TRACE_LOG, TraceLogPanel } from './debug/views/trace-log-panel';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     const store = new DisposableStore();
@@ -208,6 +212,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     store.add(vscode.commands.registerCommand(CMD_TOGGLE_PERFORMANCE, () => performancePanel.toggle()));
     store.add(vscode.commands.registerCommand(CMD_ADD_PERFORMANCE, () => performancePanel.add()));
     store.add(vscode.commands.registerCommand(CMD_REFRESH_PERFORMANCE, () => performancePanel.refresh()));
+    const traceLogService = store.add(new TraceLogService(lifecycle, ipcClient));
+    const traceLog = store.add(new TraceLogPanel(
+        context.extensionUri,
+        lifecycle,
+        traceLogService,
+        debugSymbols,
+        languageServices.presentation,
+        languageServices.symbolLinks,
+        activeProjectService,
+        context.workspaceState,
+        logger,
+        open => {
+            panelLauncher.setOpen(CMD_TOGGLE_TRACE_LOG, open);
+            void vscode.commands.executeCommand('setContext', CONTEXT_TRACE_LOG_OPEN, open);
+        },
+    ));
+    void vscode.commands.executeCommand('setContext', CONTEXT_TRACE_LOG_OPEN, false);
+    store.add(vscode.commands.registerCommand(CMD_TOGGLE_TRACE_LOG, () => traceLog.toggle()));
+    store.add(vscode.commands.registerCommand(CMD_REFRESH_TRACE_LOG, () => traceLog.refresh()));
     const symbols = store.add(new SymbolsPanel(
         context.extensionUri,
         lifecycle,

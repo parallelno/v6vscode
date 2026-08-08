@@ -9,6 +9,7 @@ export const SUPPORTED_MEMORY_EDIT_SCHEMA = 1;
 export const SUPPORTED_CODE_PERF_SCHEMA = 1;
 export const SUPPORTED_STOP_RECORD_SCHEMA = 1;
 export const SUPPORTED_HARDWARE_STATS_SCHEMA = 1;
+export const SUPPORTED_TRACE_LOG_SCHEMA = 1;
 
 /** Reads and validates the required server metadata handshake. */
 export async function getServerInfo(client: IpcClient): Promise<GetServerInfoResponse> {
@@ -145,5 +146,24 @@ export function validatePerformanceServer(info: GetServerInfoResponse): void {
         || limits.maxTestCount <= 0
         || requiredCommands.some(command => !info.commands.includes(command))) {
         throw new Error(`v6emul ${info.emulatorVersion} does not provide CodePerf schema 1`);
+    }
+}
+
+export function validateTraceLogServer(info: GetServerInfoResponse): void {
+    const limits = info.capabilities.traceLogLimits;
+    if (info.capabilities.traceLogSchema !== SUPPORTED_TRACE_LOG_SCHEMA
+        || info.capabilities.traceLogFilter !== true
+        || info.capabilities.traceLogWindowQuery !== true
+        || !limits
+        || !Number.isSafeInteger(limits.capacity)
+        || limits.capacity <= 0
+        || !Number.isSafeInteger(limits.maxLines)
+        || limits.maxLines <= 0
+        || limits.maxLines > limits.capacity
+        || !Number.isSafeInteger(limits.maxPatternBytes)
+        || limits.maxPatternBytes <= 0
+        || !info.commands.includes(IpcCommand.DEBUG_TRACE_LOG_FILTER)
+        || !info.commands.includes(IpcCommand.DEBUG_TRACE_LOG_WINDOW)) {
+        throw new Error(`v6emul ${info.emulatorVersion} does not provide trace-log schema 1`);
     }
 }

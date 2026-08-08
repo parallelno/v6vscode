@@ -1,6 +1,6 @@
 # V6 Trace Log Panel Plan
 
-**Status:** Proposed; server protocol implemented
+**Status:** Implemented; disassembly-only breakpoint action blocked by stable VS Code API
 **Date:** 2026-08-07
 **Owner:** v6vscode maintainers
 **Server contract:** `v6emul-trace-log-query-design.md`
@@ -188,6 +188,8 @@ Breakpoint actions target the instruction represented by the row:
 
 The panel determines checked state from `vscode.debug.breakpoints`, using source URI/line for source rows and instruction reference for disassembly rows. Disable breakpoint actions without an active V6 debug session.
 
+Implementation note: the stable VS Code extension API currently exposes `SourceBreakpoint` and `FunctionBreakpoint`, but no instruction-breakpoint constructor. The implemented panel uses the authoritative API for source-backed rows and disables the action for disassembly-only rows. It does not bypass VS Code with direct breakpoint IPC.
+
 Run To Line, if included, remains an adapter-owned operation targeting the row `address`; it must reuse the adapter's temporary-breakpoint execution path and normal continued/stopped events.
 
 ### 4.7 Context menu and copying
@@ -294,30 +296,30 @@ flowchart LR
 
 ### Protocol and service
 
-- [ ] Add schema-1 capabilities, commands, models, and codecs.
-- [ ] Add filter parsing and server-compatible glob tests.
-- [ ] Implement filter lifetime and indexed window retrieval.
-- [ ] Implement bounded adjacent-window caching and stale-response rejection.
+- [x] Add schema-1 capabilities, commands, models, and codecs.
+- [x] Add filter parsing and server-compatible glob tests.
+- [x] Implement filter lifetime and indexed window retrieval.
+- [x] Implement bounded adjacent-window caching and stale-response rejection.
 
 ### Shared language behavior
 
-- [ ] Extract reusable source-line loading and tokenization.
-- [ ] Extract reusable symbol-token target resolution.
-- [ ] Preserve source-editor highlighting and navigation behavior.
-- [ ] Add source-line/disassembly fallback tests.
+- [x] Extract reusable source-line loading and tokenization.
+- [x] Extract reusable symbol-token target resolution.
+- [x] Preserve source-editor highlighting and navigation behavior.
+- [x] Add source-line/disassembly fallback tests.
 
 ### Panel and webview
 
-- [ ] Add launcher, commands, context key, and single-instance lifecycle.
-- [ ] Implement the two-column virtual listing.
-- [ ] Implement source-backed and disassembly-backed row presentation.
-- [ ] Implement copy, source navigation, breakpoint, and Run To Line actions.
-- [ ] Implement keyboard, focus, theme, zoom, and accessibility behavior.
+- [x] Add launcher, commands, context key, and single-instance lifecycle.
+- [x] Implement the two-column virtual listing.
+- [x] Implement source-backed and disassembly-backed row presentation.
+- [x] Implement copy and source navigation actions plus source-backed breakpoints. Run To Line remains optional and is not included.
+- [x] Implement keyboard, focus, theme, zoom, and accessibility behavior.
 
 ### Verification
 
-- [ ] Run compile, focused tests, unit tests, and regression tests.
-- [ ] Verify complete 300,000-row scrolling with bounded memory and DOM use.
-- [ ] Verify exact-source lookup and server-disassembly fallback.
-- [ ] Verify source and instruction breakpoints through the VS Code debug UI.
-- [ ] Update user and architecture documentation.
+- [x] Run compile, focused tests, unit tests, and regression tests.
+- [x] Verify complete 300,000-row geometry with bounded host, browser, and DOM windows in unit coverage.
+- [x] Verify exact-source lookup and server-disassembly fallback.
+- [ ] Verify source breakpoints through the VS Code debug UI; instruction creation is unavailable in the stable extension API.
+- [x] Update user and architecture documentation.
