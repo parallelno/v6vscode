@@ -128,7 +128,19 @@
         const address = document.createElement('span');
         address.className = 'address';
         address.setAttribute('role', 'gridcell');
-        address.textContent = row.address;
+        const breakpoint = document.createElement('button');
+        breakpoint.className = 'breakpoint-toggle';
+        breakpoint.type = 'button';
+        breakpoint.disabled = !row.canToggleBreakpoint;
+        breakpoint.setAttribute('aria-label', `${row.breakpoint ? 'Remove' : 'Add'} breakpoint at ${row.address}`);
+        breakpoint.setAttribute('aria-pressed', String(row.breakpoint));
+        breakpoint.addEventListener('click', event => {
+            event.stopPropagation();
+            action(row, 'toggleBreakpoint');
+        });
+        const addressText = document.createElement('span');
+        addressText.textContent = row.address;
+        address.append(breakpoint, addressText);
         const listing = document.createElement('span');
         listing.className = 'listing';
         listing.setAttribute('role', 'gridcell');
@@ -277,6 +289,7 @@
             windows.clear();
             lastRequest = '';
             viewport.scrollTop = 0;
+            viewport.scrollLeft = 0;
             spacer.style.height = `${totalMatches * ROW_HEIGHT}px`;
             render();
         } else if (message.type === 'window' && message.generation === generation) {
@@ -311,6 +324,7 @@
         lastRequest = '';
         count.textContent = '';
         spacer.style.height = '0';
+        viewport.scrollLeft = 0;
         rows.replaceChildren();
     }
 

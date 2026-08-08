@@ -15,12 +15,12 @@ describe('Assembly highlighter', () => {
             .filter(span => span.tokenClass === tokenClass)
             .map(span => line.slice(span.start, span.start + span.length));
 
-        expect(classified('label')).to.deep.equal(['main:']);
+        expect(classified('global-label')).to.deep.equal(['main:']);
         expect(classified('instruction')).to.deep.equal(['lxi']);
         expect(classified('register')).to.deep.equal(['h']);
         expect(classified('number')).to.deep.equal(['0x1234']);
         expect(classified('operator')).to.include('+');
-        expect(classified('comment')).to.deep.equal(['; note']);
+        expect(classified('line-comment')).to.deep.equal(['; note']);
     });
 
     it('preserves rule state across document lines but not standalone lines', async () => {
@@ -58,8 +58,12 @@ describe('Assembly highlighter', () => {
         expect([
             classifyScopes(['source.v6vscode_8080']),
             classifyScopes(['source.v6vscode_8080', 'comment.line.v6vscode_8080']),
+            classifyScopes(['source.v6vscode_8080', 'comment.block.v6vscode_8080']),
             classifyScopes(['source.v6vscode_8080', 'string.quoted.double.v6vscode_8080']),
             classifyScopes(['source.v6vscode_8080', 'keyword.globallabel.v6vscode_8080']),
+            classifyScopes(['source.v6vscode_8080', 'keyword.locallabel.v6vscode_8080']),
+            classifyScopes(['source.v6vscode_8080', 'keyword.constantslabel.v6vscode_8080']),
+            classifyScopes(['source.v6vscode_8080', 'entity.name.function.macro.v6vscode_8080']),
             classifyScopes(['source.v6vscode_8080', 'keyword.directive.v6vscode_8080']),
             classifyScopes(['source.v6vscode_8080', 'keyword.keyword.v6vscode_8080']),
             classifyScopes(['source.v6vscode_8080', 'keyword.control.flow.v6vscode_8080']),
@@ -68,7 +72,7 @@ describe('Assembly highlighter', () => {
             classifyScopes(['source.v6vscode_8080', 'constant.numeric.hexadecimal.v6vscode_8080']),
             classifyScopes(['source.v6vscode_8080', 'keyword.operator.v6vscode_8080']),
         ]).to.deep.equal([
-            'plain', 'comment', 'string', 'label', 'directive', 'keyword',
+            'plain', 'line-comment', 'comment', 'string', 'global-label', 'local-label', 'constant', 'macro', 'directive', 'keyword',
             'control', 'instruction', 'register', 'number', 'operator',
         ]);
     });
@@ -87,8 +91,16 @@ describe('Assembly highlighter', () => {
             .flatMap(spans => spans.map(span => span.tokenClass));
 
         expect(tokenClasses).to.include.members([
-            'directive', 'number', 'keyword', 'label', 'string', 'control',
-            'instruction', 'register', 'operator', 'comment',
+            'directive', 'number', 'keyword', 'global-label', 'string', 'control',
+            'instruction', 'register', 'operator', 'line-comment',
         ]);
+    });
+
+    it('distinguishes gray one-line comments from block comments', async () => {
+        const highlighter = await createAssemblyHighlighter(path.resolve(__dirname, '../../..'));
+        const tokenClasses = highlighter.tokenizeDocument('; semicolon\n// slash\n/* block */')
+            .map(spans => spans[0]?.tokenClass);
+
+        expect(tokenClasses).to.deep.equal(['line-comment', 'line-comment', 'comment']);
     });
 });

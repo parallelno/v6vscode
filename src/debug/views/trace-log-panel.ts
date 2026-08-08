@@ -31,6 +31,8 @@ interface PersistedTraceLogState {
 }
 
 interface PreparedRow {
+    address: number;
+    listingOffset: number;
     view: TraceLogRowViewModel;
     source?: SourceLocation;
     presentation: PresentedLine;
@@ -233,20 +235,24 @@ export class TraceLogPanel implements vscode.Disposable {
         }
         const presentation = presented ?? this.presentation.presentStandaloneLine(instruction);
         const sourceBacked = presented !== undefined;
+        const listingOffset = sourceBacked ? leadingWhitespaceLength(presentation.text) : 0;
         const prepared: PreparedRow = {
+            address,
+            listingOffset,
             source: sourceBacked ? source : undefined,
             presentation,
             view: {
                 index,
                 address: formatAddress(address),
-                listing: presentation.text,
-                highlights: presentation.highlights,
+                listing: presentation.text.slice(listingOffset),
+                highlights: shiftRanges(presentation.highlights, listingOffset),
                 links: sourceBacked
-                    ? presentation.links.map(link => ({ start: link.start, length: link.length, name: link.name }))
+                    ? shiftRanges(presentation.links, listingOffset)
+                        .map(link => ({ start: link.start, length: link.length, name: link.name }))
                     : [],
                 sourceBacked,
                 breakpoint: this.hasBreakpoint(address, sourceBacked ? source : undefined),
-                canToggleBreakpoint: sourceBacked && this.hasActiveV6Session(),
+                canToggleBreakpoint: sourceBacked,
             },
         };
         return prepared;
@@ -255,12 +261,11 @@ export class TraceLogPanel implements vscode.Disposable {
     private async runAction(index: number, action: TraceLogAction): Promise<void> {
         if (!['copyAddress', 'copyListing', 'toggleBreakpoint', 'findSource'].includes(action)) { return; }
         const row = this.rows.get(index);
-        const entry = this.service.entry(index);
-        if (!row || !entry) { return; }
+        if (!row) { return; }
         switch (action) {
             case 'copyAddress': await vscode.env.clipboard.writeText(row.view.address); break;
             case 'copyListing': await vscode.env.clipboard.writeText(row.view.listing); break;
-            case 'toggleBreakpoint': await this.toggleBreakpoint(entry.address, row.source); break;
+            case 'toggleBreakpoint': await this.toggleBreakpoint(row.address, row.source); break;
             case 'findSource': if (row.source) { await revealDebugSource(row.source, this.projectRoot); } break;
         }
     }
@@ -268,26 +273,31 @@ export class TraceLogPanel implements vscode.Disposable {
     private async openLink(index: number, start: number, length: number): Promise<void> {
         const row = this.rows.get(index);
         if (!row?.source || !this.sourceContext) { return; }
-        const link = row.presentation.links.find(item => item.start === start && item.length === length);
+        const originalStart = start + row.listingOffset;
+        const link = row.presentation.links.find(item => item.start === originalStart && item.length === length);
         if (!link) { return; }
-        const target = await this.symbolLinks.resolve(row.view.listing, { start, length }, this.sourceContext);
+        const target = await this.symbolLinks.resolve(
+            row.presentation.text,
+            { start: originalStart, length },
+            this.sourceContext,
+        );
         if (target) { await revealDebugSource(target, this.projectRoot); }
     }
 
     private async toggleBreakpoint(address: number, source?: SourceLocation): Promise<void> {
-        if (!this.hasActiveV6Session()) { return; }
+        if (!source) { return; }
         const existing = this.findBreakpoint(address, source);
         if (existing) {
             await vscode.debug.removeBreakpoints([existing]);
+            this.postBreakpointStates();
             return;
         }
-        if (source) {
-            const sourcePath = resolveDebugSourcePath(source.file, this.projectRoot);
-            const position = new vscode.Position(Math.max(0, source.line - 1), 0);
-            await vscode.debug.addBreakpoints([
-                new vscode.SourceBreakpoint(new vscode.Location(vscode.Uri.file(sourcePath), position)),
-            ]);
-        }
+        const sourcePath = resolveDebugSourcePath(source.file, this.projectRoot);
+        const position = new vscode.Position(Math.max(0, source.line - 1), 0);
+        await vscode.debug.addBreakpoints([
+            new vscode.SourceBreakpoint(new vscode.Location(vscode.Uri.file(sourcePath), position)),
+        ]);
+        this.postBreakpointStates();
     }
 
     private findBreakpoint(address: number, source?: SourceLocation): vscode.Breakpoint | undefined {
@@ -309,11 +319,9 @@ export class TraceLogPanel implements vscode.Disposable {
         if (!filter) { return; }
         const values: Array<{ index: number; breakpoint: boolean }> = [];
         for (const [index, row] of this.rows) {
-            const address = this.service.entry(index)?.address;
-            if (address === undefined) { continue; }
-            const breakpoint = this.hasBreakpoint(address, row.source);
+            const breakpoint = this.hasBreakpoint(row.address, row.source);
             row.view.breakpoint = breakpoint;
-            row.view.canToggleBreakpoint = row.source !== undefined && this.hasActiveV6Session();
+            row.view.canToggleBreakpoint = row.source !== undefined;
             values.push({ index, breakpoint });
         }
         this.post({ type: 'breakpoints', generation: filter.generation, values });
@@ -354,8 +362,6 @@ export class TraceLogPanel implements vscode.Disposable {
             if (index < minimum || index >= maximum) { this.rows.delete(index); }
         }
     }
-
-    private hasActiveV6Session(): boolean { return vscode.debug.activeDebugSession?.type === 'v6'; }
 
     private clear(state: 'noSession' | 'unsupported' | 'running', message: string): void {
         this.syncGeneration++;
@@ -437,4 +443,16 @@ function inactiveError(error: unknown): boolean {
         || message.includes('paused emulator')
         || message.includes('No active emulator session')
         || message.includes('not visible');
+}
+function leadingWhitespaceLength(value: string): number {
+    return /^\s*/.exec(value)?.[0].length ?? 0;
+}
+function shiftRanges<T extends { start: number; length: number }>(ranges: readonly T[], offset: number): T[] {
+    return ranges
+        .filter(range => range.start + range.length > offset)
+        .map(range => ({
+            ...range,
+            start: Math.max(0, range.start - offset),
+            length: range.length - Math.max(0, offset - range.start),
+        }));
 }

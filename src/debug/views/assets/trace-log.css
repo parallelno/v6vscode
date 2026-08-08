@@ -26,7 +26,7 @@ body {
 }
 #viewport { min-height: 0; overflow: auto; outline: none; }
 #viewport:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
-#spacer { position: relative; min-width: max-content; }
+#spacer { position: relative; min-width: 100%; }
 #rows { position: absolute; inset: 0 0 auto; }
 .row {
     position: absolute; left: 0; right: 0; height: var(--trace-row-height); align-items: center;
@@ -34,19 +34,25 @@ body {
 }
 .row:hover { color: var(--vscode-list-hoverForeground); background: var(--vscode-list-hoverBackground); }
 .row.selected, .row:focus { color: var(--vscode-list-focusForeground); background: var(--vscode-list-focusBackground); }
-.row.breakpoint .address::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: var(--vscode-debugIcon-breakpointForeground); }
-.address { overflow: hidden; color: var(--vscode-descriptionForeground); font: 12px var(--vscode-editor-font-family); font-variant-numeric: tabular-nums; }
+.address { display: flex; align-items: center; overflow: hidden; color: var(--vscode-descriptionForeground); font: 12px var(--vscode-editor-font-family); font-variant-numeric: tabular-nums; }
+.breakpoint-toggle { flex: 0 0 13px; width: 13px; height: 18px; margin: 0 3px 0 0; padding: 0; background: transparent; border: 0; cursor: pointer; }
+.breakpoint-toggle::before { content: ''; display: block; width: 8px; height: 8px; margin: auto; border-radius: 50%; background: transparent; }
+.breakpoint-toggle:hover::before, .breakpoint-toggle:focus-visible::before { outline: 1px solid var(--vscode-debugIcon-breakpointForeground); outline-offset: 1px; }
+.breakpoint-toggle[aria-pressed='true']::before { background: var(--vscode-debugIcon-breakpointForeground); }
+.breakpoint-toggle:disabled { cursor: default; }
 .listing { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: var(--vscode-editor-font-family); }
 .source-link { display: inline; margin: 0; padding: 0; color: inherit; background: transparent; border: 0; font: inherit; text-decoration: underline; text-decoration-style: dotted; cursor: pointer; }
 .source-link:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
-.token-comment { color: var(--vscode-editorCodeLens-foreground); }
-.token-string { color: var(--vscode-debugTokenExpression-string); }
-.token-label { color: var(--vscode-symbolIcon-functionForeground); }
-.token-directive, .token-keyword { color: var(--vscode-symbolIcon-keywordForeground); }
-.token-control, .token-instruction { color: var(--vscode-debugTokenExpression-name); }
-.token-register { color: var(--vscode-debugTokenExpression-type); }
-.token-number { color: var(--vscode-debugTokenExpression-number); }
-.token-operator { color: var(--vscode-symbolIcon-operatorForeground); }
+.token-comment { color: #6A9955; }
+.token-line-comment { color: #808080; }
+.token-global-label { color: #e1e157; }
+.token-local-label { color: #9d741c; }
+.token-constant { color: #8be0e9; }
+.token-macro { color: #c67dc0; }
+.token-instruction { color: #569cd6; }
+.token-control { color: #20df8f; }
+.token-register { color: #59c979; }
+.token-number { color: #b5cea8; }
 #menu {
     position: fixed; z-index: 20; display: flex; flex-direction: column; min-width: 170px; padding: 4px;
     color: var(--vscode-menu-foreground); background: var(--vscode-menu-background);

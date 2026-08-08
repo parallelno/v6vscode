@@ -17,8 +17,12 @@ const DEFAULT_DOCUMENT_CACHE_SIZE = 32;
 export type AssemblyTokenClass =
     | 'plain'
     | 'comment'
+    | 'line-comment'
     | 'string'
-    | 'label'
+    | 'global-label'
+    | 'local-label'
+    | 'constant'
+    | 'macro'
     | 'directive'
     | 'keyword'
     | 'control'
@@ -122,17 +126,20 @@ export class TextMateAssemblyHighlighter implements AssemblyHighlighter {
 export function classifyScopes(scopes: readonly string[]): AssemblyTokenClass {
     for (let index = scopes.length - 1; index >= 0; index--) {
         const scope = scopes[index];
+        if (scope.startsWith('comment.line.')) { return 'line-comment'; }
         if (scope.startsWith('comment.')) { return 'comment'; }
         if (scope.startsWith('string.') || scope.startsWith('constant.character.')) { return 'string'; }
-        if (scope.includes('globallabel') || scope.includes('locallabel')) { return 'label'; }
+        if (scope.includes('globallabel')) { return 'global-label'; }
+        if (scope.includes('locallabel')) { return 'local-label'; }
+        if (scope.includes('constantslabel')) { return 'constant'; }
+        if (scope.includes('entity.name.function.macro')) { return 'macro'; }
         if (scope.includes('keyword.directive')) { return 'directive'; }
-        if (scope.includes('keyword.keyword') || scope.includes('constantslabel')) { return 'keyword'; }
+        if (scope.includes('keyword.keyword')) { return 'keyword'; }
         if (scope.includes('keyword.control.flow')) { return 'control'; }
         if (scope.includes('keyword.instruction')) { return 'instruction'; }
         if (scope.includes('keyword.register')) { return 'register'; }
         if (scope.startsWith('constant.numeric.')) { return 'number'; }
         if (scope.includes('keyword.operator')) { return 'operator'; }
-        if (scope.includes('entity.name.function.macro')) { return 'keyword'; }
     }
     return 'plain';
 }

@@ -75,6 +75,23 @@ const mockVscode = {
     },
     debug: {
         activeDebugSession: undefined,
+        breakpoints: [],
+        _breakpointListeners: [],
+        onDidChangeBreakpoints: (listener) => {
+            mockVscode.debug._breakpointListeners.push(listener);
+            return { dispose: () => {
+                mockVscode.debug._breakpointListeners = mockVscode.debug._breakpointListeners
+                    .filter(item => item !== listener);
+            } };
+        },
+        addBreakpoints: async (breakpoints) => {
+            mockVscode.debug.breakpoints.push(...breakpoints);
+            mockVscode.debug._breakpointListeners.forEach(listener => listener({ added: breakpoints, removed: [], changed: [] }));
+        },
+        removeBreakpoints: async (breakpoints) => {
+            mockVscode.debug.breakpoints = mockVscode.debug.breakpoints.filter(item => !breakpoints.includes(item));
+            mockVscode.debug._breakpointListeners.forEach(listener => listener({ added: [], removed: breakpoints, changed: [] }));
+        },
     },
     Position: class Position {
         constructor(line, character) { this.line = line; this.character = character; }
@@ -96,7 +113,21 @@ const mockVscode = {
         constructor(contents, range) { this.contents = contents; this.range = range; }
     },
     Location: class Location {
-        constructor(uri, rangeOrPosition) { this.uri = uri; this.range = rangeOrPosition; }
+        constructor(uri, rangeOrPosition) {
+            this.uri = uri;
+            this.range = rangeOrPosition.start
+                ? rangeOrPosition
+                : { ...rangeOrPosition, start: rangeOrPosition, end: rangeOrPosition };
+        }
+    },
+    SourceBreakpoint: class SourceBreakpoint {
+        constructor(location, enabled = true, condition, hitCondition, logMessage) {
+            this.location = location;
+            this.enabled = enabled;
+            this.condition = condition;
+            this.hitCondition = hitCondition;
+            this.logMessage = logMessage;
+        }
     },
     MarkdownString: class MarkdownString {
         constructor() { this.value = ''; this.isTrusted = false; }

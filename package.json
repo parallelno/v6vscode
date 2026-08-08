@@ -374,6 +374,12 @@
             }
           },
           {
+            "scope": "comment.line.v6vscode_8080",
+            "settings": {
+              "foreground": "#808080"
+            }
+          },
+          {
             "scope": "keyword.globallabel.v6vscode_8080",
             "settings": {
               "foreground": "#e1e157"

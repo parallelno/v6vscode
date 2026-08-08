@@ -5,6 +5,13 @@ import { StopRecord } from '../../../src/emulator/protocol/debug-models';
 import { IpcCommand } from '../../../src/emulator/protocol/ipc-commands';
 
 describe('V6DebugAdapter stop records', () => {
+    const adapters: V6DebugAdapter[] = [];
+
+    afterEach(() => {
+        for (const adapter of adapters) { adapter.dispose(); }
+        adapters.length = 0;
+    });
+
     function makeAdapter() {
         const lifecycle = Object.assign(new EventEmitter(), {
             serverInfo: undefined,
@@ -22,6 +29,7 @@ describe('V6DebugAdapter stop records', () => {
             undefined,
             { showStop: (ids: readonly number[], address?: number) => viewStops.push({ ids, address }) } as any,
         );
+        adapters.push(adapter);
         const messages: any[] = [];
         adapter.onDidSendMessage(message => messages.push(message));
         (adapter as any).client = {
