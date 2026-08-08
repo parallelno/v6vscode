@@ -4,6 +4,15 @@ import { V6DebugAdapter } from '../../../src/debug/adapter/v6-debug-adapter';
 import { IpcCommand } from '../../../src/emulator/protocol/ipc-commands';
 
 describe('V6DebugAdapter restart actions', () => {
+    const adapters: V6DebugAdapter[] = [];
+
+    afterEach(() => {
+        for (const adapter of adapters) {
+            (adapter as any).stopPoll();
+        }
+        adapters.length = 0;
+    });
+
     function makeAdapter() {
         const reloaded: unknown[] = [];
         const lifecycle = Object.assign(new EventEmitter(), {
@@ -19,6 +28,7 @@ describe('V6DebugAdapter restart actions', () => {
             {} as any,
             () => ({} as any),
         );
+        adapters.push(adapter);
         const requests: Array<{ command: IpcCommand; data: unknown }> = [];
         (adapter as any).client = {
             send: async (command: IpcCommand, data: unknown) => {
@@ -38,6 +48,7 @@ describe('V6DebugAdapter restart actions', () => {
         expect(requests).to.deep.equal([
             { command: IpcCommand.STOP, data: undefined },
             { command: IpcCommand.RESET, data: undefined },
+            { command: IpcCommand.DEBUG_BREAKPOINT_GET_ALL, data: undefined },
             { command: IpcCommand.RUN, data: undefined },
         ]);
     });
@@ -54,6 +65,7 @@ describe('V6DebugAdapter restart actions', () => {
             { command: IpcCommand.RESET, data: undefined },
             { command: IpcCommand.RESTART, data: undefined },
             { command: IpcCommand.DEBUG_RESET, data: { resetRecorder: true } },
+            { command: IpcCommand.DEBUG_BREAKPOINT_GET_ALL, data: undefined },
             { command: IpcCommand.RUN, data: undefined },
         ]);
         expect(reloaded).to.deep.equal([request]);

@@ -1,4 +1,3 @@
-import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { ActiveProjectService } from '../../project/active/active-project-service';
@@ -6,7 +5,6 @@ import { DebugSymbolService } from '../../debug/metadata/debug-symbol-service';
 import { SourceLocation } from '../../debug/metadata/debug-index';
 import { resolveDebugSourcePath } from '../../debug/metadata/debug-source-path';
 import {
-    DebugSourceSymbolLinkService,
     findLabelDefinition,
     findSymbolTokens,
     SourceDocumentContext,
@@ -44,21 +42,11 @@ export function registerExpressionForHover(line: string, token: string): string 
 }
 
 export class SymbolLinkProvider implements vscode.HoverProvider, vscode.DefinitionProvider {
-    private readonly linkService: SourceSymbolLinkService;
-
     constructor(
         private readonly activeProjectService: ActiveProjectService,
         private readonly symbols: DebugSymbolService,
-        linkService?: SourceSymbolLinkService,
-    ) {
-        this.linkService = linkService ?? new DebugSourceSymbolLinkService(symbols, async sourcePath => {
-            try {
-                return await fs.readFile(sourcePath, 'utf8');
-            } catch {
-                return undefined;
-            }
-        });
-    }
+        private readonly linkService: SourceSymbolLinkService,
+    ) {}
 
     async provideHover(
         document: vscode.TextDocument,

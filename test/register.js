@@ -95,6 +95,14 @@ const mockVscode = {
     Hover: class Hover {
         constructor(contents, range) { this.contents = contents; this.range = range; }
     },
+    Location: class Location {
+        constructor(uri, rangeOrPosition) { this.uri = uri; this.range = rangeOrPosition; }
+    },
+    MarkdownString: class MarkdownString {
+        constructor() { this.value = ''; this.isTrusted = false; }
+        appendText(value) { this.value += value; return this; }
+        appendMarkdown(value) { this.value += value; return this; }
+    },
 };
 
 const originalResolveFilename = Module._resolveFilename;

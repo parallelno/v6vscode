@@ -1,6 +1,6 @@
 # Shared Language Presentation Refactoring Plan
 
-**Status:** Proposed
+**Status:** Implemented
 **Date:** 2026-08-07
 **Owner:** v6vscode maintainers
 **Scope:** independently implementable language-domain refactoring
@@ -225,47 +225,47 @@ interface PresentedLine {
 
 ### Characterization and extraction
 
-- [ ] Add golden tests for current symbol token discovery, hovers, definitions, and target resolution.
-- [ ] Extract symbol scanning and resolution policy into panel-independent `src/language` modules.
-- [ ] Inject source-file access into symbol resolution.
-- [ ] Keep `SymbolLinkProvider` as a thin VS Code adapter.
-- [ ] Verify existing source-editor language tests remain unchanged and pass.
+- [x] Add golden tests for current symbol token discovery, hovers, definitions, and target resolution.
+- [x] Extract symbol scanning and resolution policy into panel-independent `src/language` modules.
+- [x] Inject source-file access into symbol resolution.
+- [x] Keep `SymbolLinkProvider` as a thin VS Code adapter.
+- [x] Verify existing source-editor language tests remain unchanged and pass.
 
 ### Source-line service
 
-- [ ] Implement `SourceLineService` using existing debug-source path resolution.
-- [ ] Read source through VS Code documents so unsaved changes are visible.
-- [ ] Validate DWARF line bounds and missing-file behavior.
-- [ ] Cache by source identity and document version.
-- [ ] Add invalidation, Windows path-case, dirty-document, and missing-source tests.
+- [x] Implement `SourceLineService` using existing debug-source path resolution.
+- [x] Read source through VS Code documents so unsaved changes are visible.
+- [x] Validate DWARF line bounds and missing-file behavior.
+- [x] Cache by source identity and document version.
+- [x] Add invalidation, Windows path-case, dirty-document, and missing-source tests.
 
 ### Host-side TextMate highlighting
 
-- [ ] Add `vscode-textmate` and `vscode-oniguruma` runtime dependencies.
-- [ ] Package and initialize Oniguruma WASM once per extension host.
-- [ ] Load `res/syntaxes/v6vscode_8080.tmLanguage.json` once.
-- [ ] Implement TextMate scope-to-`AssemblyTokenClass` mapping.
-- [ ] Preserve rule stacks while tokenizing source documents.
-- [ ] Tokenize standalone assembly lines from an initial rule stack.
-- [ ] Add bounded source-document and standalone-line caches.
-- [ ] Add golden token-span, multiline-rule, cache-bound, and packaged-startup tests.
+- [x] Add `vscode-textmate` and `vscode-oniguruma` runtime dependencies.
+- [x] Package and initialize Oniguruma WASM once per extension host.
+- [x] Load `res/syntaxes/v6vscode_8080.tmLanguage.json` once.
+- [x] Implement TextMate scope-to-`AssemblyTokenClass` mapping.
+- [x] Preserve rule stacks while tokenizing source documents.
+- [x] Tokenize standalone assembly lines from an initial rule stack.
+- [x] Add bounded source-document and standalone-line caches.
+- [x] Add golden token-span, multiline-rule, cache-bound, and packaged-startup tests.
 
 ### Presentation API and editor adoption
 
-- [ ] Implement `presentSourceLine()` and `presentStandaloneLine()`.
-- [ ] Include symbol links only in source-line presentation.
-- [ ] Return plain text, classified spans, and validated link ranges.
-- [ ] Adopt the extracted symbol-link core from source editor providers.
-- [ ] Register shared language services through the extension composition root.
-- [ ] Export the presentation facade without adding a panel consumer.
-- [ ] Verify hover, definition, cancellation, and source navigation remain unchanged.
+- [x] Implement `presentSourceLine()` and `presentStandaloneLine()`.
+- [x] Include symbol links only in source-line presentation.
+- [x] Return plain text, classified spans, and validated link ranges.
+- [x] Adopt the extracted symbol-link core from source editor providers.
+- [x] Register shared language services through the extension composition root.
+- [x] Export the presentation facade without adding a panel consumer.
+- [x] Verify hover, definition, cancellation, and source navigation remain unchanged.
 
 ### Architecture and verification
 
-- [ ] Confirm language modules have no panel, webview, or consumer feature dependencies.
-- [ ] Verify source-line presentation contains highlights and resolved links.
-- [ ] Verify standalone-line presentation contains highlights and no links.
-- [ ] Measure cold initialization and warm 512-line fixture tokenization.
-- [ ] Run compile, focused unit tests, full unit tests, and regression tests.
-- [ ] Verify dependency packaging and activation in an Extension Development Host.
-- [ ] Complete the plan without creating or modifying Trace Log implementation files.
+- [x] Confirm language modules have no panel, webview, or consumer feature dependencies.
+- [x] Verify source-line presentation contains highlights and resolved links.
+- [x] Verify standalone-line presentation contains highlights and no links.
+- [x] Measure cold initialization and warm 512-line fixture tokenization.
+- [x] Run compile, focused unit tests, full unit tests, and regression tests.
+- [x] Verify dependency packaging and activation in an Extension Development Host.
+- [x] Complete the plan without creating or modifying Trace Log implementation files.

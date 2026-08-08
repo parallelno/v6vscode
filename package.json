@@ -442,7 +442,8 @@
     "lint": "eslint src --ext ts",
     "test": "npm run test:unit",
     "test:unit": "mocha",
-    "test:integration": "node ./node_modules/@vscode/test-electron/out/runTest.js",
+    "test:integration": "npm run compile && node ./out/test/run-integration.js",
+    "test:integration:packaged": "npm run package -- --out temp/language-presentation.vsix && node ./out/test/run-integration.js --packaged",
     "test:regression": "mocha --no-config --require ./test/register.js --timeout 5000 'test/regression/**/*.test.ts'",
     "test:feature:metadata": "powershell -NoProfile -ExecutionPolicy Bypass -File test/features/debug-metadata/run.ps1",
     "test:feature:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File test/features/debug-adapter/run.ps1",
@@ -464,7 +465,8 @@
     "eslint": "^8.56.0",
     "mocha": "^10.3.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "yauzl": "^2.10.0"
   },
   "dependencies": {
     "@msgpack/msgpack": "^3.0.0-beta2",

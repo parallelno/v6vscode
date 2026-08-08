@@ -19,6 +19,8 @@ tsconfig.test.json
 # Build and cache artifacts
 **/*.log
 **/*.map
+out/test/**
+.vscode-test/**
 .venv/
 dist/
 node_modules/.cache/

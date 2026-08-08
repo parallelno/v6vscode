@@ -33,6 +33,7 @@ test/core/
 
 # VSCode package vsix
 *.vsix
+.vscode-test/
 
 temp/
 test/**/*.rom

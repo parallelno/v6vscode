@@ -89,4 +89,65 @@ describe('Source line service', () => {
         expect(reads).to.equal(1);
         service.dispose();
     });
+
+    it('returns undefined when the source document cannot be opened', async () => {
+        const service = new VsCodeSourceLineService(async () => {
+            throw new Error('missing source');
+        });
+
+        expect(await service.read(
+            { file: 'missing.asm', line: 1, column: 1, isStmt: true },
+            'C:\\project',
+        )).to.equal(undefined);
+        service.dispose();
+    });
+
+    it('invalidates cached lines on document and workspace changes', async () => {
+        const workspace = vscode.workspace as any;
+        const originalChange = workspace.onDidChangeTextDocument;
+        const originalClose = workspace.onDidCloseTextDocument;
+        const originalFolders = workspace.onDidChangeWorkspaceFolders;
+        let changeListener: (event: any) => void = () => {};
+        let closeListener: (document: any) => void = () => {};
+        let foldersListener: () => void = () => {};
+        workspace.onDidChangeTextDocument = (listener: typeof changeListener) => {
+            changeListener = listener;
+            return { dispose() {} };
+        };
+        workspace.onDidCloseTextDocument = (listener: typeof closeListener) => {
+            closeListener = listener;
+            return { dispose() {} };
+        };
+        workspace.onDidChangeWorkspaceFolders = (listener: typeof foldersListener) => {
+            foldersListener = listener;
+            return { dispose() {} };
+        };
+
+        const uri = vscode.Uri.file('C:\\project\\main.asm');
+        let reads = 0;
+        const service = new VsCodeSourceLineService(async () => ({
+            uri,
+            version: 1,
+            lineCount: 1,
+            lineAt: () => { reads++; return { text: 'ret' }; },
+        }));
+        const location = { file: 'main.asm', line: 1, column: 1, isStmt: true };
+        try {
+            await service.read(location, 'C:\\project');
+            await service.read(location, 'C:\\project');
+            changeListener({ document: { uri } });
+            await service.read(location, 'C:\\project');
+            closeListener({ uri });
+            await service.read(location, 'C:\\project');
+            foldersListener();
+            await service.read(location, 'C:\\project');
+
+            expect(reads).to.equal(4);
+        } finally {
+            service.dispose();
+            workspace.onDidChangeTextDocument = originalChange;
+            workspace.onDidCloseTextDocument = originalClose;
+            workspace.onDidChangeWorkspaceFolders = originalFolders;
+        }
+    });
 });
