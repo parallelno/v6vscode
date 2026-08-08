@@ -3,21 +3,23 @@
 **Status:** Proposed
 **Date:** 2026-08-07
 **Owner:** v6vscode maintainers
-**Consumers:** source editor providers, Trace Log panel, future disassembly views
+**Scope:** independently implementable language-domain refactoring
 
 ## 1. Goal
 
-Make assembly language behavior reusable without moving language rules into a panel.
+Create a complete, reusable assembly-language presentation API under `src/language`. The work must be implementable, testable, and releasable without adding or modifying a panel.
 
 The refactoring will provide shared services for:
 
 1. Loading an exact source line from a debug source location.
-2. Tokenizing source and disassembly text from the existing TextMate grammar.
+2. Tokenizing source documents and standalone assembly lines from the existing TextMate grammar.
 3. Finding source symbol tokens and resolving their definitions.
-4. Returning presentation data without HTML or VS Code editor objects.
-5. Keeping navigation and breakpoint execution in the extension host.
+4. Returning presentation data without HTML or consumer-specific view models.
+5. Adapting the existing source editor providers to the extracted services.
 
 Existing source-editor highlighting, hovers, definitions, and breakpoint behavior must remain unchanged.
+
+The deliverable is complete when the shared APIs, editor-provider adoption, packaging, tests, and documentation pass independently. No Trace Log types, commands, assets, or tests are part of this plan.
 
 ## 2. Ownership
 
@@ -27,10 +29,9 @@ Follow `design/design.md`:
 - `src/debug/metadata` owns address-to-source and symbol data.
 - `src/platform/files` owns reusable file reading and cache primitives where appropriate.
 - VS Code providers adapt shared language operations to editor APIs.
-- Panels consume shared operations through host-side controllers.
-- Webviews render trusted view models and send opaque interaction targets.
+- Consumers depend only on exported language-domain interfaces.
 
-No language module may import a Trace Log panel or webview asset.
+No language module may import a panel, webview asset, or consumer feature module.
 
 ## 3. Target Interfaces
 
@@ -80,9 +81,9 @@ interface AssemblyHighlighter {
 }
 ```
 
-Token classes are stable presentation categories, not CSS or TextMate scope names. Adapters map TextMate scopes to these classes. Webviews map classes to VS Code theme variables.
+Token classes are stable presentation categories, not CSS or TextMate scope names. The highlighter maps TextMate scopes to these classes so consumers do not depend on grammar internals.
 
-`tokenizeDocument()` preserves TextMate rule state across lines for multiline strings/comments. Server disassembly uses `tokenizeLine()` with an initial rule stack.
+`tokenizeDocument()` preserves TextMate rule state across lines for multiline strings/comments. `tokenizeLine()` handles an independent assembly line from an initial rule stack.
 
 ### 3.3 Symbol links
 
@@ -102,7 +103,7 @@ interface SourceSymbolLinkService {
 
 Move symbol token discovery and source-target resolution out of `SymbolLinkProvider`. The provider remains responsible for VS Code `Hover`, `Location`, cancellation, and command-link adaptation.
 
-The Trace Log controller sends links only for source-backed rows. It re-runs `resolve()` before navigation rather than trusting a webview-provided target.
+The extracted service validates token ranges and resolves targets from authoritative source text. Consumers pass text and ranges, not pre-resolved paths.
 
 ## 4. TextMate Integration
 
@@ -112,11 +113,10 @@ Use `vscode-textmate` with `vscode-oniguruma` exclusively in the extension host.
 - Load Oniguruma WASM once and share the initialized registry.
 - Return spans and semantic token classes, not generated HTML.
 - Cache tokenized source documents by URI and document version.
-- Cache server disassembly tokenization by instruction string with a bounded LRU cache.
-- Keep WASM and grammar loading out of the webview CSP and message bridge.
-- Send plain text and classified spans to rendering-only webview consumers.
+- Cache standalone-line tokenization by text with a bounded LRU cache.
+- Export an initialized highlighter through the extension composition root.
 
-The stable VS Code API does not expose the editor's active TextMate token stream or raw active theme. The shared highlighter therefore reuses the registered grammar's scopes, and webviews map the resulting semantic classes to VS Code theme variables. The result must remain readable in light, dark, and high-contrast themes.
+The stable VS Code API does not expose the editor's active TextMate token stream. The shared highlighter therefore loads the same registered grammar and exposes stable token classes to consumers.
 
 ## 5. Refactoring Steps
 
@@ -145,12 +145,12 @@ The stable VS Code API does not expose the editor's active TextMate token stream
 - Add runtime dependencies `vscode-textmate` and `vscode-oniguruma`.
 - Initialize the existing grammar from the extension installation URI.
 - Map known grammar scopes to stable `AssemblyTokenClass` values.
-- Preserve rule stacks for source documents and use an initial stack for disassembly lines.
+- Preserve rule stacks for source documents and use an initial stack for standalone lines.
 - Add golden span tests and bounded-cache tests.
 
 ### Step 5 - Add a presentation facade
 
-Create a language-owned facade that combines source text, highlight spans, and source symbol links:
+Create a language-owned facade that combines source text, highlight spans, and optional source symbol links:
 
 ```ts
 interface PresentedLine {
@@ -160,21 +160,21 @@ interface PresentedLine {
 }
 ```
 
-Source-backed lines contain valid links. Disassembly lines contain highlights and an empty link list.
+`presentSourceLine()` loads a source line, highlights it, and resolves its links. `presentStandaloneLine()` highlights supplied assembly text and returns an empty link list. Both operations are directly testable without a UI consumer.
 
-### Step 6 - Adopt from consumers
+### Step 6 - Adopt from existing language providers
 
 - Keep source editor providers on the extracted symbol-link core.
-- Use the facade from Trace Log host code only for retained visible windows.
-- Send plain text, spans, and opaque link ranges to the webview.
-- Re-resolve every clicked range in the host before navigation.
+- Register the shared services from `extension.ts` through a language-domain composition function.
+- Preserve existing hover, definition, cancellation, and navigation behavior.
+- Export the presentation facade for later consumers without adding a consumer in this change.
 
 ### Step 7 - Verify architecture and performance
 
-- Confirm language modules have no imports from `src/debug/views` panel implementations.
-- Confirm the Trace Log panel contains no assembly regexes or symbol lookup policy.
-- Measure cold grammar/WASM initialization and warm tokenization of one maximum-sized trace window.
-- Run compile, unit, regression, Extension Development Host, and high-contrast checks.
+- Confirm language modules have no imports from panel, webview, or consumer feature modules.
+- Measure cold grammar/WASM initialization and warm tokenization of a fixed 512-line benchmark fixture.
+- Verify dependency packaging and activation in an Extension Development Host.
+- Run compile, focused language tests, full unit tests, and regression tests.
 
 ## 6. Tests
 
@@ -182,44 +182,44 @@ Source-backed lines contain valid links. Disassembly lines contain highlights an
 
 - TextMate scope-to-class mapping.
 - Multiline rule-stack preservation.
-- Independent server instruction tokenization.
+- Independent standalone assembly-line tokenization.
 - Source document cache invalidation.
 - Symbol missing, unique, and ambiguous resolution.
-- Host-side rejection of stale or altered link ranges.
+- Rejection of invalid or altered symbol ranges.
 
 ### Integration
 
 - Existing source hover and definition behavior remains unchanged.
-- Dirty source documents appear immediately in Trace Log source-backed rows.
-- Source rows and editor lines produce equivalent token classes for the same text.
-- Disassembly rows have syntax colors but no links.
-- Theme changes update CSS-variable-based colors without retokenizing rows.
+- Dirty source documents are returned immediately by `SourceLineService`.
+- `presentSourceLine()` returns text, highlights, and links.
+- `presentStandaloneLine()` returns highlights and no links.
+- The extension activates with the packaged grammar and Oniguruma WASM.
 
 ### Performance
 
 - Grammar and WASM initialize once per extension host.
-- Warm presentation of a `maxLines` window does not block scrolling noticeably.
-- Document and disassembly caches have explicit size bounds.
+- Warm presentation of the 512-line benchmark remains within the recorded performance budget.
+- Document and standalone-line caches have explicit size bounds.
 
 ## 7. Risks and Mitigations
 
 | Risk | Mitigation |
 |---|---|
 | Oniguruma WASM complicates packaging | Resolve it from the installed dependency, test packaged-extension startup, and initialize once. |
-| Webview colors do not exactly match a custom editor theme | Reuse grammar scopes and map semantic classes to documented VS Code theme variables. |
-| Full-document tokenization is expensive | Cache by document version and tokenize only source files referenced by retained windows. |
+| Full-document tokenization is expensive | Cache by document version and preserve rule stacks per cached document. |
 | Extraction changes existing editor navigation | Add characterization tests first and keep providers as thin adapters over the same behavior. |
-| Webview forges a symbol target | Send ranges only and resolve again in the extension host. |
+| A consumer supplies an invalid token range | Validate the range against authoritative text before resolving a target. |
 
 ## 8. Acceptance Criteria
 
 - Language parsing and symbol resolution live under `src/language` and have no panel dependencies.
 - The existing TextMate grammar is the only syntax grammar.
 - Source editor navigation behavior remains covered and unchanged.
-- Trace Log receives source/disassembly presentation without implementing language rules.
-- Source lines support shared symbol hyperlinks; disassembly lines do not.
-- No untrusted HTML or navigation target crosses the webview boundary.
-- Initialization, document cache, and disassembly cache are bounded and tested.
+- `presentSourceLine()` and `presentStandaloneLine()` are exported and directly tested.
+- Source lines support shared symbol hyperlinks; standalone lines return no links.
+- No HTML or consumer-specific model is returned by the language API.
+- Initialization, document cache, and standalone-line cache are bounded and tested.
+- The refactoring compiles, packages, and passes tests without Trace Log implementation.
 
 ## 9. Implementation Checklist
 
@@ -246,27 +246,26 @@ Source-backed lines contain valid links. Disassembly lines contain highlights an
 - [ ] Load `res/syntaxes/v6vscode_8080.tmLanguage.json` once.
 - [ ] Implement TextMate scope-to-`AssemblyTokenClass` mapping.
 - [ ] Preserve rule stacks while tokenizing source documents.
-- [ ] Tokenize standalone server instructions from an initial rule stack.
-- [ ] Add bounded source-document and instruction-string caches.
+- [ ] Tokenize standalone assembly lines from an initial rule stack.
+- [ ] Add bounded source-document and standalone-line caches.
 - [ ] Add golden token-span, multiline-rule, cache-bound, and packaged-startup tests.
 
-### Presentation and consumers
+### Presentation API and editor adoption
 
-- [ ] Implement the `PresentedLine` facade for source and disassembly text.
-- [ ] Include symbol links only for source-backed lines.
-- [ ] Return plain text, classified spans, and opaque link ranges to panel consumers.
+- [ ] Implement `presentSourceLine()` and `presentStandaloneLine()`.
+- [ ] Include symbol links only in source-line presentation.
+- [ ] Return plain text, classified spans, and validated link ranges.
 - [ ] Adopt the extracted symbol-link core from source editor providers.
-- [ ] Adopt the presentation facade from Trace Log host code for retained visible windows.
-- [ ] Re-resolve clicked symbol ranges in the extension host before navigation.
-- [ ] Render spans with VS Code theme variables in the Trace Log webview.
+- [ ] Register shared language services through the extension composition root.
+- [ ] Export the presentation facade without adding a panel consumer.
+- [ ] Verify hover, definition, cancellation, and source navigation remain unchanged.
 
 ### Architecture and verification
 
-- [ ] Confirm language modules have no panel or webview dependencies.
-- [ ] Confirm Trace Log contains no assembly regexes or symbol-resolution policy.
-- [ ] Verify equivalent token classes for the same source text in editor and Trace Log paths.
-- [ ] Verify disassembly rows are highlighted and contain no symbol links.
-- [ ] Verify light, dark, and high-contrast presentation.
-- [ ] Measure cold initialization and warm maximum-window tokenization.
+- [ ] Confirm language modules have no panel, webview, or consumer feature dependencies.
+- [ ] Verify source-line presentation contains highlights and resolved links.
+- [ ] Verify standalone-line presentation contains highlights and no links.
+- [ ] Measure cold initialization and warm 512-line fixture tokenization.
 - [ ] Run compile, focused unit tests, full unit tests, and regression tests.
-- [ ] Verify the packaged extension in an Extension Development Host.
+- [ ] Verify dependency packaging and activation in an Extension Development Host.
+- [ ] Complete the plan without creating or modifying Trace Log implementation files.
