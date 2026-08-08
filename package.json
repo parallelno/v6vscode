@@ -44,7 +44,7 @@
         "command": "v6.debug.reloadRom",
         "title": "Reload ROM",
         "category": "V6",
-          "icon": "res/images/reload-rom.svg"
+        "icon": "res/images/reload-rom.svg"
       },
       {
         "command": "v6.refreshHardwareStatistics",
@@ -467,6 +467,8 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
-    "@msgpack/msgpack": "^3.0.0-beta2"
+    "@msgpack/msgpack": "^3.0.0-beta2",
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.3.2"
   }
 }

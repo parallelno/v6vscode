@@ -46,6 +46,9 @@ const mockVscode = {
             get: (_key, defaultValue) => defaultValue,
         }),
         findFiles: async () => [],
+        onDidChangeTextDocument: () => ({ dispose: () => {} }),
+        onDidCloseTextDocument: () => ({ dispose: () => {} }),
+        onDidChangeWorkspaceFolders: () => ({ dispose: () => {} }),
         fs: {
             readFile: async () => Buffer.from(''),
             writeFile: async () => {},

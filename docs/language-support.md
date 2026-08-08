@@ -1,5 +1,28 @@
 # Language Support
 
+## Shared presentation API
+
+The extension exposes reusable assembly presentation services from
+`src/language/language-services.ts`. `createLanguageServices()` initializes the registered
+TextMate grammar and Oniguruma once, then provides:
+
+- `sourceLines` for reading exact one-based debug source lines through VS Code documents,
+  including unsaved changes.
+- `highlighter` for stable assembly token classes without exposing TextMate scopes or HTML.
+- `symbolLinks` for validated source-symbol ranges and debug source targets.
+- `presentation` with `presentSourceLine()` and `presentStandaloneLine()` operations.
+
+Source presentation includes resolved symbol links. Standalone assembly presentation returns
+classified spans with an empty link list. Both cache families are bounded and are disposed with
+the extension host.
+
+### Performance baseline
+
+On Windows with Node.js 21.6, the 512-line deterministic assembly benchmark recorded 243.1 ms
+for cold grammar/WASM initialization plus first tokenization. Repeated warm cached document
+tokenization averaged 0.506 ms. Treat these measurements as a regression baseline rather than a
+cross-machine service-level objective.
+
 Syntax highlighting, language configuration, and navigation for Intel 8080 assembly.
 
 ## Syntax Highlighting

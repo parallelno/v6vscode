@@ -1,24 +1,26 @@
-import * as fs from 'fs';
+import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { ActiveProjectService } from '../../project/active/active-project-service';
 import { DebugSymbolService } from '../../debug/metadata/debug-symbol-service';
-import { SourceLocation, SymbolInfo } from '../../debug/metadata/debug-index';
+import { SourceLocation } from '../../debug/metadata/debug-index';
 import { resolveDebugSourcePath } from '../../debug/metadata/debug-source-path';
+import {
+    DebugSourceSymbolLinkService,
+    findLabelDefinition,
+    findSymbolTokens,
+    SourceDocumentContext,
+    SourceSymbolLinkService,
+    SymbolToken,
+} from './symbol-link-service';
+
+export { findLabelDefinition, findSymbolTokens, SourceDocumentContext, SymbolToken };
 
 export const CMD_REVEAL_SYMBOL_SOURCE = 'v6.revealSymbolSource';
 
-const SYMBOL_PATTERN = /[A-Za-z_.@][A-Za-z0-9_.@$]*/g;
 const BYTE_REGISTERS = new Set(['A', 'F', 'B', 'C', 'D', 'E', 'H', 'L', 'M']);
 const WORD_REGISTERS = new Set(['AF', 'BC', 'DE', 'HL', 'SP', 'PC']);
 const PAIR_OPERAND_MNEMONICS = new Set(['LXI', 'DAD', 'INX', 'DCX', 'PUSH', 'POP', 'LDAX', 'STAX']);
-
-export interface SymbolToken {
-    name: string;
-    line: number;
-    start: number;
-    length: number;
-}
 
 export function revealSymbolCommandUri(source: SourceLocation): string {
     return `command:${CMD_REVEAL_SYMBOL_SOURCE}?${encodeURIComponent(JSON.stringify(source))}`;
@@ -41,38 +43,22 @@ export function registerExpressionForHover(line: string, token: string): string 
     return register === 'PSW' ? undefined : register;
 }
 
-/** Return assembler identifiers outside quoted strings and ';' comments. */
-export function findSymbolTokens(text: string): SymbolToken[] {
-    const tokens: SymbolToken[] = [];
-    for (const [line, rawLine] of text.split(/\r?\n/).entries()) {
-        const code = codeBeforeComment(rawLine);
-        SYMBOL_PATTERN.lastIndex = 0;
-        let match: RegExpExecArray | null;
-        while ((match = SYMBOL_PATTERN.exec(code)) !== null) {
-            tokens.push({ name: match[0], line, start: match.index, length: match[0].length });
-        }
-    }
-    return tokens;
-}
-
-/** Find an exact global-label definition in an assembler source file. */
-export function findLabelDefinition(text: string, name: string): SourceLocation | undefined {
-    const definition = new RegExp(`^\\s*${escapeRegExp(name)}\\s*:`, 'm');
-    const lines = text.split(/\r?\n/);
-    for (let line = 0; line < lines.length; line++) {
-        const match = definition.exec(codeBeforeComment(lines[line]));
-        if (match) {
-            return { file: '', line: line + 1, column: match[0].indexOf(name) + 1, isStmt: false };
-        }
-    }
-    return undefined;
-}
-
 export class SymbolLinkProvider implements vscode.HoverProvider, vscode.DefinitionProvider {
+    private readonly linkService: SourceSymbolLinkService;
+
     constructor(
         private readonly activeProjectService: ActiveProjectService,
         private readonly symbols: DebugSymbolService,
-    ) {}
+        linkService?: SourceSymbolLinkService,
+    ) {
+        this.linkService = linkService ?? new DebugSourceSymbolLinkService(symbols, async sourcePath => {
+            try {
+                return await fs.readFile(sourcePath, 'utf8');
+            } catch {
+                return undefined;
+            }
+        });
+    }
 
     async provideHover(
         document: vscode.TextDocument,
@@ -114,17 +100,22 @@ export class SymbolLinkProvider implements vscode.HoverProvider, vscode.Definiti
             ?? await this.activeProjectService.resolve();
         if (token.isCancellationRequested || !project?.run.debugArtifact) { return undefined; }
 
+        const context = this.contextForProject(project);
+        let source: SourceLocation | undefined;
         try {
-            await this.symbols.load(project.run.debugArtifact, project.run.executable);
+            source = await this.linkService.resolve(
+                document.lineAt(position.line).text,
+                { start: symbolToken.start, length: symbolToken.length },
+                context,
+            );
         } catch {
             return undefined;
         }
         if (token.isCancellationRequested) { return undefined; }
+        if (!source) { return undefined; }
 
         const resolution = this.symbols.resolveSymbol(symbolToken.name);
         if (resolution.kind !== 'found') { return undefined; }
-        const source = this.sourceForSymbol(resolution.symbol, path.dirname(project.uri.fsPath));
-        if (!source) { return undefined; }
 
         const markdown = new vscode.MarkdownString();
         markdown.appendText(`Value: 0x${resolution.symbol.address.toString(16).toUpperCase().padStart(4, '0')}\n`);
@@ -153,16 +144,17 @@ export class SymbolLinkProvider implements vscode.HoverProvider, vscode.Definiti
             ?? await this.activeProjectService.resolve();
         if (token.isCancellationRequested || !project?.run.debugArtifact) { return undefined; }
 
+        let source: SourceLocation | undefined;
         try {
-            await this.symbols.load(project.run.debugArtifact, project.run.executable);
+            source = await this.linkService.resolve(
+                document.lineAt(position.line).text,
+                { start: symbolToken.start, length: symbolToken.length },
+                this.contextForProject(project),
+            );
         } catch {
             return undefined;
         }
         if (token.isCancellationRequested) { return undefined; }
-
-        const resolution = this.symbols.resolveSymbol(symbolToken.name);
-        if (resolution.kind !== 'found') { return undefined; }
-        const source = this.sourceForSymbol(resolution.symbol, path.dirname(project.uri.fsPath));
         if (!source) { return undefined; }
 
         const target = new vscode.Position(Math.max(0, source.line - 1), Math.max(0, source.column - 1));
@@ -172,15 +164,15 @@ export class SymbolLinkProvider implements vscode.HoverProvider, vscode.Definiti
         );
     }
 
-    private sourceForSymbol(symbol: SymbolInfo, projectRoot: string): SourceLocation | undefined {
-        if (symbol.declaration) { return symbol.declaration; }
-        for (const file of this.symbols.sourceFiles()) {
-            const sourcePath = resolveDebugSourcePath(file, projectRoot);
-            if (!fs.existsSync(sourcePath)) { continue; }
-            const definition = findLabelDefinition(fs.readFileSync(sourcePath, 'utf8'), symbol.name);
-            if (definition) { return { ...definition, file }; }
-        }
-        return this.symbols.sourceAtExactAddress(symbol.address);
+    private contextForProject(project: {
+        uri: vscode.Uri;
+        run: { debugArtifact?: string; executable: string };
+    }): SourceDocumentContext {
+        return {
+            projectRoot: path.dirname(project.uri.fsPath),
+            debugArtifact: project.run.debugArtifact!,
+            executable: project.run.executable,
+        };
     }
 }
 
@@ -193,8 +185,4 @@ function codeBeforeComment(line: string): string {
         result += quoted ? ' ' : character;
     }
     return result;
-}
-
-function escapeRegExp(value: string): string {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

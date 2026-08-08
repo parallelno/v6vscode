@@ -31,6 +31,7 @@ import { ProjectRepository } from './project/persistence/project-repository';
 import { ActiveProjectService } from './project/active/active-project-service';
 import { IncludeLinkProvider } from './language/includes/include-link-provider';
 import { CMD_REVEAL_SYMBOL_SOURCE, SymbolLinkProvider } from './language/symbols/symbol-link-provider';
+import { createLanguageServices } from './language/language-services';
 import { V6emulLocator } from './emulator/launcher/v6emul-locator';
 import { V6emulLauncher } from './emulator/launcher/v6emul-launcher';
 import { IpcClient } from './emulator/client/ipc-client';
@@ -79,7 +80,7 @@ import {
 import { SourceLocation } from './debug/metadata/debug-index';
 import { revealDebugSource } from './debug/views/debug-source-navigation';
 
-export function activate(context: vscode.ExtensionContext): void {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
     const store = new DisposableStore();
 
     const logger = store.add(new Logger(OUTPUT_CHANNEL_NAME));
@@ -151,6 +152,10 @@ export function activate(context: vscode.ExtensionContext): void {
         () => hardwareStatistics.refresh(),
     ));
     const debugSymbols = new DebugSymbolService();
+    const languageServices = store.add(await createLanguageServices(
+        context.extensionUri.fsPath,
+        debugSymbols,
+    ));
     const memoryEdits = store.add(new MemoryEditService(lifecycle, ipcClient));
     const hexViewer = store.add(new HexViewerProvider(
         context.extensionUri,
@@ -282,16 +287,21 @@ export function activate(context: vscode.ExtensionContext): void {
     store.add(
         vscode.languages.registerDocumentLinkProvider(asmSelector, new IncludeLinkProvider())
     );
+    const symbolLinkProvider = new SymbolLinkProvider(
+        activeProjectService,
+        debugSymbols,
+        languageServices.symbolLinks,
+    );
     store.add(
         vscode.languages.registerHoverProvider(
             asmSelector,
-            new SymbolLinkProvider(activeProjectService, debugSymbols),
+            symbolLinkProvider,
         ),
     );
     store.add(
         vscode.languages.registerDefinitionProvider(
             asmSelector,
-            new SymbolLinkProvider(activeProjectService, debugSymbols),
+            symbolLinkProvider,
         ),
     );
     store.add(vscode.commands.registerCommand(CMD_REVEAL_SYMBOL_SOURCE, async (source: unknown) => {
