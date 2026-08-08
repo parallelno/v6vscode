@@ -153,7 +153,7 @@ When an exact source location exists:
 1. Resolve the project-relative source path through the existing debug-source path utility.
 2. Read the corresponding source document through a shared source-line service.
 3. Display that complete source line as the Listing value.
-4. Tokenize it through the shared language-highlighting service.
+4. Tokenize it in the extension host through the shared TextMate language-highlighting service.
 5. Resolve symbol hyperlinks through the shared symbol-link service.
 
 When source metadata, the source file, or the requested line is unavailable, display and highlight the server `instruction`. Do not merge source and disassembly text in one row.
@@ -162,7 +162,9 @@ Cache source documents by URI and document version or file modification state. R
 
 ### 4.5 Highlighting and hyperlinks
 
-Language highlighting must remain owned by `src/language`. Extract reusable tokenization that accepts one assembly/source line and returns text spans with stable semantic classes. The source editor provider and Trace Log presentation must consume the same lexical definitions.
+Language highlighting remains owned by `src/language`. The shared highlighter uses `vscode-textmate` and `vscode-oniguruma` in the extension host, loads `res/syntaxes/v6vscode_8080.tmLanguage.json`, and returns text spans with stable semantic classes. The registered source-editor grammar and Trace Log highlighter therefore use the same lexical definition.
+
+Initialize the TextMate registry and Oniguruma WASM once per extension host. Cache source tokenization by document version and disassembly tokenization in a bounded instruction-string cache. Send plain text and classified spans to the rendering-only webview.
 
 For source-backed rows, reuse shared symbol token discovery and target resolution. A link action sent by the webview contains only the result index and token range. The extension host revalidates the row and range, resolves the symbol again, and performs navigation with `revealDebugSource()`.
 
@@ -229,7 +231,7 @@ flowchart LR
 ### Step 2 - Shared language presentation
 
 - Complete the separate language-presentation refactoring plan.
-- Extract source-line loading, line tokenization, symbol token discovery, and symbol target resolution behind reusable interfaces.
+- Extract source-line loading, host-side TextMate tokenization, symbol token discovery, and symbol target resolution behind reusable interfaces.
 - Preserve current editor behavior with focused language-provider tests before panel integration.
 
 ### Step 3 - Filter parser and history
@@ -253,7 +255,7 @@ flowchart LR
 ### Step 6 - Virtualized webview
 
 - Implement filter/history controls, virtual-scroll geometry, bounded rows, loading/empty/error states, selection, focus, copy, and the row context menu.
-- Render host-produced text spans using VS Code theme variables.
+- Render host-produced TextMate-derived spans using VS Code theme variables.
 - Verify narrow widths, 200% zoom, high contrast, reduced motion, and keyboard-only use.
 
 ### Step 7 - Verification and documentation

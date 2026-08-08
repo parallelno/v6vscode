@@ -106,7 +106,7 @@ The Trace Log controller sends links only for source-backed rows. It re-runs `re
 
 ## 4. TextMate Integration
 
-Use `vscode-textmate` with `vscode-oniguruma` in the extension host.
+Use `vscode-textmate` with `vscode-oniguruma` exclusively in the extension host.
 
 - Load `res/syntaxes/v6vscode_8080.tmLanguage.json` once.
 - Load Oniguruma WASM once and share the initialized registry.
@@ -114,10 +114,9 @@ Use `vscode-textmate` with `vscode-oniguruma` in the extension host.
 - Cache tokenized source documents by URI and document version.
 - Cache server disassembly tokenization by instruction string with a bounded LRU cache.
 - Keep WASM and grammar loading out of the webview CSP and message bridge.
+- Send plain text and classified spans to rendering-only webview consumers.
 
-The stable VS Code API does not expose the editor's active TextMate token stream or raw active theme. Therefore the shared highlighter can reuse grammar scopes exactly, while webview colors approximate editor categories through VS Code theme variables. It must remain readable in light, dark, and high-contrast themes.
-
-Do not bundle Monaco or duplicate the grammar as handwritten regular expressions.
+The stable VS Code API does not expose the editor's active TextMate token stream or raw active theme. The shared highlighter therefore reuses the registered grammar's scopes, and webviews map the resulting semantic classes to VS Code theme variables. The result must remain readable in light, dark, and high-contrast themes.
 
 ## 5. Refactoring Steps
 
@@ -221,3 +220,53 @@ Source-backed lines contain valid links. Disassembly lines contain highlights an
 - Source lines support shared symbol hyperlinks; disassembly lines do not.
 - No untrusted HTML or navigation target crosses the webview boundary.
 - Initialization, document cache, and disassembly cache are bounded and tested.
+
+## 9. Implementation Checklist
+
+### Characterization and extraction
+
+- [ ] Add golden tests for current symbol token discovery, hovers, definitions, and target resolution.
+- [ ] Extract symbol scanning and resolution policy into panel-independent `src/language` modules.
+- [ ] Inject source-file access into symbol resolution.
+- [ ] Keep `SymbolLinkProvider` as a thin VS Code adapter.
+- [ ] Verify existing source-editor language tests remain unchanged and pass.
+
+### Source-line service
+
+- [ ] Implement `SourceLineService` using existing debug-source path resolution.
+- [ ] Read source through VS Code documents so unsaved changes are visible.
+- [ ] Validate DWARF line bounds and missing-file behavior.
+- [ ] Cache by source identity and document version.
+- [ ] Add invalidation, Windows path-case, dirty-document, and missing-source tests.
+
+### Host-side TextMate highlighting
+
+- [ ] Add `vscode-textmate` and `vscode-oniguruma` runtime dependencies.
+- [ ] Package and initialize Oniguruma WASM once per extension host.
+- [ ] Load `res/syntaxes/v6vscode_8080.tmLanguage.json` once.
+- [ ] Implement TextMate scope-to-`AssemblyTokenClass` mapping.
+- [ ] Preserve rule stacks while tokenizing source documents.
+- [ ] Tokenize standalone server instructions from an initial rule stack.
+- [ ] Add bounded source-document and instruction-string caches.
+- [ ] Add golden token-span, multiline-rule, cache-bound, and packaged-startup tests.
+
+### Presentation and consumers
+
+- [ ] Implement the `PresentedLine` facade for source and disassembly text.
+- [ ] Include symbol links only for source-backed lines.
+- [ ] Return plain text, classified spans, and opaque link ranges to panel consumers.
+- [ ] Adopt the extracted symbol-link core from source editor providers.
+- [ ] Adopt the presentation facade from Trace Log host code for retained visible windows.
+- [ ] Re-resolve clicked symbol ranges in the extension host before navigation.
+- [ ] Render spans with VS Code theme variables in the Trace Log webview.
+
+### Architecture and verification
+
+- [ ] Confirm language modules have no panel or webview dependencies.
+- [ ] Confirm Trace Log contains no assembly regexes or symbol-resolution policy.
+- [ ] Verify equivalent token classes for the same source text in editor and Trace Log paths.
+- [ ] Verify disassembly rows are highlighted and contain no symbol links.
+- [ ] Verify light, dark, and high-contrast presentation.
+- [ ] Measure cold initialization and warm maximum-window tokenization.
+- [ ] Run compile, focused unit tests, full unit tests, and regression tests.
+- [ ] Verify the packaged extension in an Extension Development Host.
