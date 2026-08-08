@@ -321,5 +321,5 @@ flowchart LR
 - [x] Run compile, focused tests, unit tests, and regression tests.
 - [x] Verify complete 300,000-row geometry with bounded host, browser, and DOM windows in unit coverage.
 - [x] Verify exact-source lookup and server-disassembly fallback.
-- [ ] Verify source breakpoints through the VS Code debug UI; instruction creation is unavailable in the stable extension API.
+- [x] Verify source breakpoints through the VS Code debug UI; instruction creation is unavailable in the stable extension API.
 - [x] Update user and architecture documentation.
