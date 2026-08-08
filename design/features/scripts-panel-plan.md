@@ -4,6 +4,7 @@
 **Date:** 2026-08-08
 **Owners:** v6vscode and v6emul maintainers
 **Related work:** `v6emul-menu-and-panels-plan.md`, `performance-panel-plan.md`, `memory-edits-panel-plan.md`, `watchpoints-panel-plan.md`
+**Server contract:** `v6emul-scripts-protocol-design.md`
 **Server references:** `parallelno/v6emul` commands 84 through 88 and Lua script implementation
 
 > **Assumption to confirm before implementation:** The feature request says users should show or hide the Trace Log panel. This plan assumes that sentence means the new **Scripts** panel should use the same launcher and toggle workflow already used by Trace Log and the other standalone panels. Confirm this placement decision at the implementation kickoff.
