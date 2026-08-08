@@ -174,7 +174,8 @@ Each cell is keyboard focusable and independently copyable. Copy uses the displa
 Load the active project's debug artifact through the shared `DebugSymbolService`.
 
 - For a row CPU address, use a symbol only when exactly one symbol starts at that exact 16-bit address.
-- For an address-like immediate operand, use a symbol only when exactly one symbol starts at that exact value.
+- For an address-like immediate operand, use a label symbol only when exactly one symbol starts at that exact value.
+- For an non-address-like immediate operand, use a symbol (label or a constant) only when it matches the bit width and there is only one symbol with that exact value.
 - If zero or multiple symbols match, show canonical numeric text.
 - Never use `symbolAtAddress()` for decoration because an enclosing function is not an exact address alias.
 - Preserve the raw number in a tooltip when a symbol is displayed.
