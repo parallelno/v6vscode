@@ -1,9 +1,9 @@
 # V6 Scripts Panel Implementation Plan
 
-**Status:** Proposed; blocked by script schema 1 server support
+**Status:** Proposed; server protocol implemented
 **Date:** 2026-08-08
 **Owner:** v6vscode maintainers
-**Server contract:** `v6emul-scripts-protocol-design.md`
+**Server contract:** v6emul `docs/ipc-protocol.md`; companion design `v6emul-scripts-protocol-design.md`
 **Related work:** `v6emul-menu-and-panels-plan.md`, `performance-panel-plan.md`, `memory-edits-panel-plan.md`, `watchpoints-panel-plan.md`
 
 > **Assumption to confirm:** The request to show or hide Trace Log is treated as a naming typo. Scripts will use the same launcher and toggle workflow as Trace Log and the other standalone panels.
@@ -12,7 +12,7 @@
 
 ### Current behavior
 
-v6vscode has no Scripts panel, service, message types, query module, protocol decoder, or script capability validation. The client enum names legacy script commands `84..88`, but their code-based records do not provide the Name, Path, stable identity, or compilation result required by this panel.
+v6vscode has no Scripts panel, service, message types, query module, protocol decoder, or script capability validation. v6emul now implements script schema 1 through commands `84..88` and `105..109`; the extension does not yet expose that protocol.
 
 Existing panels already provide the required client patterns:
 
@@ -33,7 +33,7 @@ Add a standalone Scripts panel containing:
 
 ### Root cause
 
-The UI and client orchestration are missing, and the legacy server payload cannot be safely interpreted as the requested path-based model. The extension must consume a negotiated script schema rather than inventing client-only state.
+The server contract is available, but the client UI, protocol types, validation, decoding, synchronization, and orchestration are missing.
 
 ## 2. Strategy
 
@@ -45,8 +45,8 @@ Implement a `ScriptService` as the sole script protocol consumer and a `ScriptsP
 
 - Stable server IDs support safe editing and reconciliation.
 - The established panel callback keeps launcher state, toggle commands, and direct tab closure synchronized.
-- Serialized mutations followed by authoritative refresh avoid optimistic drift.
-- Capability negotiation prevents schema-1 payloads from reaching legacy handlers.
+- Revision-bearing mutation responses and atomic collection snapshots support deterministic reconciliation.
+- Capability negotiation ensures the complete schema-1 interface is present before the panel is enabled.
 - Existing panel assets provide proven keyboard, menu, confirmation, and accessibility behavior.
 
 ### Summary of changes
@@ -103,6 +103,8 @@ Use a compact table with stable columns, sticky header, and horizontal scrolling
 | Name | Plain text | Full Name | Double-click text input |
 | Path | Full path | Full Path | Double-click text input |
 
+Color every row whose compilation or runtime status is `error` with the VS Code error foreground color so failed scripts are immediately distinguishable. Keep the error icon and tooltip as non-color indicators, identify whether the error is compilation or runtime, and preserve readable selection, hover, focus, disabled, and editing states.
+
 Use accessible labels for icons and checkboxes. Render all server/user text through `textContent`, `title`, or form values. Preserve selection, focus, and active drafts by `scriptId` across same-session refreshes.
 
 ### 3.4 Add and editing
@@ -115,9 +117,9 @@ Add inserts one local draft row and focuses Name. It sends no request until subm
 - Space toggles a focused Activity checkbox.
 - Invalid input keeps the editor open and sends no request.
 
-Validate types and advertised UTF-8 byte limits in the host. Require an absolute Path. The server remains authoritative for file access and compilation.
+Validate types and advertised UTF-8 byte limits in the host. Require a non-empty Name and an absolute generic UTF-8 wire Path using `/`: `C:/...` or `//server/share/...` on Windows and `/...` on POSIX. The server remains authoritative for path normalization, file access, and compilation.
 
-Name-only edits preserve compilation state. Path edits are accepted only after the server returns a coherent updated record. Compile explicitly reloads the current Path.
+Activity is the requested scheduling state, not proof that a script is currently runnable. A script runs on schedule only when active, compiled, and free of a runtime error. Name-only and Activity-only edits preserve compilation and runtime state. Path edits and Compile reset runtime state; Compile explicitly reloads the current Path.
 
 ### 3.5 Context menu
 
@@ -137,7 +139,7 @@ Blank table space uses the same menu with row-specific items disabled.
 - Copy writes the selected field's semantic value through `vscode.env.clipboard.writeText`.
 - Add starts the draft flow.
 - Compile reloads and compiles the selected Path.
-- Run Once executes a compiled script without changing Activity.
+- Run Once executes a compiled script without changing Activity and may retry a runtime-error script. Disable it for uncompiled scripts and while running unless `scriptRunOnceWhileRunning` is true.
 - Disable affects the selected active row.
 - Delete removes the selected server record, not its file.
 - Disable All and Delete All require modal confirmation.
@@ -155,9 +157,11 @@ Messages:
 
 Close menus on action, Escape, outside click, scroll, edit start, snapshot replacement, session change, hide, or disposal. Restore focus to the originating cell when possible.
 
+Gate Add, Edit, Compile, Disable, Disable All, Delete, and Delete All while emulation is running unless `scriptMutationsWhileRunning` is true. Gate Run Once independently with `scriptRunOnceWhileRunning`. When Run Once returns `breakRequested: true`, refresh the extension's run/stop state; the server publishes a stop record with reason `script` and the triggering `scriptId`.
+
 ## 4. Required Server Interface
 
-The extension consumes the authoritative contract in `v6emul-scripts-protocol-design.md`. This section records only client-visible requirements.
+The extension consumes the authoritative contract in v6emul `docs/ipc-protocol.md`; `v6emul-scripts-protocol-design.md` remains the companion design. This section records only client-visible requirements.
 
 ### Capabilities
 
@@ -167,8 +171,11 @@ Require:
 interface ScriptLimits {
   maxNameBytes: number;
   maxPathBytes: number;
+  maxSourceBytes: number;
   maxRecords: number;
   maxErrorBytes: number;
+  maxInstructionsPerRun: number;
+  maxExecutionMilliseconds: number;
 }
 
 interface ScriptCapabilities {
@@ -179,6 +186,7 @@ interface ScriptCapabilities {
   scriptRunOnce: true;
   scriptBulkDisable: true;
   scriptMutationsWhileRunning: boolean;
+  scriptRunOnceWhileRunning: boolean;
   scriptLimits: ScriptLimits;
 }
 ```
@@ -192,32 +200,59 @@ interface ScriptInput {
   active: boolean;
 }
 
+type ScriptCompilation =
+  | { status: 'compiled'; error: null }
+  | { status: 'error'; error: string };
+
+type ScriptRuntime =
+  | { status: 'never_run'; error: null }
+  | { status: 'succeeded'; error: null }
+  | { status: 'error'; error: string };
+
 interface ScriptSnapshot extends ScriptInput {
   scriptId: number;
-  compilation:
-    | { status: 'compiled'; error: null }
-    | { status: 'error'; error: string };
+  compilation: ScriptCompilation;
+  runtime: ScriptRuntime;
+}
+
+interface ScriptMutationResponse {
+  updates: number;
+  script: ScriptSnapshot;
+}
+
+interface ScriptCollectionResponse {
+  updates: number;
+  scripts: ScriptSnapshot[];
+}
+
+interface ScriptRunOnceResponse {
+  scriptId: number;
+  succeeded: boolean;
+  breakRequested: boolean;
+  updates: number;
+  runtime: ScriptRuntime;
+  error?: string;
 }
 ```
 
-The client treats `scriptId` and `compilation` as read-only. Paths returned by the server are authoritative.
+The client treats `scriptId`, `compilation`, and `runtime` as read-only. `active` remains the user's requested scheduling state after compilation or runtime errors. Paths returned by the server are normalized and authoritative.
 
 ### Commands
 
-| Operation | Request | Client expectation |
-|---|---|---|
-| Add | `ScriptInput` | Returns new `scriptId` |
-| Edit | `{ scriptId, ...ScriptInput }` | Preserves `scriptId` |
-| Compile | `{ scriptId }` | Updates compilation state |
-| Run Once | `{ scriptId }` | Returns success or runtime error |
-| Disable | `{ scriptId }` | Sets Activity false |
-| Disable All | Empty | Returns changed count |
-| Delete | `{ scriptId }` | Removes one record only |
-| Delete All | Empty | Removes all records only |
-| Get All | Empty | Returns `ScriptSnapshot[]` ordered by ID |
-| Get Updates | Empty | Returns `{ updates: uint32 }` |
+| Request constant | ID | Request data | Client expectation |
+|---|---:|---|---|
+| `IpcCommand.DEBUG_SCRIPT_ADD` | 84 | `ScriptInput` | Returns `ScriptMutationResponse`, including compile failures |
+| `IpcCommand.DEBUG_SCRIPT_DEL_ALL` | 85 | Empty | No data; removes all records only |
+| `IpcCommand.DEBUG_SCRIPT_DEL` | 86 | `{ scriptId }` | No data; removes one record only |
+| `IpcCommand.DEBUG_SCRIPT_GET_ALL` | 87 | Empty | Returns `ScriptCollectionResponse` ordered by ID |
+| `IpcCommand.DEBUG_SCRIPT_GET_UPDATES` | 88 | Empty | Returns `{ updates: uint32 }` |
+| `IpcCommand.DEBUG_SCRIPT_EDIT` | 105 | `{ scriptId, ...ScriptInput }` | Returns `ScriptMutationResponse`; preserves `scriptId` |
+| `IpcCommand.DEBUG_SCRIPT_COMPILE` | 106 | `{ scriptId }` | Returns `ScriptMutationResponse`; resets runtime state |
+| `IpcCommand.DEBUG_SCRIPT_RUN_ONCE` | 107 | `{ scriptId }` | Returns `ScriptRunOnceResponse` |
+| `IpcCommand.DEBUG_SCRIPT_DISABLE` | 108 | `{ scriptId }` | Returns `ScriptMutationResponse` with Activity false |
+| `IpcCommand.DEBUG_SCRIPT_DISABLE_ALL` | 109 | Empty | Returns `{ disabled: number }` |
 
-The client requires structured IPC errors with command, optional field, optional `scriptId`, and optional reason. Legacy command presence without `scriptSchema: 1` is unsupported.
+Commands `105..109` are confirmed and reserved. The client requires structured IPC errors with command, optional field, optional `scriptId`, and optional reason. Require `scriptSchema: 1` and every command used; there is no legacy fallback.
 
 ## 5. Client Architecture
 
@@ -231,7 +266,7 @@ flowchart LR
     IPC --> Server[v6emul script schema 1]
 ```
 
-**ScriptService** owns capability checks, decoding, immutable snapshots, session generations, serialized operations, update polling, reconciliation, and stale-response rejection.
+**ScriptService** owns capability checks, decoding, immutable snapshots with collection revisions, session generations, serialized operations, update polling, reconciliation, and stale-response rejection. It applies the snapshot returned by Add, Edit, Compile, and Disable; applies Run Once runtime state; and performs Get All after Delete, Delete All, or Disable All because those responses do not carry a coherent collection revision and snapshot.
 
 **ScriptsPanel** owns panel lifecycle, workspace query persistence, message validation, confirmations, clipboard writes, and host/webview state mapping.
 
@@ -255,18 +290,18 @@ Do not introduce a generic panel base class for this feature.
 
 ## 6. Implementation Steps
 
-### Step 6.1 - Confirm the client-visible server contract [ ]
+### Step 6.1 - Confirm the client-visible server contract [x]
 
-- Confirm schema version, capabilities, command IDs, models, errors, and running-state support against `v6emul-scripts-protocol-design.md`.
-- Add a compatible test executable before enabling panel mutations.
+- Confirmed schema 1, commands `84..88` and `105..109`, models, errors, independent running-state capabilities, and limits against the implemented v6emul protocol.
+- Use a schema-1 v6emul build for live-contract validation before enabling panel mutations.
 
 > **Implementation Notes:**
 
 ### Step 6.2 - Add protocol types and validation [ ]
 
-- Add command IDs after server confirmation.
+- Add confirmed command IDs `105..109`.
 - Add capability/limit types and `validateScriptServer()`.
-- Add strict input and snapshot codecs, including ID ordering, duplicate-ID rejection, compilation union validation, and UTF-8 limits.
+- Add strict codecs for mutation, collection, and Run Once responses, including revisions, ID ordering, duplicate-ID rejection, compilation/runtime unions, and UTF-8 limits.
 - Add focused protocol unit tests.
 
 > **Implementation Notes:**
@@ -283,7 +318,8 @@ Do not introduce a generic panel base class for this feature.
 - Follow `PerformanceService` for snapshots, queueing, generations, mutation reconciliation, and errors.
 - Follow `WatchpointService` for update-counter polling.
 - Expose refresh, add, edit, setActivity, compile, runOnce, disable, disableAll, delete, and deleteAll.
-- Refresh after state-changing operations and clear state on disconnect.
+- Apply coherent mutation responses directly; refresh after bulk/delete responses and when the polled revision changes.
+- Preserve server records across transient reconnects by reloading them after connection; clear client rows and drafts while disconnected and on debugger-generation replacement.
 
 > **Implementation Notes:**
 
@@ -329,61 +365,51 @@ Verify in an Extension Development Host while paused, running, hidden/reopened, 
 
 ### Unit
 
-- Capability negotiation and malformed snapshots.
+- Capability negotiation, all advertised limits, malformed compilation/runtime unions, and malformed mutation/collection/Run Once responses.
 - Glob semantics and query bounds.
-- Serialized operations, refresh reconciliation, update polling, and stale generations.
+- Serialized operations, revision reconciliation including wraparound, update polling, and stale generations.
 - Add/Edit/Compile/Run Once/Disable/bulk/delete success and failure.
 - Message validation and field-aware copy resolution.
 
 ### Panel and integration
 
 - Launcher order, toggle state, direct tab close, and title commands.
-- Columns, icons, tooltips, truncation, plain-text rendering, and accessibility labels.
+- Columns, icons, compilation/runtime tooltips and error-row coloring, truncation, plain-text rendering, and accessibility labels.
 - Enter/Escape/Tab/Space behavior and draft preservation during polling.
 - Context-menu order, disabled states, confirmations, dismissal, and focus restoration.
-- Hidden polling shutdown, reconnect clearing, unsupported servers, and operation errors.
+- Hidden polling shutdown, reconnect reload, independent running-state gating, unsupported servers, and operation errors.
 
 ### Live contract
 
 - Validate the advertised schema and every operation against v6emul.
-- Verify compile and runtime errors become observable snapshots.
-- Verify Get All ordering and update-counter behavior.
-- Verify reset/restart/reconnect behavior expected by the client.
+- Verify compile and runtime errors, runtime recovery, and `breakRequested` become observable client state.
+- Verify coherent Get All revisions, ordering, mutation responses, update-counter behavior, and wraparound.
+- Verify generic wire paths and reset/restart/ROM-load/debug-detach/reconnect behavior expected by the client.
 
 ## 8. Risks and Mitigations
 
 | Risk | Mitigation |
 |---|---|
-| Legacy commands share IDs with schema 1. | Require exact schema capability negotiation. |
+| A server exposes only part of schema 1. | Require the schema, capabilities, limits, and every command used. |
 | Polling disrupts active input. | Preserve drafts by ID and render snapshots only while idle. |
 | Stale responses affect a new session. | Validate service and webview generations. |
 | Long paths break layout. | Stable columns, ellipsis, horizontal scrolling, and full tooltips. |
-| Compile errors look like transport failures. | Decode compilation state separately from IPC failures. |
-| Running-state support differs by server. | Gate mutations using advertised capability. |
+| Script errors look like transport failures. | Decode compilation/runtime state separately from IPC failures. |
+| Running-state support differs by operation. | Gate mutations and Run Once with their independent capabilities. |
 
-## 9. Server Missing Functionality
+## 9. Server Support Status
 
-### Description
-
-The client requires schema-1 path-based snapshots, stable IDs, observable compilation errors, explicit Compile and Run Once, Disable/Disable All, deterministic Get All, update notifications, limits, and capability discovery.
-
-### Current Server Solution
-
-Legacy commands `84..88` expose code-based `{ id, active, code, comment }` records and do not provide the client-visible Name, Path, compilation result, or complete operation set.
-
-### Proposed Server Functionality and Recommendations
-
-Implement the interface in `v6emul-scripts-protocol-design.md`. v6vscode should remain in Unsupported state until `GET_SERVER_INFO` advertises the complete compatible schema. Server implementation details remain outside this client plan.
+v6emul implements script schema 1, commands `84..88` and `105..109`, stable IDs, compilation and runtime state, coherent revisions, explicit Compile and Run Once, bulk disable, portable wire paths, structured errors, capability discovery, and execution limits. The Release server suite and focused IPC tests pass. v6vscode should show Unsupported only when the connected server does not advertise the complete interface required by this panel.
 
 ## 10. Implementation Checklist
 
 ### Protocol and service
 
-- [ ] Confirm server schema and command IDs.
+- [x] Confirm server schema and command IDs.
 - [ ] Add capability models, limits, command IDs, and strict codecs.
 - [ ] Add `validateScriptServer()` and protocol tests.
 - [ ] Implement and test the Name glob filter.
-- [ ] Implement `ScriptService` with generations, serialization, polling, and reconciliation.
+- [ ] Implement `ScriptService` with generations, collection revisions, serialization, polling, mutation/runtime response application, and bulk/delete reconciliation.
 
 ### Panel
 
@@ -391,7 +417,8 @@ Implement the interface in `v6emul-scripts-protocol-design.md`. v6vscode should 
 - [ ] Add Scripts after Trace Log in the launcher.
 - [ ] Register and dispose the service and panel.
 - [ ] Implement states, visible-only polling, query persistence, and direct-tab-close synchronization.
-- [ ] Implement the four-column table, tooltips, Add/edit/Activity behavior, and validation.
+- [ ] Implement the four-column table, compilation/runtime tooltips and error styling, Add/edit/Activity behavior, and validation.
+- [ ] Gate mutations and Run Once independently while running and handle `breakRequested`.
 - [ ] Implement Copy and all context-menu actions.
 - [ ] Implement Disable All and Delete All confirmations.
 - [ ] Preserve selection, focus, and drafts across refreshes.
