@@ -431,6 +431,6 @@ v6emul implements script schema 1, commands `84..88` and `105..109`, stable IDs,
 
 - [x] Add unit and regression coverage.
 - [x] Run compile, unit, regression, and integration suites.
-- [ ] Complete Extension Development Host acceptance.
+- [x] Complete Extension Development Host acceptance.
 - [x] Update user and architecture documentation.
 - [x] Record implementation notes and mark completed items.

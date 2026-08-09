@@ -28,7 +28,8 @@ import {
     CONTEXT_SYMBOLS_OPEN,
     CONTEXT_TRACE_LOG_OPEN,
     CONTEXT_WATCHPOINTS_OPEN,
-    OUTPUT_CHANNEL_NAME,
+    CLIENT_OUTPUT_CHANNEL_NAME,
+    SERVER_OUTPUT_CHANNEL_NAME,
 } from './config/contribution-ids';
 import { ProjectDiscovery } from './project/discovery/project-discovery';
 import { ProjectRepository } from './project/persistence/project-repository';
@@ -91,7 +92,8 @@ import { CMD_ADD_SCRIPT, CMD_REFRESH_SCRIPTS, ScriptsPanel } from './debug/views
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     const store = new DisposableStore();
 
-    const logger = store.add(new Logger(OUTPUT_CHANNEL_NAME));
+    const logger = store.add(new Logger(CLIENT_OUTPUT_CHANNEL_NAME));
+    const serverOutput = store.add(vscode.window.createOutputChannel(SERVER_OUTPUT_CHANNEL_NAME));
     const pathService = new PathService(context.extensionUri);
     const workspaceService = new WorkspaceService();
     const processRunner = new ProcessRunner();
@@ -109,7 +111,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         logger,
         getEnv: (name) => process.env[name],
     });
-    const launcher = new V6emulLauncher(processRunner, logger);
+    const launcher = new V6emulLauncher(processRunner, logger, serverOutput);
     const ipcClient = new IpcClient(logger);
     const lifecycle = new EmulatorLifecycle(locator, launcher, ipcClient, logger, pathService);
     const loadActiveProject = async () => {

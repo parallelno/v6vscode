@@ -12,7 +12,7 @@ const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
 export class Logger implements vscode.Disposable {
     private readonly channel: vscode.OutputChannel;
 
-    constructor(channelName: string = 'Vector-06c') {
+    constructor(channelName: string = 'v6vscode') {
         this.channel = vscode.window.createOutputChannel(channelName);
     }
 

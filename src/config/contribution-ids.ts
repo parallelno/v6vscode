@@ -28,5 +28,6 @@ export const SETTING_LOG_LEVEL = 'v6.logLevel';
 // Debug
 export const DEBUG_TYPE = 'v6';
 
-// Output channel
-export const OUTPUT_CHANNEL_NAME = 'Vector-06c';
+// Output channels
+export const CLIENT_OUTPUT_CHANNEL_NAME = 'v6vscode';
+export const SERVER_OUTPUT_CHANNEL_NAME = 'v6emul';

@@ -5,7 +5,7 @@ Launches the `v6emul` backend, communicates over TCP using length-prefixed Messa
 ## Launcher (`src/emulator/launcher/`)
 
 - **`v6emul-locator.ts`** — Resolves the emulator exclusively from `V6EMUL` and validates that it names an existing file. Throws `V6Error(EMULATOR_NOT_FOUND)` otherwise.
-- **`v6emul-launcher.ts`** — Builds CLI arguments from a `LaunchRequest` and spawns the process via `ProcessRunner`. Always passes `--serve` and `--tcp-port`. Supports `--boot-rom`, `--rom`, `--load-addr`, `--fdd`, `--fdd-drive`, `--fdd-autoboot`, `--speed`.
+- **`v6emul-launcher.ts`** — Builds CLI arguments from a `LaunchRequest` and spawns the process via `ProcessRunner`. Always passes `--serve` and `--tcp-port`. Supports `--boot-rom`, `--rom`, `--load-addr`, `--fdd`, `--fdd-drive`, `--fdd-autoboot`, `--speed`. Server stdout, including Lua `print()` output, and tagged stderr are routed by line to the **v6emul** channel in VS Code's Output panel. Extension-client diagnostics use the separate **v6vscode** channel.
 
 ## Protocol (`src/emulator/protocol/`)
 

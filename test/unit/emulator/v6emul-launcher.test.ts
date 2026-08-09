@@ -1,7 +1,33 @@
 import { expect } from 'chai';
-import { buildArgs, LaunchRequest } from '../../../src/emulator/launcher/v6emul-launcher';
+import { PassThrough } from 'stream';
+import { buildArgs, LaunchRequest, V6emulLauncher } from '../../../src/emulator/launcher/v6emul-launcher';
 
 describe('v6emul-launcher', () => {
+    it('routes server stdout and stderr only to the server output channel by line', async () => {
+        const stdout = new PassThrough();
+        const stderr = new PassThrough();
+        const processRunner = {
+            spawn: () => ({
+                process: { stdout, stderr },
+                exitPromise: Promise.resolve(0),
+            }),
+        };
+        const info: string[] = [];
+        const output: string[] = [];
+        const launcher = new V6emulLauncher(processRunner as any, {
+            info: (message: string) => info.push(message),
+        } as any, { appendLine: (line: string) => output.push(line) });
+
+        launcher.launch({ emulatorPath: '/path/to/v6emul', tcpPort: 9876 });
+        stdout.end('PC is 0x0128\nsecond line\n');
+        stderr.end('script warning\n');
+        await new Promise(resolve => setImmediate(resolve));
+
+        expect(output).to.deep.equal(['PC is 0x0128', 'second line', '[stderr] script warning']);
+        expect(info).to.have.length(1);
+        expect(info[0]).to.contain('v6emul-launcher: launching');
+    });
+
     describe('buildArgs', () => {
         it('should always include --serve and --tcp-port', () => {
             const request: LaunchRequest = {

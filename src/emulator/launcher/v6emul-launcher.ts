@@ -1,5 +1,10 @@
+import * as readline from 'readline';
 import { ProcessRunner, SpawnResult } from '../../platform/process/process-runner';
 import { Logger } from '../../platform/logging/logger';
+
+interface ServerOutput {
+    appendLine(value: string): void;
+}
 
 export interface LaunchRequest {
     emulatorPath: string;
@@ -62,7 +67,11 @@ export class V6emulLauncher {
     private readonly processRunner: ProcessRunner;
     private readonly logger: Logger;
 
-    constructor(processRunner: ProcessRunner, logger: Logger) {
+    constructor(
+        processRunner: ProcessRunner,
+        logger: Logger,
+        private readonly serverOutput: ServerOutput,
+    ) {
         this.processRunner = processRunner;
         this.logger = logger;
     }
@@ -73,8 +82,20 @@ export class V6emulLauncher {
         this.logger.info(`v6emul-launcher: launching "${request.emulatorPath}" ${args.join(' ')}`);
 
         const spawnResult = this.processRunner.spawn(request.emulatorPath, args);
+        this.routeServerOutput(spawnResult);
 
         return { spawnResult, port: request.tcpPort };
+    }
+
+    private routeServerOutput(spawnResult: SpawnResult): void {
+        if (spawnResult.process.stdout) {
+            readline.createInterface({ input: spawnResult.process.stdout })
+                .on('line', line => this.serverOutput.appendLine(line));
+        }
+        if (spawnResult.process.stderr) {
+            readline.createInterface({ input: spawnResult.process.stderr })
+                .on('line', line => this.serverOutput.appendLine(`[stderr] ${line}`));
+        }
     }
 
     async getVersion(emulatorPath: string): Promise<string> {
