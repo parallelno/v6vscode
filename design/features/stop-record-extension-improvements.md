@@ -23,6 +23,7 @@ Map each new stop record to one DAP `stopped` event:
 | `watchpoint` | `data breakpoint` | Show the exact watchpoint and memory access. |
 | `step`, `next`, `frameStep` | `step` | Attribute the stop to stepping. |
 | `exception` | `exception` | Show the exception code and description. |
+| `script` | `pause` | Refresh debugger state and show the script stop description. |
 | `unknown` | `pause` | Stop without claiming an unsupported cause. |
 
 The adapter should use `description` in the stopped event when present. It must not infer `HLT`, reset, or restart from an unchanged record.

@@ -13,11 +13,12 @@ describe('V6DebugAdapter stop records', () => {
     });
 
     function makeAdapter() {
+        const executionStates: boolean[] = [];
         const lifecycle = Object.assign(new EventEmitter(), {
             serverInfo: undefined,
             connected: true,
             owner: 'debug',
-            setExecutionRunning: () => {},
+            setExecutionRunning: (running: boolean) => executionStates.push(running),
         });
         const viewStops: Array<{ ids: readonly number[]; address?: number }> = [];
         const adapter = new V6DebugAdapter(
@@ -35,7 +36,7 @@ describe('V6DebugAdapter stop records', () => {
         (adapter as any).client = {
             send: async () => ({ ok: true, data: { pc: 0x1234 } }),
         };
-        return { adapter, messages, viewStops };
+        return { adapter, messages, viewStops, executionStates };
     }
 
     it('maps an authoritative watchpoint stop to DAP and view feedback', async () => {
@@ -122,8 +123,8 @@ describe('V6DebugAdapter stop records', () => {
         expect(commands).to.include(IpcCommand.RUN);
     });
 
-    it('polls IS_RUNNING before reading stop details', async () => {
-        const { adapter, messages } = makeAdapter();
+    it('handles a script stop through the normal DAP and lifecycle path', async () => {
+        const { adapter, messages, executionStates } = makeAdapter();
         const commands: IpcCommand[] = [];
         (adapter as any).stopRecordsSupported = true;
         (adapter as any).lastStopSequence = 4;
@@ -136,7 +137,13 @@ describe('V6DebugAdapter stop records', () => {
                 if (command === IpcCommand.GET_STOP_RECORD) {
                     return {
                         ok: true,
-                        data: { sequence: 5, reason: 'pause', pc: 0x100, globalInstructionAddress: 0x100 },
+                        data: {
+                            sequence: 5,
+                            reason: 'script',
+                            pc: 0x100,
+                            globalInstructionAddress: 0x100,
+                            description: 'Script requested a break',
+                        },
                     };
                 }
                 if (command === IpcCommand.GET_REGS) {
@@ -154,7 +161,9 @@ describe('V6DebugAdapter stop records', () => {
             IpcCommand.IS_RUNNING,
             IpcCommand.GET_STOP_RECORD,
         ]);
-        expect(messages.filter(message => message.event === 'stopped')).to.have.length(1);
+        const stopped = messages.find(message => message.event === 'stopped');
+        expect(stopped.body).to.include({ reason: 'pause', description: 'Script requested a break' });
+        expect(executionStates).to.deep.equal([false]);
     });
 
     it('clears lifecycle session state when the toolbar action is Alt+Disconnect', async () => {

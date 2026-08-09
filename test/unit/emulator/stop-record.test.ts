@@ -30,6 +30,16 @@ describe('decodeStopRecord', () => {
         });
     });
 
+    it('decodes script-triggered stops', () => {
+        expect(decodeStopRecord({
+            sequence: 8,
+            reason: 'script',
+            pc: 0x200,
+            globalInstructionAddress: 0x10200,
+            description: 'Script requested a break',
+        }).reason).to.equal('script');
+    });
+
     it('rejects malformed required and optional fields', () => {
         const valid = { sequence: 1, reason: 'pause', pc: 0, globalInstructionAddress: 0 };
         for (const value of [

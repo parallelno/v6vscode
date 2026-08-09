@@ -203,7 +203,7 @@ export interface ScriptRunOnceResponse {
 
 export type StopReason = 'pause' | 'breakpoint' | 'data breakpoint' | 'step' | 'entry' | 'exception' | 'unknown';
 export type EmulatorStopReason = 'pause' | 'breakpoint' | 'watchpoint' | 'step' | 'next' | 'frameStep'
-    | 'exception' | 'unknown';
+    | 'exception' | 'script' | 'unknown';
 export type StopRecordAccess = 'read' | 'write';
 
 export interface StopRecord {
@@ -227,7 +227,7 @@ export function decodeStopRecord(value: unknown): StopRecord {
     if (!isObject(value)) { throw new Error('Invalid stop record: expected an object'); }
     const reason = value.reason;
     const reasons: EmulatorStopReason[] = [
-        'pause', 'breakpoint', 'watchpoint', 'step', 'next', 'frameStep', 'exception', 'unknown',
+        'pause', 'breakpoint', 'watchpoint', 'step', 'next', 'frameStep', 'exception', 'script', 'unknown',
     ];
     if (typeof reason !== 'string' || !reasons.includes(reason as EmulatorStopReason)) {
         throw new Error('Invalid stop record: reason is invalid');

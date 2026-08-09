@@ -34,7 +34,7 @@ Example response:
 Required fields:
 
 - `sequence`: monotonic stop-event sequence number.
-- `reason`: `pause`, `breakpoint`, `watchpoint`, `step`, `next`, `frameStep`, `exception`, or `unknown`.
+- `reason`: `pause`, `breakpoint`, `watchpoint`, `step`, `next`, `frameStep`, `exception`, `script`, or `unknown`.
 - `pc`: CPU program counter at the stop.
 - `globalInstructionAddress`: global address of the stopped instruction.
 
@@ -88,6 +88,7 @@ While execution is running, v6vscode polls for a new stop sequence. When the seq
 - `watchpoint` to a DAP data-breakpoint stop with the triggering watchpoint details.
 - step variants to `step`.
 - `exception` to `exception` with its description.
+- `script` to `pause` with its description.
 - unrecognized values to `unknown` without guessing.
 
 Adapter-generated `stopOnEntry` may remain local because it is intentionally controlled by the extension before normal execution starts.
