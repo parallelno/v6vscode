@@ -161,6 +161,7 @@ describe('Commands and templates regression tests', () => {
                 'v6emul.toggleMemoryEdits',
                 'v6emul.togglePerformance',
                 'v6emul.toggleTraceLog',
+                'v6emul.toggleScripts',
                 'v6emul.toggleSymbols',
                 'v6emul.togglePorts',
                 'v6emul.toggleWatchpoints',

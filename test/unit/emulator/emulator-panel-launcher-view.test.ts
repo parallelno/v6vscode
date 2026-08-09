@@ -5,7 +5,7 @@ describe('EmulatorPanelLauncherView', () => {
     it('lists all standalone panels in the requested order', () => {
         const view = new EmulatorPanelLauncherView();
         expect(view.getChildren().map(item => item.label)).to.deep.equal([
-            'Settings', 'Display', 'Hex Viewer', 'Memory Edits', 'Performance', 'Trace Log', 'Symbols', 'Ports', 'Watchpoints',
+            'Settings', 'Display', 'Hex Viewer', 'Memory Edits', 'Performance', 'Trace Log', 'Scripts', 'Symbols', 'Ports', 'Watchpoints',
         ]);
     });
 

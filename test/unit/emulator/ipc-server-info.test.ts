@@ -6,6 +6,7 @@ import {
     validateHardwareStatisticsServer,
     validateMemoryEditServer,
     validatePerformanceServer,
+    validateScriptServer,
     validateWatchpointServer,
 } from '../../../src/emulator/protocol/ipc-server-info';
 import { IpcCommand, IpcResponse } from '../../../src/emulator/protocol/ipc-commands';
@@ -349,5 +350,51 @@ describe('validatePerformanceServer', () => {
         expect(() => validatePerformanceServer({
             ...info, capabilities: { ...info.capabilities, codePerfLimits: undefined },
         })).to.throw('does not provide CodePerf schema 1');
+    });
+});
+
+describe('validateScriptServer', () => {
+    const commands = [
+        IpcCommand.DEBUG_SCRIPT_ADD, IpcCommand.DEBUG_SCRIPT_DEL_ALL,
+        IpcCommand.DEBUG_SCRIPT_DEL, IpcCommand.DEBUG_SCRIPT_GET_ALL,
+        IpcCommand.DEBUG_SCRIPT_GET_UPDATES, IpcCommand.DEBUG_SCRIPT_EDIT,
+        IpcCommand.DEBUG_SCRIPT_COMPILE, IpcCommand.DEBUG_SCRIPT_RUN_ONCE,
+        IpcCommand.DEBUG_SCRIPT_DISABLE, IpcCommand.DEBUG_SCRIPT_DISABLE_ALL,
+    ];
+    const info = {
+        protocolVersion: 2,
+        emulatorVersion: 'test-build',
+        commands,
+        capabilities: {
+            debugger: true, rawFrame: true, rawFrameSchema: 1, stackSampleSchema: 1,
+            scriptSchema: 1, scriptServerAllocatedIds: true, scriptPathSources: true,
+            scriptExplicitCompile: true, scriptRunOnce: true, scriptBulkDisable: true,
+            scriptMutationsWhileRunning: true, scriptRunOnceWhileRunning: true,
+            scriptLimits: {
+                maxNameBytes: 64, maxPathBytes: 256, maxSourceBytes: 1048576,
+                maxRecords: 16, maxErrorBytes: 256, maxInstructionsPerRun: 100000,
+                maxExecutionMilliseconds: 100,
+            },
+        },
+    };
+
+    it('requires schema 1, all commands, capabilities, and positive limits', () => {
+        expect(() => validateScriptServer(info)).not.to.throw();
+        for (const command of commands) {
+            expect(() => validateScriptServer({
+                ...info, commands: commands.filter(candidate => candidate !== command),
+            })).to.throw('does not provide script schema 1');
+        }
+        expect(() => validateScriptServer({
+            ...info,
+            capabilities: { ...info.capabilities, scriptRunOnceWhileRunning: undefined },
+        })).to.throw('does not provide script schema 1');
+        expect(() => validateScriptServer({
+            ...info,
+            capabilities: {
+                ...info.capabilities,
+                scriptLimits: { ...info.capabilities.scriptLimits, maxPathBytes: 0 },
+            },
+        })).to.throw('does not provide script schema 1');
     });
 });

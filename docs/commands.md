@@ -29,7 +29,7 @@ Templates live in `src/templates/` and use `{{key}}` placeholder expansion.
 
 ## v6emul Panel Toggles
 
-The `v6emul` Activity Bar container, also available through **View > Open View... > v6emul**, contains launchers for Settings, Display, Hex Viewer, Memory Edits, Performance, Trace Log, Symbols, Ports, and Watchpoints. Each launcher creates an editor panel when closed and disposes it when open. Open panels show a check icon and `Open` state; closing a panel tab clears that state. The same toggle commands remain available in the Command Palette under the `v6emul` category.
+The `v6emul` Activity Bar container, also available through **View > Open View... > v6emul**, contains launchers for Settings, Display, Hex Viewer, Memory Edits, Performance, Trace Log, Scripts, Symbols, Ports, and Watchpoints. Each launcher creates an editor panel when closed and disposes it when open. Open panels show a check icon and `Open` state; closing a panel tab clears that state. The same toggle commands remain available in the Command Palette under the `v6emul` category.
 
 VS Code's extension API does not expose the built-in **View** menubar as a menu contribution location. A direct **View > v6emul** submenu cannot be contributed by an extension; `menubar/view` is ignored by the host.
 
@@ -50,6 +50,14 @@ Refreshes the authoritative CodePerf test collection and sampled statistics. The
 ## V6: Refresh Trace Log
 
 Recreates the current server-side trace filter and returns to the newest matching instruction. The standalone panel requires trace-log schema 1 and commands `103` and `104`; it sends no query while the emulator is running or the panel is hidden. Address and instruction globs are filtered by v6emul, while indexed windows keep the 300,000-entry result virtualized.
+
+## V6: Add Script
+
+Opens a draft row in the standalone Scripts panel. Enter submits a non-empty Name, absolute server-local Path, and Activity value; Escape cancels the draft.
+
+## V6: Refresh Scripts
+
+Refreshes the authoritative script collection. The panel requires script schema 1 and commands `84..88` and `105..109`. It supports Name wildcard filtering, inline editing, compilation/runtime status, Run Once, Activity toggles, clipboard actions, and confirmed bulk disable/delete.
 
 ## V6: Refresh Ports
 

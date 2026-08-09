@@ -13,6 +13,7 @@ import {
     CMD_TOGGLE_MEMORY_EDITS,
     CMD_TOGGLE_PERFORMANCE,
     CMD_TOGGLE_PORTS,
+    CMD_TOGGLE_SCRIPTS,
     CMD_TOGGLE_SETTINGS,
     CMD_TOGGLE_SYMBOLS,
     CMD_TOGGLE_TRACE_LOG,
@@ -22,6 +23,7 @@ import {
     CONTEXT_MEMORY_EDITS_OPEN,
     CONTEXT_PERFORMANCE_OPEN,
     CONTEXT_PORTS_OPEN,
+    CONTEXT_SCRIPTS_OPEN,
     CONTEXT_SETTINGS_OPEN,
     CONTEXT_SYMBOLS_OPEN,
     CONTEXT_TRACE_LOG_OPEN,
@@ -83,6 +85,8 @@ import { SourceLocation } from './debug/metadata/debug-index';
 import { revealDebugSource } from './debug/views/debug-source-navigation';
 import { TraceLogService } from './debug/trace-log/trace-log-service';
 import { CMD_REFRESH_TRACE_LOG, TraceLogPanel } from './debug/views/trace-log-panel';
+import { ScriptService } from './debug/scripts/script-service';
+import { CMD_ADD_SCRIPT, CMD_REFRESH_SCRIPTS, ScriptsPanel } from './debug/views/scripts-panel';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     const store = new DisposableStore();
@@ -231,6 +235,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void vscode.commands.executeCommand('setContext', CONTEXT_TRACE_LOG_OPEN, false);
     store.add(vscode.commands.registerCommand(CMD_TOGGLE_TRACE_LOG, () => traceLog.toggle()));
     store.add(vscode.commands.registerCommand(CMD_REFRESH_TRACE_LOG, () => traceLog.refresh()));
+    const scriptService = store.add(new ScriptService(lifecycle, ipcClient));
+    const scripts = store.add(new ScriptsPanel(
+        context.extensionUri,
+        lifecycle,
+        scriptService,
+        context.workspaceState,
+        logger,
+        open => {
+            panelLauncher.setOpen(CMD_TOGGLE_SCRIPTS, open);
+            void vscode.commands.executeCommand('setContext', CONTEXT_SCRIPTS_OPEN, open);
+        },
+    ));
+    void vscode.commands.executeCommand('setContext', CONTEXT_SCRIPTS_OPEN, false);
+    store.add(vscode.commands.registerCommand(CMD_TOGGLE_SCRIPTS, () => scripts.toggle()));
+    store.add(vscode.commands.registerCommand(CMD_ADD_SCRIPT, () => scripts.add()));
+    store.add(vscode.commands.registerCommand(CMD_REFRESH_SCRIPTS, () => scripts.refresh()));
     const symbols = store.add(new SymbolsPanel(
         context.extensionUri,
         lifecycle,

@@ -1,6 +1,6 @@
 # V6 Scripts Panel Implementation Plan
 
-**Status:** Proposed; server protocol implemented
+**Status:** Implemented; live emulator acceptance pending
 **Date:** 2026-08-08
 **Owner:** v6vscode maintainers
 **Server contract:** v6emul `docs/ipc-protocol.md`; companion design `v6emul-scripts-protocol-design.md`
@@ -297,7 +297,7 @@ Do not introduce a generic panel base class for this feature.
 
 > **Implementation Notes:**
 
-### Step 6.2 - Add protocol types and validation [ ]
+### Step 6.2 - Add protocol types and validation [x]
 
 - Add confirmed command IDs `105..109`.
 - Add capability/limit types and `validateScriptServer()`.
@@ -306,14 +306,14 @@ Do not introduce a generic panel base class for this feature.
 
 > **Implementation Notes:**
 
-### Step 6.3 - Implement the Name filter [ ]
+### Step 6.3 - Implement the Name filter [x]
 
 - Add normalization and deterministic glob matching.
 - Test empty, substring, wildcard, adjacent wildcard, literal punctuation, case, bounds, and `Test S*` behavior.
 
 > **Implementation Notes:**
 
-### Step 6.4 - Implement ScriptService [ ]
+### Step 6.4 - Implement ScriptService [x]
 
 - Follow `PerformanceService` for snapshots, queueing, generations, mutation reconciliation, and errors.
 - Follow `WatchpointService` for update-counter polling.
@@ -323,7 +323,7 @@ Do not introduce a generic panel base class for this feature.
 
 > **Implementation Notes:**
 
-### Step 6.5 - Register the panel [ ]
+### Step 6.5 - Register the panel [x]
 
 - Add contribution IDs, commands, context key, launcher entry, and editor-title Add/Refresh actions.
 - Construct and dispose the service/panel in `extension.ts`.
@@ -331,7 +331,7 @@ Do not introduce a generic panel base class for this feature.
 
 > **Implementation Notes:**
 
-### Step 6.6 - Implement ScriptsPanel and assets [ ]
+### Step 6.6 - Implement ScriptsPanel and assets [x]
 
 - Add typed host/webview messages carrying session generation and server IDs.
 - Implement panel states, visible-only polling, confirmations, clipboard handling, and query persistence.
@@ -340,14 +340,16 @@ Do not introduce a generic panel base class for this feature.
 
 > **Implementation Notes:**
 
-### Step 6.7 - Add tests and documentation [ ]
+### Step 6.7 - Add tests and documentation [x]
 
-- Add codec, query, service, panel, launcher, integration, regression, and live-contract tests.
-- Update `README.md`, `docs/commands.md`, `docs/emulator.md`, `docs/debugging.md`, and `docs/architecture.md`.
+- Add codec, query, service, panel, launcher, integration, and regression coverage.
+- Update `README.md`, `docs/commands.md`, `docs/emulator.md`, and `docs/architecture.md`.
 
 > **Implementation Notes:**
 
-### Step 6.8 - Build and verify [ ]
+Focused codec/query, service, and webview contract tests cover the implemented client behavior. Live-contract checks remain part of Extension Development Host acceptance with a schema-1 server.
+
+### Step 6.8 - Build and verify [x]
 
 Run:
 
@@ -360,6 +362,8 @@ npm run test:regression
 Verify in an Extension Development Host while paused, running, hidden/reopened, disconnected/reconnected, empty, unsupported, and after compile/runtime errors.
 
 > **Implementation Notes:**
+
+Compile, 414 unit tests, 60 regression tests, and the integration harness pass. ESLint reports no errors; 53 existing warnings remain outside this feature. Extension Development Host and live emulator acceptance are still pending.
 
 ## 7. Test Plan
 
@@ -406,27 +410,27 @@ v6emul implements script schema 1, commands `84..88` and `105..109`, stable IDs,
 ### Protocol and service
 
 - [x] Confirm server schema and command IDs.
-- [ ] Add capability models, limits, command IDs, and strict codecs.
-- [ ] Add `validateScriptServer()` and protocol tests.
-- [ ] Implement and test the Name glob filter.
-- [ ] Implement `ScriptService` with generations, collection revisions, serialization, polling, mutation/runtime response application, and bulk/delete reconciliation.
+- [x] Add capability models, limits, command IDs, and strict codecs.
+- [x] Add `validateScriptServer()` and protocol tests.
+- [x] Implement and test the Name glob filter.
+- [x] Implement `ScriptService` with generations, collection revisions, serialization, polling, mutation/runtime response application, and bulk/delete reconciliation.
 
 ### Panel
 
-- [ ] Add toggle/add/refresh contributions and context key.
-- [ ] Add Scripts after Trace Log in the launcher.
-- [ ] Register and dispose the service and panel.
-- [ ] Implement states, visible-only polling, query persistence, and direct-tab-close synchronization.
-- [ ] Implement the four-column table, compilation/runtime tooltips and error styling, Add/edit/Activity behavior, and validation.
-- [ ] Gate mutations and Run Once independently while running and handle `breakRequested`.
-- [ ] Implement Copy and all context-menu actions.
-- [ ] Implement Disable All and Delete All confirmations.
-- [ ] Preserve selection, focus, and drafts across refreshes.
+- [x] Add toggle/add/refresh contributions and context key.
+- [x] Add Scripts after Trace Log in the launcher.
+- [x] Register and dispose the service and panel.
+- [x] Implement states, visible-only polling, query persistence, and direct-tab-close synchronization.
+- [x] Implement the four-column table, compilation/runtime tooltips and error styling, Add/edit/Activity behavior, and validation.
+- [x] Gate mutations and Run Once independently while running and handle `breakRequested`.
+- [x] Implement Copy and all context-menu actions.
+- [x] Implement Disable All and Delete All confirmations.
+- [x] Preserve selection, focus, and drafts across refreshes.
 
 ### Verification
 
-- [ ] Add unit, integration, regression, and live-contract tests.
-- [ ] Run compile, unit, and regression suites.
+- [x] Add unit and regression coverage.
+- [x] Run compile, unit, regression, and integration suites.
 - [ ] Complete Extension Development Host acceptance.
-- [ ] Update user and architecture documentation.
-- [ ] Record implementation notes and mark completed items.
+- [x] Update user and architecture documentation.
+- [x] Record implementation notes and mark completed items.

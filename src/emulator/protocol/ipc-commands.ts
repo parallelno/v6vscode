@@ -129,6 +129,11 @@ export const enum IpcCommand {
     DEBUG_CODE_PERF_EDIT = 102,
     DEBUG_TRACE_LOG_FILTER = 103,
     DEBUG_TRACE_LOG_WINDOW = 104,
+    DEBUG_SCRIPT_EDIT = 105,
+    DEBUG_SCRIPT_COMPILE = 106,
+    DEBUG_SCRIPT_RUN_ONCE = 107,
+    DEBUG_SCRIPT_DISABLE = 108,
+    DEBUG_SCRIPT_DISABLE_ALL = 109,
 }
 
 // Speed value mapping: user-facing string → IPC integer
@@ -266,6 +271,23 @@ export interface ServerCapabilities {
         capacity: number;
         maxLines: number;
         maxPatternBytes: number;
+    };
+    scriptSchema?: number;
+    scriptServerAllocatedIds?: boolean;
+    scriptPathSources?: boolean;
+    scriptExplicitCompile?: boolean;
+    scriptRunOnce?: boolean;
+    scriptBulkDisable?: boolean;
+    scriptMutationsWhileRunning?: boolean;
+    scriptRunOnceWhileRunning?: boolean;
+    scriptLimits?: {
+        maxNameBytes: number;
+        maxPathBytes: number;
+        maxSourceBytes: number;
+        maxRecords: number;
+        maxErrorBytes: number;
+        maxInstructionsPerRun: number;
+        maxExecutionMilliseconds: number;
     };
 }
 

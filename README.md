@@ -12,10 +12,10 @@
 - **Include navigation** — Ctrl+click on `.include "..."` directives
 - **V6: Create Project** — scaffolds a new project (source, Makefile, project config) with ASM/C and ROM/FDD options
 - **V6: Run Project** — launches or hot-reloads the emulator, opens the display panel
-- **v6emul tools view** — the `v6emul` Activity Bar container, also available through **View > Open View... > v6emul**, toggles Settings, Display, Hex Viewer, Memory Edits, Performance, Trace Log, Symbols, Ports, and Watchpoints editor panels
+- **v6emul tools view** — the `v6emul` Activity Bar container, also available through **View > Open View... > v6emul**, toggles Settings, Display, Hex Viewer, Memory Edits, Performance, Trace Log, Scripts, Symbols, Ports, and Watchpoints editor panels
 - **Display panel** — focused canvas display with keyboard forwarding; execution control stays in VS Code's debug toolbar
 - **Emulator Settings panel** — changes and persists Speed and Display mode
-- **Standalone debug tools** — full-size Hex Viewer, Memory Edits, Performance, Trace Log, Symbols, Ports, and Watchpoints editor panels
+- **Standalone debug tools** — full-size Hex Viewer, Memory Edits, Performance, Trace Log, Scripts, Symbols, Ports, and Watchpoints editor panels
 - **FPS counter** — live frames-per-second display in the status bar (bottom-right) while the emulator is running
 - **FDD persistence** — automatically saves modified floppy disk images back to disk on stop (unless `fddReadOnly` is set)
 
@@ -55,6 +55,7 @@ The extension does not invoke `v6asm` or `v6fdd`. Generated Makefiles use the co
 | `v6emul: Memory Edits` | Add and manage tracked byte edits, Auto-update, and restore actions |
 | `v6emul: Performance` | Toggle server-owned CodePerf ranges and statistics |
 | `v6emul: Trace Log` | Filter and virtually scroll retained paused execution history |
+| `v6emul: Scripts` | Manage, compile, and run server-owned Lua scripts |
 | `v6emul: Symbols` | Toggle symbol search and navigation |
 | `v6emul: Ports` | Toggle the standalone I/O ports viewer |
 | `v6emul: Watchpoints` | Toggle the standalone watchpoint editor |

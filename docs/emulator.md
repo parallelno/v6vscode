@@ -35,7 +35,7 @@ Webview-based display surface for the running emulator. Execution control remain
 
 During a debug launch the panel uses the lifecycle's existing connection. It does not open a second TCP client. Frame requests are low priority so continue, pause, stepping, breakpoint updates, and stop polling remain responsive.
 
-Using the debug toolbar's **Stop** control, including its **Alt+Disconnect** variant, clears all connection-backed panel state immediately, including retained hidden webviews. Display clears its last frame; Symbols, Hex Viewer, Memory Edits, Performance, Trace Log, Ports, Watchpoints, and Hardware Statistics clear their tables, caches, selections, and pending UI. Memory-edit and CodePerf records remain owned by the emulator process and are fetched again after reconnect. Settings retains active-project defaults because they are project configuration rather than emulator-session state.
+Using the debug toolbar's **Stop** control, including its **Alt+Disconnect** variant, clears all connection-backed panel state immediately, including retained hidden webviews. Display clears its last frame; Symbols, Hex Viewer, Memory Edits, Performance, Trace Log, Scripts, Ports, Watchpoints, and Hardware Statistics clear their tables, caches, selections, and pending UI. Memory-edit, CodePerf, and script records remain owned by the emulator process and are fetched again after reconnect. Settings retains active-project defaults because they are project configuration rather than emulator-session state.
 
 ## Hardware Statistics
 
@@ -74,6 +74,12 @@ The panel requires CodePerf schema 1 with `codePerfServerAllocatedIds`, `codePer
 `Trace Log` is a standalone paused-only editor panel backed by server-side immutable filters. A valid address/instruction glob creates one opaque filter ID; scrolling requests aligned windows through commands `103` (`DEBUG_TRACE_LOG_FILTER`) and `104` (`DEBUG_TRACE_LOG_WINDOW`). Both the extension host and webview retain at most three 512-row windows, while fixed-height virtualization gives the scrollbar the complete advertised result length.
 
 Rows contain only a 16-bit address, instruction bytes, and v6emul's undecorated instruction. When the active debug artifact has an exact address mapping, the host replaces the listing with that complete source line and applies the shared TextMate highlighting and source-symbol links. Resume, hide, disconnect, filter replacement, or stale response generation clears the active result. The server must advertise trace-log schema 1, filter/window capabilities, and positive capacity, line, and UTF-8 pattern limits.
+
+## Scripts
+
+`Scripts` is a standalone editor panel for server-owned Lua scripts loaded from absolute server-local paths. It filters Name with case-insensitive substring or `*` glob semantics, edits Name and Path inline, toggles requested Activity, and exposes Compile, Run Once, Disable, Disable All, Delete, and Delete All. Compilation or runtime failures color the row with the VS Code error foreground while retaining icon and tooltip indicators.
+
+`ScriptService` validates script schema 1, commands `84..88` and `105..109`, snapshots, runtime states, collection revisions, portable generic paths, and advertised limits. Mutation snapshots are applied directly; visible panels poll the lightweight update revision and fetch the complete ascending-ID collection only when needed. Mutations and Run Once are gated independently while emulation runs.
 
 ## Watchpoints
 

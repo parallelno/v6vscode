@@ -10,6 +10,7 @@ export const SUPPORTED_CODE_PERF_SCHEMA = 1;
 export const SUPPORTED_STOP_RECORD_SCHEMA = 1;
 export const SUPPORTED_HARDWARE_STATS_SCHEMA = 1;
 export const SUPPORTED_TRACE_LOG_SCHEMA = 1;
+export const SUPPORTED_SCRIPT_SCHEMA = 1;
 
 /** Reads and validates the required server metadata handshake. */
 export async function getServerInfo(client: IpcClient): Promise<GetServerInfoResponse> {
@@ -166,4 +167,44 @@ export function validateTraceLogServer(info: GetServerInfoResponse): void {
         || !info.commands.includes(IpcCommand.DEBUG_TRACE_LOG_WINDOW)) {
         throw new Error(`v6emul ${info.emulatorVersion} does not provide trace-log schema 1`);
     }
+}
+
+export function validateScriptServer(info: GetServerInfoResponse): void {
+    const requiredCommands = [
+        IpcCommand.DEBUG_SCRIPT_ADD,
+        IpcCommand.DEBUG_SCRIPT_DEL_ALL,
+        IpcCommand.DEBUG_SCRIPT_DEL,
+        IpcCommand.DEBUG_SCRIPT_GET_ALL,
+        IpcCommand.DEBUG_SCRIPT_GET_UPDATES,
+        IpcCommand.DEBUG_SCRIPT_EDIT,
+        IpcCommand.DEBUG_SCRIPT_COMPILE,
+        IpcCommand.DEBUG_SCRIPT_RUN_ONCE,
+        IpcCommand.DEBUG_SCRIPT_DISABLE,
+        IpcCommand.DEBUG_SCRIPT_DISABLE_ALL,
+    ];
+    const capabilities = info.capabilities;
+    const limits = capabilities.scriptLimits;
+    if (capabilities.scriptSchema !== SUPPORTED_SCRIPT_SCHEMA
+        || capabilities.scriptServerAllocatedIds !== true
+        || capabilities.scriptPathSources !== true
+        || capabilities.scriptExplicitCompile !== true
+        || capabilities.scriptRunOnce !== true
+        || capabilities.scriptBulkDisable !== true
+        || typeof capabilities.scriptMutationsWhileRunning !== 'boolean'
+        || typeof capabilities.scriptRunOnceWhileRunning !== 'boolean'
+        || !limits
+        || !positiveInteger(limits.maxNameBytes)
+        || !positiveInteger(limits.maxPathBytes)
+        || !positiveInteger(limits.maxSourceBytes)
+        || !positiveInteger(limits.maxRecords)
+        || !positiveInteger(limits.maxErrorBytes)
+        || !positiveInteger(limits.maxInstructionsPerRun)
+        || !positiveInteger(limits.maxExecutionMilliseconds)
+        || requiredCommands.some(command => !info.commands.includes(command))) {
+        throw new Error(`v6emul ${info.emulatorVersion} does not provide script schema 1`);
+    }
+}
+
+function positiveInteger(value: unknown): value is number {
+    return Number.isSafeInteger(value) && (value as number) > 0;
 }

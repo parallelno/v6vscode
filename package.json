@@ -89,6 +89,18 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "v6.refreshScripts",
+        "title": "Refresh Scripts",
+        "category": "V6",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "v6.addScript",
+        "title": "Add Script",
+        "category": "V6",
+        "icon": "$(add)"
+      },
+      {
         "command": "v6.refreshPorts",
         "title": "Refresh Ports",
         "category": "V6",
@@ -134,6 +146,11 @@
       {
         "command": "v6emul.toggleTraceLog",
         "title": "Trace Log",
+        "category": "v6emul"
+      },
+      {
+        "command": "v6emul.toggleScripts",
+        "title": "Scripts",
         "category": "v6emul"
       },
       {
@@ -226,6 +243,16 @@
           "command": "v6.refreshTraceLog",
           "when": "activeWebviewPanelId == v6.traceLog",
           "group": "navigation"
+        },
+        {
+          "command": "v6.addScript",
+          "when": "activeWebviewPanelId == v6.scripts",
+          "group": "navigation@1"
+        },
+        {
+          "command": "v6.refreshScripts",
+          "when": "activeWebviewPanelId == v6.scripts",
+          "group": "navigation@2"
         },
         {
           "command": "v6.refreshPorts",

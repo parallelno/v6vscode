@@ -147,6 +147,56 @@ export interface CodePerfLimits {
     maxTestCount: number;
 }
 
+export interface ScriptInput {
+    name: string;
+    path: string;
+    active: boolean;
+}
+
+export type ScriptCompilation =
+    | { status: 'compiled'; error: null }
+    | { status: 'error'; error: string };
+
+export type ScriptRuntime =
+    | { status: 'never_run'; error: null }
+    | { status: 'succeeded'; error: null }
+    | { status: 'error'; error: string };
+
+export interface ScriptSnapshot extends ScriptInput {
+    scriptId: number;
+    compilation: ScriptCompilation;
+    runtime: ScriptRuntime;
+}
+
+export interface ScriptLimits {
+    maxNameBytes: number;
+    maxPathBytes: number;
+    maxSourceBytes: number;
+    maxRecords: number;
+    maxErrorBytes: number;
+    maxInstructionsPerRun: number;
+    maxExecutionMilliseconds: number;
+}
+
+export interface ScriptMutationResponse {
+    updates: number;
+    script: ScriptSnapshot;
+}
+
+export interface ScriptCollectionResponse {
+    updates: number;
+    scripts: ScriptSnapshot[];
+}
+
+export interface ScriptRunOnceResponse {
+    scriptId: number;
+    succeeded: boolean;
+    breakRequested: boolean;
+    updates: number;
+    runtime: ScriptRuntime;
+    error?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Stop detection
 // ---------------------------------------------------------------------------
