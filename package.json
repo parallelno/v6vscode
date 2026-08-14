@@ -475,6 +475,18 @@
           ],
           "default": "info",
           "description": "Logging verbosity for the V6 output channel."
+        },
+        "v6.scriptOverlays.hidden": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide all script overlays in the emulator Display."
+        },
+        "v6.scriptOverlays.fontSize": {
+          "type": "integer",
+          "default": 12,
+          "minimum": 6,
+          "maximum": 48,
+          "description": "Script overlay text size in framebuffer pixels."
         }
       }
     },

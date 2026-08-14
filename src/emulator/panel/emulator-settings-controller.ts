@@ -4,11 +4,18 @@ import { IpcClient } from '../client/ipc-client';
 import { EmulatorLifecycle } from '../lifecycle/emulator-lifecycle';
 import { IpcCommand, SPEED_VALUES } from '../protocol/ipc-commands';
 import { DisplayMode } from './emulator-viewmodel';
+import { SETTING_SCRIPT_OVERLAYS_FONT_SIZE, SETTING_SCRIPT_OVERLAYS_HIDDEN } from '../../config/contribution-ids';
+
+const OVERLAY_FONT_SIZE_DEFAULT = 12;
+const OVERLAY_FONT_SIZE_MIN = 6;
+const OVERLAY_FONT_SIZE_MAX = 48;
 
 export interface EmulatorSettingsState {
     speed: string;
     viewMode: DisplayMode;
     hasProject: boolean;
+    scriptOverlaysHidden: boolean;
+    scriptOverlayFontSize: number;
 }
 
 export class EmulatorSettingsController implements vscode.Disposable {
@@ -17,7 +24,9 @@ export class EmulatorSettingsController implements vscode.Disposable {
         speed: '100%',
         viewMode: 'borderless',
         hasProject: false,
+        ...readOverlaySettings(),
     };
+    private readonly configurationListener: vscode.Disposable;
 
     readonly onDidChange = this.changeEmitter.event;
 
@@ -26,7 +35,17 @@ export class EmulatorSettingsController implements vscode.Disposable {
         private readonly client: IpcClient,
         private readonly loadProject: () => Promise<V6Project | undefined>,
         private readonly saveProject: (project: V6Project) => Promise<void>,
-    ) {}
+    ) {
+        const onDidChangeConfiguration = vscode.workspace.onDidChangeConfiguration;
+        this.configurationListener = typeof onDidChangeConfiguration === 'function'
+            ? onDidChangeConfiguration(event => {
+            if (event.affectsConfiguration(SETTING_SCRIPT_OVERLAYS_HIDDEN)
+                || event.affectsConfiguration(SETTING_SCRIPT_OVERLAYS_FONT_SIZE)) {
+                this.update({ ...this.state, ...readOverlaySettings() });
+            }
+            })
+            : { dispose: () => undefined };
+    }
 
     get current(): EmulatorSettingsState {
         return { ...this.state };
@@ -77,7 +96,24 @@ export class EmulatorSettingsController implements vscode.Disposable {
         this.update({ ...this.state, viewMode, hasProject: true });
     }
 
+    async setScriptOverlaysHidden(hidden: boolean): Promise<void> {
+        if (typeof hidden !== 'boolean') { throw new Error('Hide All Overlays must be a boolean'); }
+        await vscode.workspace.getConfiguration('v6').update(
+            'scriptOverlays.hidden', hidden, vscode.ConfigurationTarget.Global,
+        );
+    }
+
+    async setScriptOverlayFontSize(fontSize: number): Promise<void> {
+        if (!Number.isSafeInteger(fontSize) || fontSize < OVERLAY_FONT_SIZE_MIN || fontSize > OVERLAY_FONT_SIZE_MAX) {
+            throw new Error(`Font Size must be an integer in ${OVERLAY_FONT_SIZE_MIN}..${OVERLAY_FONT_SIZE_MAX}`);
+        }
+        await vscode.workspace.getConfiguration('v6').update(
+            'scriptOverlays.fontSize', fontSize, vscode.ConfigurationTarget.Global,
+        );
+    }
+
     dispose(): void {
+        this.configurationListener.dispose();
         this.changeEmitter.dispose();
     }
 
@@ -98,7 +134,7 @@ export class EmulatorSettingsController implements vscode.Disposable {
             : project.run.viewMode === 'bordered' || project.run.viewMode === 'border'
                 ? 'border'
                 : 'borderless';
-        return { speed, viewMode, hasProject: true };
+        return { speed, viewMode, hasProject: true, ...readOverlaySettings() };
     }
 
     private update(state: EmulatorSettingsState): void {
@@ -109,4 +145,18 @@ export class EmulatorSettingsController implements vscode.Disposable {
 
 function isDisplayMode(value: string): value is DisplayMode {
     return value === 'full' || value === 'border' || value === 'borderless';
+}
+
+function readOverlaySettings(): Pick<EmulatorSettingsState, 'scriptOverlaysHidden' | 'scriptOverlayFontSize'> {
+    const configuration = vscode.workspace.getConfiguration('v6');
+    const hidden = configuration.get<unknown>('scriptOverlays.hidden');
+    const fontSize = configuration.get<unknown>('scriptOverlays.fontSize');
+    return {
+        scriptOverlaysHidden: typeof hidden === 'boolean' ? hidden : false,
+        scriptOverlayFontSize: Number.isSafeInteger(fontSize)
+            && (fontSize as number) >= OVERLAY_FONT_SIZE_MIN
+            && (fontSize as number) <= OVERLAY_FONT_SIZE_MAX
+            ? fontSize as number
+            : OVERLAY_FONT_SIZE_DEFAULT,
+    };
 }

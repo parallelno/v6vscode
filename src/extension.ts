@@ -87,6 +87,7 @@ import { revealDebugSource } from './debug/views/debug-source-navigation';
 import { TraceLogService } from './debug/trace-log/trace-log-service';
 import { CMD_REFRESH_TRACE_LOG, TraceLogPanel } from './debug/views/trace-log-panel';
 import { ScriptService } from './debug/scripts/script-service';
+import { ScriptOverlayService } from './debug/scripts/script-overlay-service';
 import { CMD_ADD_SCRIPT, CMD_REFRESH_SCRIPTS, ScriptsPanel } from './debug/views/scripts-panel';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -124,12 +125,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         loadActiveProject,
         project => projectRepository.save(project),
     ));
+    const scriptService = store.add(new ScriptService(lifecycle, ipcClient));
+    const scriptOverlays = store.add(new ScriptOverlayService(lifecycle, ipcClient, scriptService));
     const emulatorPanel = store.add(new EmulatorPanel(
         context.extensionUri,
         lifecycle,
         ipcClient,
         logger,
         settingsController,
+        scriptOverlays,
         open => {
             panelLauncher.setOpen(CMD_TOGGLE_DISPLAY, open);
             void vscode.commands.executeCommand('setContext', CONTEXT_DISPLAY_OPEN, open);
@@ -237,7 +241,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void vscode.commands.executeCommand('setContext', CONTEXT_TRACE_LOG_OPEN, false);
     store.add(vscode.commands.registerCommand(CMD_TOGGLE_TRACE_LOG, () => traceLog.toggle()));
     store.add(vscode.commands.registerCommand(CMD_REFRESH_TRACE_LOG, () => traceLog.refresh()));
-    const scriptService = store.add(new ScriptService(lifecycle, ipcClient));
     const scripts = store.add(new ScriptsPanel(
         context.extensionUri,
         lifecycle,

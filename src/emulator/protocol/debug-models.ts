@@ -197,6 +197,40 @@ export interface ScriptRunOnceResponse {
     error?: string;
 }
 
+export interface ScriptOverlayLimits {
+    maxItemsPerScript: number;
+    maxItemsTotal: number;
+    maxTextBytes: number;
+    maxCoordinateMagnitude: number;
+}
+
+export interface ScriptOverlayCommon {
+    scriptId: number;
+    itemId: number;
+    vectorScreenCoords: boolean;
+    x: number;
+    y: number;
+    color: number;
+}
+
+export interface ScriptTextOverlay extends ScriptOverlayCommon {
+    type: 'text';
+    text: string;
+}
+
+export interface ScriptRectOverlay extends ScriptOverlayCommon {
+    type: 'rect';
+    width: number;
+    height: number;
+    filled: boolean;
+}
+
+export type ScriptOverlayItem = ScriptTextOverlay | ScriptRectOverlay;
+
+export interface ScriptOverlayResponse {
+    overlays: ScriptOverlayItem[];
+}
+
 // ---------------------------------------------------------------------------
 // Stop detection
 // ---------------------------------------------------------------------------

@@ -11,6 +11,7 @@ export const SUPPORTED_STOP_RECORD_SCHEMA = 1;
 export const SUPPORTED_HARDWARE_STATS_SCHEMA = 1;
 export const SUPPORTED_TRACE_LOG_SCHEMA = 1;
 export const SUPPORTED_SCRIPT_SCHEMA = 1;
+export const SUPPORTED_SCRIPT_OVERLAY_SCHEMA = 1;
 
 /** Reads and validates the required server metadata handshake. */
 export async function getServerInfo(client: IpcClient): Promise<GetServerInfoResponse> {
@@ -207,4 +208,22 @@ export function validateScriptServer(info: GetServerInfoResponse): void {
 
 function positiveInteger(value: unknown): value is number {
     return Number.isSafeInteger(value) && (value as number) > 0;
+}
+
+export function validateScriptOverlayServer(info: GetServerInfoResponse): void {
+    const capabilities = info.capabilities;
+    const limits = capabilities.scriptOverlayLimits;
+    if (capabilities.scriptOverlaySchema !== SUPPORTED_SCRIPT_OVERLAY_SCHEMA
+        || capabilities.scriptOverlayRetained !== true
+        || capabilities.scriptOverlayConsumesUpdates !== true
+        || capabilities.scriptOverlayVectorScreenCoords !== true
+        || capabilities.scriptOverlayColorFormat !== 'RRGGBBAA'
+        || !limits
+        || !positiveInteger(limits.maxItemsPerScript)
+        || !positiveInteger(limits.maxItemsTotal)
+        || !positiveInteger(limits.maxTextBytes)
+        || !positiveInteger(limits.maxCoordinateMagnitude)
+        || !info.commands.includes(IpcCommand.DEBUG_SCRIPT_OVERLAY_GET)) {
+        throw new Error(`v6emul ${info.emulatorVersion} does not provide script-overlay schema 1`);
+    }
 }

@@ -10,7 +10,10 @@
 </head>
 <body>
     <div id="viewport">
-        <canvas id="screen"></canvas>
+        <div id="canvas-stack">
+            <canvas id="screen"></canvas>
+            <canvas id="overlays"></canvas>
+        </div>
     </div>
     <div id="error-bar" class="hidden"></div>
     <script nonce="{{nonce}}" src="{{jsUri}}"></script>

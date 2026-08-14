@@ -24,6 +24,8 @@ export const CONTEXT_PORTS_OPEN = 'v6emul.portsOpen';
 export const CONTEXT_WATCHPOINTS_OPEN = 'v6emul.watchpointsOpen';
 
 export const SETTING_LOG_LEVEL = 'v6.logLevel';
+export const SETTING_SCRIPT_OVERLAYS_HIDDEN = 'v6.scriptOverlays.hidden';
+export const SETTING_SCRIPT_OVERLAYS_FONT_SIZE = 'v6.scriptOverlays.fontSize';
 
 // Debug
 export const DEBUG_TYPE = 'v6';

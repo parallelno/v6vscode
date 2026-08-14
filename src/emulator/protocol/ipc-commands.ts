@@ -134,6 +134,7 @@ export const enum IpcCommand {
     DEBUG_SCRIPT_RUN_ONCE = 107,
     DEBUG_SCRIPT_DISABLE = 108,
     DEBUG_SCRIPT_DISABLE_ALL = 109,
+    DEBUG_SCRIPT_OVERLAY_GET = 110,
 }
 
 // Speed value mapping: user-facing string → IPC integer
@@ -288,6 +289,17 @@ export interface ServerCapabilities {
         maxErrorBytes: number;
         maxInstructionsPerRun: number;
         maxExecutionMilliseconds: number;
+    };
+    scriptOverlaySchema?: number;
+    scriptOverlayRetained?: boolean;
+    scriptOverlayConsumesUpdates?: boolean;
+    scriptOverlayVectorScreenCoords?: boolean;
+    scriptOverlayColorFormat?: string;
+    scriptOverlayLimits?: {
+        maxItemsPerScript: number;
+        maxItemsTotal: number;
+        maxTextBytes: number;
+        maxCoordinateMagnitude: number;
     };
 }
 

@@ -1,4 +1,6 @@
 import { SPEED_VALUES } from '../protocol/ipc-commands';
+import { ScriptOverlayItem } from '../protocol/debug-models';
+import { renderScriptOverlays, RenderedScriptOverlay } from './script-overlay-renderer';
 
 // --- Display mode definitions ---
 
@@ -25,6 +27,7 @@ export function abgrToRgba(abgr: Uint8Array): Uint8Array {
 
 export type PanelMessage =
     | { type: 'frame'; width: number; height: number; pixels: Uint8Array }
+    | { type: 'overlays'; overlays: readonly RenderedScriptOverlay[]; hidden: boolean; fontSize: number }
     | { type: 'error'; message: string }
     | { type: 'reset' };
 
@@ -79,5 +82,16 @@ export class EmulatorViewModel {
 
     makeResetMessage(): PanelMessage {
         return { type: 'reset' };
+    }
+
+    makeOverlayMessage(
+        overlays: readonly ScriptOverlayItem[], hidden: boolean, fontSize: number,
+    ): PanelMessage {
+        return {
+            type: 'overlays',
+            overlays: renderScriptOverlays(overlays, this._viewMode),
+            hidden,
+            fontSize,
+        };
     }
 }

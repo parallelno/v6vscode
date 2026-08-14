@@ -10,8 +10,10 @@ import { DisplayMode, EmulatorViewModel, WebviewMessage } from './emulator-viewm
 import { Logger } from '../../platform/logging/logger';
 import { DisposableStore, toDisposable } from '../../platform/disposable/lifecycle';
 import { EmulatorSettingsController } from './emulator-settings-controller';
+import { ScriptOverlayService } from '../../debug/scripts/script-overlay-service';
 
 const FPS_UPDATE_INTERVAL_MS = 1000;
+const OVERLAY_POLL_INTERVAL_MS = 250;
 
 export class EmulatorPanel implements vscode.Disposable {
     private panel: vscode.WebviewPanel | null = null;
@@ -26,6 +28,7 @@ export class EmulatorPanel implements vscode.Disposable {
     private frameCount = 0;
     private smoothFps = 0;
     private fpsTimer: ReturnType<typeof setInterval> | null = null;
+    private overlayPollTimer: ReturnType<typeof setInterval> | null = null;
     private readonly fpsStatusBarItem: vscode.StatusBarItem;
 
     constructor(
@@ -34,6 +37,7 @@ export class EmulatorPanel implements vscode.Disposable {
         client: IpcClient,
         logger: Logger,
         private readonly settings: EmulatorSettingsController,
+        private readonly overlays: ScriptOverlayService,
         private readonly onOpenStateChanged: (open: boolean) => void = () => {},
     ) {
         this.extensionUri = extensionUri;
@@ -78,6 +82,7 @@ export class EmulatorPanel implements vscode.Disposable {
 
     dispose(): void {
         this.stopFrameLoop();
+        this.stopOverlayPolling();
         this.store.dispose();
         if (this.panel) {
             this.panel.dispose();
@@ -110,6 +115,7 @@ export class EmulatorPanel implements vscode.Disposable {
             if (event.webviewPanel.active) {
                 void this.reloadProjectSettings();
             }
+            this.updateOverlayPolling();
         }));
 
         // Handle messages from the webview
@@ -122,6 +128,7 @@ export class EmulatorPanel implements vscode.Disposable {
         // Handle panel disposal
         this.panel.onDidDispose(() => {
             this.stopFrameLoop();
+            this.stopOverlayPolling();
             panelStore.dispose();
             this.panelStore = null;
             this.panel = null;
@@ -142,6 +149,7 @@ export class EmulatorPanel implements vscode.Disposable {
                 this.viewModel.setRunning(false);
                 this.stopFrameLoop();
             }
+            this.updateOverlayPolling();
         };
         this.lifecycle.on('stateChange', onStateChange);
         panelStore.add(toDisposable(() => this.lifecycle.removeListener('stateChange', onStateChange)));
@@ -157,6 +165,11 @@ export class EmulatorPanel implements vscode.Disposable {
         };
         this.lifecycle.on('error', onError);
         panelStore.add(toDisposable(() => this.lifecycle.removeListener('error', onError)));
+
+        const onOverlayChange = () => this.postOverlayMessage();
+        this.overlays.on('change', onOverlayChange);
+        panelStore.add(toDisposable(() => this.overlays.removeListener('change', onOverlayChange)));
+        panelStore.add(this.settings.onDidChange(() => this.postOverlayMessage()));
 
         this.logger.debug('emulator-panel: panel created');
     }
@@ -178,6 +191,9 @@ export class EmulatorPanel implements vscode.Disposable {
                     } else if (this.lifecycle.state === 'stopped') {
                         this.postMessage(this.viewModel.makeResetMessage());
                     }
+                    this.postOverlayMessage();
+                    this.updateOverlayPolling();
+                    if (this.lifecycle.connected && !this.lifecycle.running) { await this.requestSingleFrame(); }
                     break;
             }
         } catch (err) {
@@ -213,6 +229,27 @@ export class EmulatorPanel implements vscode.Disposable {
         this.fpsStatusBarItem.hide();
     }
 
+    private updateOverlayPolling(): void {
+        if (!this.panel?.visible || !this.lifecycle.connected || !this.overlays.available) {
+            this.stopOverlayPolling();
+            return;
+        }
+        if (this.overlayPollTimer) { return; }
+        void this.requestOverlays();
+        this.overlayPollTimer = setInterval(() => void this.requestOverlays(), OVERLAY_POLL_INTERVAL_MS);
+    }
+
+    private stopOverlayPolling(): void {
+        if (this.overlayPollTimer) {
+            clearInterval(this.overlayPollTimer);
+            this.overlayPollTimer = null;
+        }
+    }
+
+    private async requestOverlays(): Promise<void> {
+        try { await this.overlays.refresh(); } catch { /* Overlay failures must not disrupt frame rendering. */ }
+    }
+
     private scheduleNextFrame(): void {
         if (!this.frameLoopActive) { return; }
         setTimeout(() => this.requestFrame(), 0);
@@ -220,11 +257,16 @@ export class EmulatorPanel implements vscode.Disposable {
 
     private async requestFrame(): Promise<void> {
         if (!this.frameLoopActive || !this.client.connected || !this.panel) { return; }
+        await this.requestSingleFrame();
+        this.scheduleNextFrame();
+    }
+
+    private async requestSingleFrame(): Promise<void> {
+        if (!this.client.connected || !this.panel) { return; }
         try {
             const rawBuf = await this.client.sendRaw(IpcCommand.GET_FRAME_RAW, undefined, 5000, 'low');
             const frame = decodeFrameRaw(rawBuf);
             if (frame.kind === 'error') {
-                this.scheduleNextFrame();
                 return;
             }
             const panelMsg = this.viewModel.processFrame(
@@ -237,7 +279,13 @@ export class EmulatorPanel implements vscode.Disposable {
         } catch {
             // Swallow frame errors to avoid flooding — they're transient
         }
-        this.scheduleNextFrame();
+    }
+
+    private postOverlayMessage(): void {
+        const state = this.settings.current;
+        this.postMessage(this.viewModel.makeOverlayMessage(
+            this.overlays.snapshot, state.scriptOverlaysHidden, state.scriptOverlayFontSize,
+        ));
     }
 
     private postMessage(msg: unknown): void {
@@ -275,7 +323,10 @@ export class EmulatorPanel implements vscode.Disposable {
             '</head>',
             '<body>',
             '    <div id="viewport">',
-            '        <canvas id="screen"></canvas>',
+            '        <div id="canvas-stack">',
+            '            <canvas id="screen"></canvas>',
+            '            <canvas id="overlays"></canvas>',
+            '        </div>',
             '    </div>',
             '    <div id="error-bar" class="hidden"></div>',
             `    <script nonce="${nonce}" src="${jsUri}"></script>`,

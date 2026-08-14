@@ -25,7 +25,7 @@ Launches the `v6emul` backend, communicates over TCP using length-prefixed Messa
 
 Webview-based display surface for the running emulator. Execution control remains in VS Code's standard debug toolbar.
 
-- **`emulator-viewmodel.ts`** — Tracks panel state: `running`, `speed`, `viewMode`. Defines three display modes (`full` 768×312, `border` 544×288, `borderless` 512×256) with crop rectangles. Provides `abgrToRgba()` pixel conversion, `cropFrame()` extraction, and `processFrame()` pipeline that crops then converts a raw frame into a `PanelMessage`. Typed message types: `PanelMessage` (extension → webview) and `WebviewMessage` (webview → extension).
+- **`emulator-viewmodel.ts`** — Tracks panel state: `running`, `speed`, `viewMode`. Defines three display modes (`full` 768×312, `border` 544×288, `borderless` 512×256), forwards native-cropped RGBA frames, and produces overlay messages. Typed message types: `PanelMessage` (extension → webview) and `WebviewMessage` (webview → extension).
 - **`emulator-panel.ts`** — Creates and manages a `vscode.WebviewPanel`. Generates HTML with CSP nonce, routes `WebviewMessage` from the webview to `EmulatorLifecycle`/`IpcClient`, drives a frame polling loop (~50 fps) that calls `GET_FRAME_RAW`, crops/converts via the viewmodel, and posts `PanelMessage` to the webview.
 - **`emulator-settings-controller.ts`** — Shared authority for Speed and Display mode validation, emulator IPC updates, and active-project persistence.
 - **`emulator-settings-panel.ts`** — Dedicated Settings editor panel for Speed and Display mode.
@@ -80,6 +80,8 @@ Rows contain only a 16-bit address, instruction bytes, and v6emul's undecorated 
 `Scripts` is a standalone editor panel for server-owned Lua scripts loaded from absolute server-local paths. It filters Name with case-insensitive substring or `*` glob semantics, edits Name and Path inline, toggles requested Activity, and exposes Compile, Run Once, Disable, Disable All, Delete, and Delete All. Compilation or runtime failures color the row with the VS Code error foreground while retaining icon and tooltip indicators.
 
 `ScriptService` validates script schema 1, commands `84..88` and `105..109`, snapshots, runtime states, collection revisions, portable generic paths, and advertised limits. Mutation snapshots are applied directly; visible panels poll the lightweight update revision and fetch the complete ascending-ID collection only when needed. Mutations and Run Once are gated independently while emulation runs.
+
+When v6emul independently advertises script-overlay schema 1 and command `110` (`DEBUG_SCRIPT_OVERLAY_GET`), `ScriptOverlayService` consumes retained overlay deltas into one connection-scoped cache. Empty delta responses do not clear that cache. Successful script deactivation and deletion operations explicitly remove their cached overlays because the protocol has no deletion tombstones. The Display polls overlays only while visible and connected, including while globally hidden, and renders text and rectangles on a pointer-transparent canvas above the framebuffer. Servers without the overlay capability continue to use the normal Display and Scripts behavior without overlay requests.
 
 ## Watchpoints
 

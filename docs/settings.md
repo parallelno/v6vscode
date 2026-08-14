@@ -5,6 +5,10 @@
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `v6.logLevel` | enum | `"info"` | Logging verbosity (error/warn/info/debug) |
+| `v6.scriptOverlays.hidden` | boolean | `false` | Hide all script overlays in the emulator Display |
+| `v6.scriptOverlays.fontSize` | integer | `12` | Script overlay text size in framebuffer pixels (`6..48`) |
+
+Script overlay settings are global VS Code user preferences. They are not stored in project JSON and remain available when no V6 project is active.
 
 ## Tool Resolution
 

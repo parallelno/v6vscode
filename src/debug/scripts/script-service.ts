@@ -86,7 +86,7 @@ export class ScriptService extends EventEmitter {
 
     edit(scriptId: number, input: ScriptInput): Promise<ScriptSnapshot> {
         return this.mutate(false, async () => {
-            this.requireEntry(scriptId);
+            const previous = this.requireEntry(scriptId);
             const request = this.validate(input);
             const response = await this.client.send<unknown>(
                 IpcCommand.DEBUG_SCRIPT_EDIT, { scriptId, ...request }, 5000, 'high',
@@ -98,6 +98,7 @@ export class ScriptService extends EventEmitter {
                 throw new Error(`Edited script ${scriptId} does not match the acknowledged input`);
             }
             this.applyMutation(result.script, result.updates);
+            if (previous.active && !result.script.active) { this.emit('overlayRemove', scriptId); }
             return result.script;
         });
     }
@@ -120,6 +121,7 @@ export class ScriptService extends EventEmitter {
                 throw new Error(`Script ${scriptId} was not disabled`);
             }
             this.applyMutation(result.script, result.updates);
+            this.emit('overlayRemove', scriptId);
             return result.script;
         });
     }
@@ -157,12 +159,14 @@ export class ScriptService extends EventEmitter {
 
     disableAll(): Promise<number> {
         return this.mutate(false, async () => {
+            const activeScriptIds = this.entries.filter(entry => entry.active).map(entry => entry.scriptId);
             const response = await this.client.send<unknown>(
                 IpcCommand.DEBUG_SCRIPT_DISABLE_ALL, {}, 5000, 'high',
             );
             const data = objectData(this.responseData(response, 'Unable to disable all scripts'));
             const disabled = integer(data.disabled, 'disabled', 0, this.entries.length);
             await this.refreshNow();
+            for (const scriptId of activeScriptIds) { this.emit('overlayRemove', scriptId); }
             return disabled;
         });
     }
@@ -173,6 +177,7 @@ export class ScriptService extends EventEmitter {
             await this.sendMutation(IpcCommand.DEBUG_SCRIPT_DEL, { scriptId });
             await this.refreshNow();
             if (this.find(scriptId)) { throw new Error(`Script ${scriptId} was not deleted`); }
+            this.emit('overlayRemove', scriptId);
         });
     }
 
@@ -181,6 +186,7 @@ export class ScriptService extends EventEmitter {
             await this.sendMutation(IpcCommand.DEBUG_SCRIPT_DEL_ALL, {});
             await this.refreshNow();
             if (this.entries.length) { throw new Error('Not all scripts were deleted'); }
+            this.emit('overlayClear');
         });
     }
 
@@ -284,6 +290,7 @@ export class ScriptService extends EventEmitter {
         this.generation++;
         this.entries = Object.freeze([]);
         this.revision = undefined;
+        this.emit('sessionReset');
         this.emit('change', this.entries);
     }
 }

@@ -344,37 +344,39 @@ In an Extension Development Host against the implemented schema-1 v6emul, verify
 
 ### Protocol and cache
 
-- [ ] Add command `110`, overlay protocol models, and capability fields.
-- [ ] Validate overlay capabilities independently from base Scripts support.
-- [ ] Implement strict overlay response decoding and server-limit enforcement.
-- [ ] Implement the serialized, generation-aware retained overlay cache.
-- [ ] Clear and rehydrate the cache across disconnect and reconnect.
-- [ ] Reconcile removals after successful edit, disable, and delete operations.
-- [ ] Preserve inactive Run Once overlays until an explicit removal operation.
+- [x] Add command `110`, overlay protocol models, and capability fields.
+- [x] Validate overlay capabilities independently from base Scripts support.
+- [x] Implement strict overlay response decoding and server-limit enforcement.
+- [x] Implement the serialized, generation-aware retained overlay cache.
+- [x] Clear and rehydrate the cache across disconnect and reconnect.
+- [x] Reconcile removals after successful edit, disable, and delete operations.
+- [x] Preserve inactive Run Once overlays until an explicit removal operation.
 
 ### Global settings
 
-- [ ] Contribute `v6.scriptOverlays.hidden` as a global boolean setting.
-- [ ] Contribute `v6.scriptOverlays.fontSize` with default `12` and range `6..48`.
-- [ ] Read, validate, persist, and observe both settings in `EmulatorSettingsController`.
-- [ ] Add Hide All Overlays and Font Size controls to the Settings panel.
-- [ ] Keep overlay controls available without an active project.
-- [ ] Confirm overlay preferences never modify project JSON.
+- [x] Contribute `v6.scriptOverlays.hidden` as a global boolean setting.
+- [x] Contribute `v6.scriptOverlays.fontSize` with default `12` and range `6..48`.
+- [x] Read, validate, persist, and observe both settings in `EmulatorSettingsController`.
+- [x] Add Hide All Overlays and Font Size controls to the Settings panel.
+- [x] Keep overlay controls available without an active project.
+- [x] Confirm overlay preferences never modify project JSON.
 
 ### Display rendering
 
-- [ ] Implement pure coordinate, crop, clipping, and RGBA conversion helpers.
-- [ ] Add a pointer-transparent overlay canvas above the framebuffer canvas.
-- [ ] Render text with a monospace font and rectangles in stable server order.
-- [ ] Redraw overlays independently for cache, visibility, and font changes.
-- [ ] Integrate visible-only overlay polling in running and paused states.
-- [ ] Continue ingesting deltas while overlays are globally hidden.
-- [ ] Preserve keyboard input and existing framebuffer rendering behavior.
+- [x] Implement pure coordinate, crop, clipping, and RGBA conversion helpers.
+- [x] Add a pointer-transparent overlay canvas above the framebuffer canvas.
+- [x] Render text with a monospace font and rectangles in stable server order.
+- [x] Redraw overlays independently for cache, visibility, and font changes.
+- [x] Integrate visible-only overlay polling in running and paused states.
+- [x] Continue ingesting deltas while overlays are globally hidden.
+- [x] Preserve keyboard input and existing framebuffer rendering behavior.
 
 ### Quality and documentation
 
-- [ ] Add protocol, codec, cache, settings, geometry, and rendering unit tests.
-- [ ] Add unsupported-server, lifecycle, panel reopen, and polling regression tests.
-- [ ] Update emulator, settings, and architecture documentation.
-- [ ] Run compile, lint, unit, regression, and integration validation.
+- [x] Add protocol, codec, cache, settings, geometry, and rendering unit tests.
+- [x] Add unsupported-server, lifecycle, panel reopen, and polling regression tests.
+- [x] Update emulator, settings, and architecture documentation.
+- [x] Run compile, lint, unit, regression, and integration validation.
 - [ ] Complete the Extension Development Host acceptance checks.
+
+The remaining manual acceptance check requires an Extension Development Host connected to the schema-1 v6emul server and representative Lua overlays. Automated validation cannot inspect the rendered overlay pixels or exercise the server's retained overlay replay.

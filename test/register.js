@@ -34,6 +34,7 @@ const mockVscode = {
         }
     },
     TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
+    ConfigurationTarget: { Global: 1 },
     RelativePattern: class RelativePattern {
         constructor(base, pattern) {
             this.base = base;

@@ -7,6 +7,7 @@ import {
     validateMemoryEditServer,
     validatePerformanceServer,
     validateScriptServer,
+    validateScriptOverlayServer,
     validateWatchpointServer,
 } from '../../../src/emulator/protocol/ipc-server-info';
 import { IpcCommand, IpcResponse } from '../../../src/emulator/protocol/ipc-commands';
@@ -396,5 +397,37 @@ describe('validateScriptServer', () => {
                 scriptLimits: { ...info.capabilities.scriptLimits, maxPathBytes: 0 },
             },
         })).to.throw('does not provide script schema 1');
+    });
+});
+
+describe('validateScriptOverlayServer', () => {
+    const info = {
+        protocolVersion: 2,
+        emulatorVersion: 'test-build',
+        commands: [IpcCommand.DEBUG_SCRIPT_OVERLAY_GET],
+        capabilities: {
+            debugger: true, rawFrame: true, rawFrameSchema: 1, stackSampleSchema: 1,
+            scriptOverlaySchema: 1, scriptOverlayRetained: true, scriptOverlayConsumesUpdates: true,
+            scriptOverlayVectorScreenCoords: true, scriptOverlayColorFormat: 'RRGGBBAA',
+            scriptOverlayLimits: {
+                maxItemsPerScript: 16, maxItemsTotal: 64, maxTextBytes: 1024, maxCoordinateMagnitude: 1000000,
+            },
+        },
+    };
+
+    it('requires the independent schema, command, flags, and positive limits', () => {
+        expect(() => validateScriptOverlayServer(info)).not.to.throw();
+        expect(() => validateScriptOverlayServer({ ...info, commands: [] }))
+            .to.throw('does not provide script-overlay schema 1');
+        expect(() => validateScriptOverlayServer({
+            ...info, capabilities: { ...info.capabilities, scriptOverlayRetained: false },
+        })).to.throw('does not provide script-overlay schema 1');
+        expect(() => validateScriptOverlayServer({
+            ...info,
+            capabilities: {
+                ...info.capabilities,
+                scriptOverlayLimits: { ...info.capabilities.scriptOverlayLimits, maxTextBytes: 0 },
+            },
+        })).to.throw('does not provide script-overlay schema 1');
     });
 });

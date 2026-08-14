@@ -8,13 +8,16 @@
 
     const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById('screen'));
     const ctx = canvas.getContext('2d');
+    const overlayCanvas = /** @type {HTMLCanvasElement} */ (document.getElementById('overlays'));
+    const overlayCtx = overlayCanvas.getContext('2d');
     const viewport = /** @type {HTMLDivElement} */ (document.getElementById('viewport'));
     const errorBar = /** @type {HTMLDivElement} */ (document.getElementById('error-bar'));
 
     let isWebviewFocused = document.hasFocus();
+    let overlayState = { overlays: [], hidden: false, fontSize: 12 };
 
     function resizeScreen() {
-        const aspectRatio = 4 / 3;
+        const aspectRatio = canvas.width && canvas.height ? canvas.width / canvas.height : 4 / 3;
         const viewportWidth = viewport.clientWidth;
         const viewportHeight = viewport.clientHeight;
         const width = Math.min(viewportWidth, viewportHeight * aspectRatio);
@@ -22,6 +25,8 @@
 
         canvas.style.width = `${Math.floor(width)}px`;
         canvas.style.height = `${Math.floor(height)}px`;
+        overlayCanvas.style.width = `${Math.floor(width)}px`;
+        overlayCanvas.style.height = `${Math.floor(height)}px`;
     }
 
     new ResizeObserver(resizeScreen).observe(viewport);
@@ -32,6 +37,10 @@
         switch (msg.type) {
             case 'frame':
                 renderFrame(msg.width, msg.height, msg.pixels);
+                break;
+            case 'overlays':
+                overlayState = msg;
+                renderOverlays();
                 break;
             case 'error':
                 showError(msg.message);
@@ -47,12 +56,16 @@
         if (canvas.width !== width || canvas.height !== height) {
             canvas.width = width;
             canvas.height = height;
+            overlayCanvas.width = width;
+            overlayCanvas.height = height;
+            document.getElementById('canvas-stack').style.aspectRatio = `${width} / ${height}`;
         }
         resizeScreen();
         // pixels arrives as Uint8Array via structured clone — wrap directly as ImageData
         const clamped = new Uint8ClampedArray(pixels.buffer || pixels);
         const imageData = new ImageData(clamped, width, height);
         ctx.putImageData(imageData, 0, 0);
+        renderOverlays();
         hideError();
     }
 
@@ -60,7 +73,52 @@
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         canvas.width = 0;
         canvas.height = 0;
+        overlayCanvas.width = 0;
+        overlayCanvas.height = 0;
+        overlayState = { overlays: [], hidden: false, fontSize: 12 };
         hideError();
+    }
+
+    function renderOverlays() {
+        if (!overlayCtx || !overlayCanvas.width || !overlayCanvas.height) {
+            return;
+        }
+        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        if (overlayState.hidden) {
+            return;
+        }
+        overlayCtx.font = `${overlayState.fontSize}px monospace`;
+        overlayCtx.textAlign = 'left';
+        overlayCtx.textBaseline = 'top';
+        for (const overlay of overlayState.overlays) {
+            if ((overlay.color & 0xFF) === 0) {
+                continue;
+            }
+            overlayCtx.save();
+            overlayCtx.beginPath();
+            overlayCtx.rect(overlay.clipX, overlay.clipY, overlay.clipWidth, overlay.clipHeight);
+            overlayCtx.clip();
+            overlayCtx.fillStyle = rgba(overlay.color);
+            overlayCtx.strokeStyle = rgba(overlay.color);
+            if (overlay.type === 'text') {
+                overlayCtx.fillText(overlay.text, overlay.x, overlay.y);
+            } else if (overlay.filled) {
+                overlayCtx.fillRect(overlay.x, overlay.y, overlay.width, overlay.height);
+            } else {
+                overlayCtx.lineWidth = 1;
+                overlayCtx.strokeRect(overlay.x + 0.5, overlay.y + 0.5, overlay.width, overlay.height);
+            }
+            overlayCtx.restore();
+        }
+    }
+
+    function rgba(color) {
+        const value = color >>> 0;
+        const red = (value >>> 24) & 0xFF;
+        const green = (value >>> 16) & 0xFF;
+        const blue = (value >>> 8) & 0xFF;
+        const alpha = (value & 0xFF) / 255;
+        return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
     }
 
     // --- Error display ---

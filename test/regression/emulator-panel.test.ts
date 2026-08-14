@@ -1,4 +1,6 @@
 import { expect } from 'chai';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
     EmulatorViewModel,
     abgrToRgba,
@@ -6,6 +8,28 @@ import {
 } from '../../src/emulator/panel/emulator-viewmodel';
 
 describe('Emulator panel regression tests', () => {
+
+    it('keeps the transparent overlay canvas in both Display templates', () => {
+        const root = path.resolve(__dirname, '..', '..');
+        const template = fs.readFileSync(path.join(root, 'src/emulator/panel/assets/panel.html'), 'utf8');
+        const provider = fs.readFileSync(path.join(root, 'src/emulator/panel/emulator-panel.ts'), 'utf8');
+        const script = fs.readFileSync(path.join(root, 'src/emulator/panel/assets/panel.js'), 'utf8');
+        const stylesheet = fs.readFileSync(path.join(root, 'src/emulator/panel/assets/panel.css'), 'utf8');
+        expect(template).to.include('id="canvas-stack"');
+        expect(template).to.include('id="overlays"');
+        expect(provider).to.include("'            <canvas id=\"overlays\"></canvas>'");
+        expect(script).to.include("case 'overlays':");
+        expect(stylesheet).to.include('pointer-events: none');
+    });
+
+    it('polls overlays only for a visible compatible Display and retains hidden deltas', () => {
+        const root = path.resolve(__dirname, '..', '..');
+        const provider = fs.readFileSync(path.join(root, 'src/emulator/panel/emulator-panel.ts'), 'utf8');
+        expect(provider).to.include('!this.panel?.visible || !this.lifecycle.connected || !this.overlays.available');
+        expect(provider).to.include('this.stopOverlayPolling();');
+        expect(provider).to.include('setInterval(() => void this.requestOverlays(), OVERLAY_POLL_INTERVAL_MS)');
+        expect(provider).to.include('state.scriptOverlaysHidden');
+    });
 
     describe('Panel close/reopen without restart', () => {
         it('should preserve viewmodel state across simulated panel close and reopen', () => {
