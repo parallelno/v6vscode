@@ -45,7 +45,7 @@ export class V6DebugConfigurationProvider implements vscode.DebugConfigurationPr
     ): Promise<vscode.DebugConfiguration | undefined> {
         // If config is empty (F5 with no launch.json), inject debugger defaults.
         if (!config.type && !config.request) {
-            const project = await this.getOrResolveProject();
+            const project = await this.resolveProjectForLaunch();
             if (!project) {
                 vscode.window.showErrorMessage(
                     'V6: No active project found. Open a workspace containing a *.project.json file.',
@@ -61,7 +61,7 @@ export class V6DebugConfigurationProvider implements vscode.DebugConfigurationPr
 
         // Launch settings come exclusively from the active project file.
         if (config.request === 'launch') {
-            const project = await this.getOrResolveProject();
+            const project = await this.resolveProjectForLaunch();
             if (!project) {
                 vscode.window.showErrorMessage(
                     'V6: No active project found. Open a workspace containing a *.project.json file.',
@@ -99,6 +99,10 @@ export class V6DebugConfigurationProvider implements vscode.DebugConfigurationPr
     private async getOrResolveProject() {
         return this.activeProjectService.getActiveProject()
             ?? await this.activeProjectService.resolve();
+    }
+
+    private async resolveProjectForLaunch() {
+        return this.activeProjectService.resolve();
     }
 
     private defaultLaunchConfig(): vscode.DebugConfiguration {
