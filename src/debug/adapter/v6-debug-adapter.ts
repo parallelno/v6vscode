@@ -1454,7 +1454,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                 backgroundColor: '#d96e045b',
                 after: {
                     contentText: ' Source is unavailable.',
-                    color: '#f8dbcb',
+                    color: '#f6ece6',
                     fontStyle: 'italic',
                     margin: '0 0 0 1em',
                 },
