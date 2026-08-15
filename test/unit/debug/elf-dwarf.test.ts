@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { parseElf32, readULEB128, readSLEB128, ELFCLASS32, ELFDATA2LSB, SHN_ABS, SHT_SYMTAB } from '../../../src/debug/metadata/elf32-reader';
 import { parseDwarf4LineFiles, parseDwarf4LineSection } from '../../../src/debug/metadata/dwarf4-line-reader';
+import { parseDwarf4CompilationDirectories } from '../../../src/debug/metadata/dwarf4-info-reader';
 import { buildDebugIndex } from '../../../src/debug/metadata/debug-index';
 import { loadDebugArtifact } from '../../../src/debug/metadata/debug-artifact-loader';
 
@@ -46,6 +47,38 @@ describe('readSLEB128', () => {
     it('decodes 63', () => {
         const [v] = readSLEB128(Buffer.from([0x3F]), 0);
         expect(v).to.equal(63);
+    });
+});
+
+describe('parseDwarf4CompilationDirectories', () => {
+    it('reads DW_AT_comp_dir through the compilation-unit abbreviation', () => {
+        const abbrev = Buffer.from([
+            0x01, 0x11, 0x00, // code, DW_TAG_compile_unit, no children
+            0x1B, 0x0E,       // DW_AT_comp_dir, DW_FORM_strp
+            0x00, 0x00,       // attribute list terminator
+            0x00,             // abbreviation table terminator
+        ]);
+        const info = Buffer.from([
+            0x09, 0x00, 0x00, 0x00, // unit length
+            0x04, 0x00,             // DWARF v4
+            0x00, 0x00, 0x00, 0x00, // abbreviation offset
+            0x02,                   // address size
+            0x01,                   // compilation-unit abbreviation code
+            0x00, 0x00, 0x00, 0x00, // .debug_str offset
+        ]);
+
+        expect(parseDwarf4CompilationDirectories(info, abbrev, Buffer.from('C:\\project\0')))
+            .to.deep.equal(['C:\\project']);
+    });
+
+    it('returns no directories when compilation units omit DW_AT_comp_dir', () => {
+        const abbrev = Buffer.from([0x01, 0x11, 0x00, 0x00, 0x00, 0x00]);
+        const info = Buffer.from([
+            0x05, 0x00, 0x00, 0x00, 0x04, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x02, 0x01,
+        ]);
+
+        expect(parseDwarf4CompilationDirectories(info, abbrev, Buffer.alloc(0))).to.deep.equal([]);
     });
 });
 

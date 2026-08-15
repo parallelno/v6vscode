@@ -8,9 +8,10 @@
  */
 
 import * as fs from 'fs';
+import * as path from 'path';
 import { parseElf32 } from './elf32-reader';
 import { parseDwarf4LineFiles, parseDwarf4LineSection } from './dwarf4-line-reader';
-import { parseDwarf4VariableDeclarations } from './dwarf4-info-reader';
+import { parseDwarf4CompilationDirectories, parseDwarf4VariableDeclarations } from './dwarf4-info-reader';
 import { buildDebugIndex, DebugIndex } from './debug-index';
 
 // ---------------------------------------------------------------------------
@@ -22,8 +23,14 @@ import { buildDebugIndex, DebugIndex } from './debug-index';
  * .debug_info attribute forms. Guessing from .debug_str is unsafe because
  * source filenames and include directories use the same string table.
  */
-function extractCompDir(): string {
-    return '';
+function extractCompDir(
+    debugInfo: Buffer | undefined,
+    debugAbbrev: Buffer | undefined,
+    debugStrings: Buffer | undefined,
+): string {
+    if (!debugInfo || !debugAbbrev || !debugStrings) { return ''; }
+    return parseDwarf4CompilationDirectories(debugInfo, debugAbbrev, debugStrings)
+        .find(directory => path.isAbsolute(directory)) ?? '';
 }
 
 // ---------------------------------------------------------------------------
@@ -79,8 +86,12 @@ export async function loadDebugArtifact(elfPath: string, romPath = ''): Promise<
     const elfBuf = fs.readFileSync(elfPath);
     const elf = parseElf32(elfBuf);
 
-    // Extract compilation directory
-    const compDir = extractCompDir();
+    const debugInfo = elf.sections.find(section => section.name === '.debug_info');
+    const debugAbbrev = elf.sections.find(section => section.name === '.debug_abbrev');
+    const debugStrings = elf.sections.find(section => section.name === '.debug_str');
+
+    // Extract compilation directory before resolving relative line-table paths.
+    const compDir = extractCompDir(debugInfo?.data, debugAbbrev?.data, debugStrings?.data);
 
     // Parse line rows
     const debugLine = elf.sections.find(s => s.name === '.debug_line');
@@ -88,9 +99,6 @@ export async function loadDebugArtifact(elfPath: string, romPath = ''): Promise<
         ? parseDwarf4LineSection(debugLine.data, elf.addressSize, compDir)
         : [];
     const files = debugLine ? parseDwarf4LineFiles(debugLine.data, compDir) : [];
-    const debugInfo = elf.sections.find(section => section.name === '.debug_info');
-    const debugAbbrev = elf.sections.find(section => section.name === '.debug_abbrev');
-    const debugStrings = elf.sections.find(section => section.name === '.debug_str');
     const declarations = debugInfo && debugAbbrev && debugStrings
         ? parseDwarf4VariableDeclarations(debugInfo.data, debugAbbrev.data, debugStrings.data, files)
         : [];

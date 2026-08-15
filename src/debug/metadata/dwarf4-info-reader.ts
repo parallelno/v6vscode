@@ -1,6 +1,8 @@
 import { readCString, readSLEB128, readULEB128 } from './elf32-reader';
 
+const DW_TAG_COMPILE_UNIT = 0x11;
 const DW_TAG_VARIABLE = 0x34;
+const DW_AT_COMP_DIR = 0x1B;
 const DW_AT_NAME = 0x03;
 const DW_AT_CONST_VALUE = 0x1C;
 const DW_AT_DECL_FILE = 0x3A;
@@ -25,6 +27,39 @@ export interface DwarfVariableDeclaration {
     file: string;
     line: number;
     value: number;
+}
+
+/** Return the compilation directories declared by DWARF compilation units. */
+export function parseDwarf4CompilationDirectories(
+    info: Buffer,
+    abbrev: Buffer,
+    strings: Buffer,
+): string[] {
+    const directories: string[] = [];
+    let unitOffset = 0;
+    while (unitOffset + 11 <= info.length) {
+        const unitLength = info.readUInt32LE(unitOffset);
+        if (unitLength === 0 || unitOffset + 4 + unitLength > info.length) { break; }
+        const abbrevOffset = info.readUInt32LE(unitOffset + 6);
+        const abbreviations = readAbbreviations(abbrev, abbrevOffset);
+        let offset = unitOffset + 11;
+        const unitEnd = unitOffset + 4 + unitLength;
+
+        const [code, codeLength] = readULEB128(info, offset);
+        offset += codeLength;
+        const abbreviation = abbreviations.get(code);
+        if (code !== 0 && abbreviation?.tag === DW_TAG_COMPILE_UNIT) {
+            for (const attribute of abbreviation.attributes) {
+                const decoded = readForm(info, offset, attribute.form, strings);
+                offset = decoded.offset;
+                if (attribute.name === DW_AT_COMP_DIR && typeof decoded.value === 'string') {
+                    directories.push(decoded.value);
+                }
+            }
+        }
+        unitOffset = unitEnd;
+    }
+    return directories;
 }
 
 /** Read v6asm's DWARF v4 variable declarations for absolute constants. */
