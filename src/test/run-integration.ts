@@ -31,6 +31,8 @@ const yauzl = require('yauzl') as YauzlApi;
 
 async function main(): Promise<void> {
     const extensionRoot = path.resolve(__dirname, '../..');
+    const integrationWorkspace = path.join(extensionRoot, 'temp', 'integration-debug-workspace');
+    await prepareIntegrationWorkspace(extensionRoot, integrationWorkspace);
     const packaged = process.argv.includes('--packaged');
     const packagedRoot = path.join(extensionRoot, 'temp', 'packaged-extension');
     if (packaged) {
@@ -49,8 +51,25 @@ async function main(): Promise<void> {
         extensionTestsEnv: {
             V6_EXPECT_PACKAGED: packaged ? 'true' : 'false',
             V6_EXTENSION_ROOT: extensionRoot,
+            V6_DEBUG_INTEGRATION_WORKSPACE: integrationWorkspace,
         },
+        launchArgs: [integrationWorkspace],
     });
+}
+
+async function prepareIntegrationWorkspace(extensionRoot: string, workspace: string): Promise<void> {
+    const projectRoot = path.join(extensionRoot, 'temp', 'project');
+    await fs.rm(workspace, { recursive: true, force: true });
+    await fs.mkdir(workspace, { recursive: true });
+    await fs.writeFile(path.join(workspace, 'demo2.project.json'), JSON.stringify({
+        name: 'demo2-integration',
+        run: {
+            executable: path.join(projectRoot, 'out', 'demo2.rom'),
+            debugArtifact: path.join(projectRoot, 'out', 'demo2.elf'),
+            loadAddr: '0x100',
+            speed: 'max',
+        },
+    }, null, 2));
 }
 
 async function extractVsix(vsixPath: string, destination: string): Promise<void> {

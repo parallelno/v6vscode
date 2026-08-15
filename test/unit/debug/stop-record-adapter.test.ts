@@ -166,6 +166,45 @@ describe('V6DebugAdapter stop records', () => {
         expect(executionStates).to.deep.equal([false]);
     });
 
+    it('reports a manual pause when the stop-record sequence does not advance', async () => {
+        const { adapter, messages, executionStates } = makeAdapter();
+        (adapter as any).stopRecordsSupported = true;
+        (adapter as any).lastStopSequence = 4;
+        (adapter as any).pendingPause = true;
+        (adapter as any).client = {
+            send: async (command: IpcCommand) => {
+                if (command === IpcCommand.IS_RUNNING) {
+                    return { ok: true, data: { isRunning: false } };
+                }
+                if (command === IpcCommand.GET_STOP_RECORD) {
+                    return {
+                        ok: true,
+                        data: {
+                            sequence: 4,
+                            reason: 'pause',
+                            pc: 0x100,
+                            globalInstructionAddress: 0x100,
+                        },
+                    };
+                }
+                if (command === IpcCommand.GET_REGS) {
+                    return { ok: true, data: { pc: 0x100 } };
+                }
+                if (command === IpcCommand.DEBUG_BREAKPOINT_GET_ALL) {
+                    return { ok: true, data: [] };
+                }
+                return { ok: true };
+            },
+        };
+
+        (adapter as any).startPoll();
+        await new Promise(resolve => setTimeout(resolve, 50));
+        (adapter as any).stopPoll();
+
+        expect(messages.find(message => message.event === 'stopped')?.body.reason).to.equal('pause');
+        expect(executionStates).to.deep.equal([false]);
+    });
+
     it('clears lifecycle session state when the toolbar action is Alt+Disconnect', async () => {
         let detached = 0;
         let stopped = 0;

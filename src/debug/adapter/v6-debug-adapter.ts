@@ -1281,6 +1281,14 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                 if (stopped) {
                     const record = this.stopRecordsSupported ? await this.readStopRecord() : undefined;
                     if (record && record.sequence === this.lastStopSequence) {
+                        if (this.pendingPause) {
+                            this.pollingActive = false;
+                            this.pollTimer = null;
+                            this.sessionState = 'paused';
+                            this.lifecycle.setExecutionRunning(false);
+                            await this.onStop();
+                            return;
+                        }
                         this.pollTimer = setTimeout(poll, POLL_INTERVAL_MS);
                         return;
                     }

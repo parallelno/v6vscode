@@ -11,6 +11,8 @@ import { loadDebugArtifact } from '../../../src/debug/metadata/debug-artifact-lo
 // Path to the companion ELF built by `make` in the test project
 const ELF_PATH = path.join(__dirname, '..', '..', '..', 'temp', 'project', 'out', 'demo1.elf');
 const ELF_EXISTS = fs.existsSync(ELF_PATH);
+const C_ELF_PATH = path.join(__dirname, '..', '..', '..', 'temp', 'project', 'out', 'demo2.elf');
+const C_ELF_EXISTS = fs.existsSync(C_ELF_PATH);
 
 // ---------------------------------------------------------------------------
 // LEB128 helpers
@@ -79,6 +81,54 @@ describe('parseDwarf4CompilationDirectories', () => {
         ]);
 
         expect(parseDwarf4CompilationDirectories(info, abbrev, Buffer.alloc(0))).to.deep.equal([]);
+    });
+});
+
+describe('DWARF v5 line reader', () => {
+    it('reads typed directory and file entries needed for source breakpoints', () => {
+        const header = Buffer.from([
+            0x05, 0x00, // version
+            0x02, 0x00, // address size, segment selector size
+            0x00, 0x00, 0x00, 0x00, // header length (written below)
+            0x01, 0x01, 0x01, 0xFB, 0x0E, 0x0D, // line-program parameters
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x01, 0x01, 0x08, 0x01, 0x73, 0x72, 0x63, 0x00, // directory: path = "src"
+            0x02, 0x01, 0x08, 0x02, 0x0F, 0x01, // file formats: path, directory index, entry count
+            0x6D, 0x61, 0x69, 0x6E, 0x2E, 0x63, 0x00, 0x00, // main.c, dir 0
+        ]);
+        const program = Buffer.from([
+            0x00, 0x03, 0x02, 0x00, 0x01, // set_address 0x0100
+            0x01, // copy
+            0x00, 0x01, 0x01, // end_sequence
+        ]);
+        header.writeUInt32LE(header.length - 8, 4);
+        const unitLength = Buffer.alloc(4);
+        unitLength.writeUInt32LE(header.length + program.length, 0);
+        const section = Buffer.concat([unitLength, header, program]);
+
+        const row = parseDwarf4LineSection(section, 2).find(candidate => candidate.address === 0x100)!;
+        expect(row.file).to.equal(path.join('src', 'main.c'));
+        expect(row.line).to.equal(1);
+        expect(row.column).to.equal(0);
+        expect(row.isStmt).to.equal(true);
+        expect(parseDwarf4LineFiles(section)).to.deep.equal([path.join('src', 'main.c')]);
+    });
+});
+
+describe('DebugIndex source paths', () => {
+    it('resolves Windows editor paths without drive-letter case sensitivity', () => {
+        const windowsIndex = buildDebugIndex([{
+            address: 0x1234,
+            file: 'C:\\Project\\Src\\main.c',
+            line: 17,
+            column: 1,
+            isStmt: true,
+        }], [], '');
+
+        expect(windowsIndex.resolveBreakpoint('c:\\project\\src\\MAIN.c', 17)).to.deep.equal({
+            address: 0x1234,
+            verifiedLine: 17,
+        });
     });
 });
 
@@ -342,5 +392,22 @@ describe('parseDwarf4CompilationDirectories', () => {
         } finally {
             fs.unlinkSync(mismatchedRom);
         }
+    });
+});
+
+(C_ELF_EXISTS ? describe : describe.skip)('Debug artifact loader against demo2.elf', () => {
+    it('indexes C source paths without requiring unsupported local-variable metadata', async () => {
+        const projectRoot = path.dirname(path.dirname(C_ELF_PATH));
+        const sourcePath = path.join(projectRoot, 'src2', 'main.c');
+        const result = await loadDebugArtifact(C_ELF_PATH, path.join(path.dirname(C_ELF_PATH), 'demo2.rom'));
+
+        expect(result.compDir).to.equal('');
+        expect(result.index.sourceFiles).to.include(sourcePath);
+        const breakpoint = result.index.resolveBreakpoint(sourcePath, 70);
+        expect(breakpoint).to.not.equal(undefined);
+        expect(result.index.resolveAddress(breakpoint!.address)).to.include({
+            file: sourcePath,
+            line: breakpoint!.verifiedLine,
+        });
     });
 });

@@ -9,7 +9,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { parseElf32 } from './elf32-reader';
+import { parseElf32, SHF_ALLOC, SHT_PROGBITS } from './elf32-reader';
 import { parseDwarf4LineFiles, parseDwarf4LineSection } from './dwarf4-line-reader';
 import { parseDwarf4CompilationDirectories, parseDwarf4VariableDeclarations } from './dwarf4-info-reader';
 import { buildDebugIndex, DebugIndex } from './debug-index';
@@ -29,8 +29,13 @@ function extractCompDir(
     debugStrings: Buffer | undefined,
 ): string {
     if (!debugInfo || !debugAbbrev || !debugStrings) { return ''; }
-    return parseDwarf4CompilationDirectories(debugInfo, debugAbbrev, debugStrings)
-        .find(directory => path.isAbsolute(directory)) ?? '';
+    try {
+        return parseDwarf4CompilationDirectories(debugInfo, debugAbbrev, debugStrings)
+            .find(directory => path.isAbsolute(directory)) ?? '';
+    } catch (error: any) {
+        if (!String(error?.message ?? error).startsWith('Unsupported DWARF attribute form')) { throw error; }
+        return '';
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -38,25 +43,32 @@ function extractCompDir(
 // ---------------------------------------------------------------------------
 
 /**
- * Verify that the ELF's .text section byte-content matches the flat ROM.
+ * Verify that the ELF's loadable section bytes match the flat ROM.
  * Returns a warning string if mismatch detected, undefined if OK or skipped.
  *
- * The ROM file is a flat binary whose byte 0 corresponds to CPU address
- * text.addr (the load address, e.g. 0x0100). Therefore the file offset into
- * the ROM is always 0 for a direct-ROM companion ELF — do NOT use text.addr
- * as a byte offset.
+ * The ROM file is a flat image whose byte 0 corresponds to the lowest loadable
+ * section address. C artifacts commonly split this image across .text and
+ * .data, while assembly companions may contain only .text.
  */
 function validateRomElf(elf: ReturnType<typeof parseElf32>, romPath: string): string | undefined {
     if (!romPath || !fs.existsSync(romPath)) { return undefined; }
-    const text = elf.sections.find(s => s.name === '.text');
-    if (!text) { return undefined; }
+    const loadableSections = elf.sections
+        .filter(section => section.type === SHT_PROGBITS && (section.flags & SHF_ALLOC) !== 0 && section.data.length > 0)
+        .sort((left, right) => left.addr - right.addr);
+    if (loadableSections.length === 0) { return undefined; }
 
     const rom = fs.readFileSync(romPath);
-    if (text.data.length !== rom.length) {
-        return `ELF .text size (${text.data.length} bytes) does not match ROM size (${rom.length} bytes) — rebuild with \`make\``;
+    const loadAddress = loadableSections[0].addr;
+    const imageEnd = Math.max(...loadableSections.map(section => section.addr + section.data.length));
+    const imageSize = imageEnd - loadAddress;
+    if (imageSize !== rom.length) {
+        return `ELF load image size (${imageSize} bytes) does not match ROM size (${rom.length} bytes) — rebuild with \`make\``;
     }
-    if (!text.data.equals(rom)) {
-        return `ELF .text content does not match ROM — rebuild with \`make\``;
+    for (const section of loadableSections) {
+        const offset = section.addr - loadAddress;
+        if (!section.data.equals(rom.subarray(offset, offset + section.data.length))) {
+            return `ELF ${section.name} content does not match ROM — rebuild with \`make\``;
+        }
     }
     return undefined;
 }
@@ -96,12 +108,18 @@ export async function loadDebugArtifact(elfPath: string, romPath = ''): Promise<
     // Parse line rows
     const debugLine = elf.sections.find(s => s.name === '.debug_line');
     const rows = debugLine
-        ? parseDwarf4LineSection(debugLine.data, elf.addressSize, compDir)
+        ? parseDwarf4LineSection(debugLine.data, elf.addressSize, compDir, debugStrings?.data, elf.sections.find(section => section.name === '.debug_line_str')?.data)
         : [];
-    const files = debugLine ? parseDwarf4LineFiles(debugLine.data, compDir) : [];
-    const declarations = debugInfo && debugAbbrev && debugStrings
-        ? parseDwarf4VariableDeclarations(debugInfo.data, debugAbbrev.data, debugStrings.data, files)
-        : [];
+    const files = debugLine ? parseDwarf4LineFiles(debugLine.data, compDir, debugStrings?.data, elf.sections.find(section => section.name === '.debug_line_str')?.data) : [];
+    let declarations: ReturnType<typeof parseDwarf4VariableDeclarations> = [];
+    const debugInfoVersion = debugInfo && debugInfo.data.length >= 6 ? debugInfo.data.readUInt16LE(4) : 0;
+    if (debugInfoVersion === 4 && debugInfo && debugAbbrev && debugStrings) {
+        try {
+            declarations = parseDwarf4VariableDeclarations(debugInfo.data, debugAbbrev.data, debugStrings.data, files);
+        } catch (error: any) {
+            if (!String(error?.message ?? error).startsWith('Unsupported DWARF attribute form')) { throw error; }
+        }
+    }
 
     // Build index
     const index = buildDebugIndex(rows, elf.symbols, compDir, declarations);

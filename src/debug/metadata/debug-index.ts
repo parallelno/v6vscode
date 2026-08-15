@@ -221,11 +221,18 @@ function normalizePath(f: string, compDir: string): string {
 }
 
 function resolveIndexedFile(file: string, sourceFiles: ReadonlyArray<string>): string | undefined {
-    if (sourceFiles.includes(file)) { return file; }
+    const caseInsensitive = process.platform === 'win32'
+        || path.win32.isAbsolute(file)
+        || sourceFiles.some(candidate => path.win32.isAbsolute(candidate));
+    const comparable = (value: string) => caseInsensitive ? value.toLowerCase() : value;
+    const comparableFile = comparable(file);
+    const exact = sourceFiles.find(candidate => comparable(candidate) === comparableFile);
+    if (exact) { return exact; }
 
-    const suffix = `${path.sep}${file}`;
+    const suffix = `${path.sep}${comparableFile}`;
     const matches = sourceFiles.filter(candidate =>
-        candidate.endsWith(suffix) || file.endsWith(`${path.sep}${candidate}`),
+        comparable(candidate).endsWith(suffix)
+        || comparableFile.endsWith(`${path.sep}${comparable(candidate)}`),
     );
     return matches.length === 1 ? matches[0] : undefined;
 }

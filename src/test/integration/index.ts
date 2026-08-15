@@ -4,6 +4,7 @@ import Mocha from 'mocha';
 export async function run(): Promise<void> {
     const mocha = new Mocha({ ui: 'tdd', color: true, timeout: 15_000 });
     mocha.addFile(path.resolve(__dirname, 'suite', 'extension-startup.test.js'));
+    mocha.addFile(path.resolve(__dirname, 'suite', 'c-source-breakpoint.test.js'));
 
     await new Promise<void>((resolve, reject) => {
         mocha.run(failures => {

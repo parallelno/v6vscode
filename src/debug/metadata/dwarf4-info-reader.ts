@@ -54,6 +54,7 @@ export function parseDwarf4CompilationDirectories(
                 offset = decoded.offset;
                 if (attribute.name === DW_AT_COMP_DIR && typeof decoded.value === 'string') {
                     directories.push(decoded.value);
+                    break;
                 }
             }
         }

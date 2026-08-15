@@ -296,6 +296,9 @@
     "breakpoints": [
       {
         "language": "asm"
+      },
+      {
+        "language": "c"
       }
     ],
     "debuggers": [
