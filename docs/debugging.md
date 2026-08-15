@@ -15,7 +15,7 @@ A project can declare its executable and default companion ELF together:
 }
 ```
 
-Paths are resolved relative to the `*.project.json` file. Debug metadata is always loaded from the active project's `run.debugArtifact`; launch configurations cannot override it.
+Paths are resolved relative to the `*.project.json` file. Debug launches use the active project's `run.executable`, `run.debugArtifact`, `run.bootRom`, `run.loadAddr`, and `run.speed`; `launch.json` only needs the `v6` type, launch request, and a name.
 
 ## Starting A Session
 

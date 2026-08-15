@@ -11,6 +11,8 @@ describe('V6DebugConfigurationProvider', () => {
             run: {
                 executable: __filename,
                 debugArtifact,
+                loadAddr: '0x100',
+                speed: '100%',
             },
             uri: vscode.Uri.file(__filename),
         };
@@ -22,17 +24,24 @@ describe('V6DebugConfigurationProvider', () => {
         return new V6DebugConfigurationProvider(activeProjectService, new Logger('test'));
     }
 
-    it('uses the active project debug artifact instead of a launch override', async () => {
+    it('uses the active project launch settings instead of launch overrides', async () => {
         const provider = createProvider('project/demo.elf');
         const config = await provider.resolveDebugConfiguration(undefined, {
             type: 'v6',
             request: 'launch',
             name: 'Launch demo',
-            program: __filename,
+            program: 'override/demo.rom',
             debugArtifact: 'override/demo.elf',
+            loadAddress: '0x200',
+            speed: '50%',
+            stopOnEntry: true,
         });
 
+        expect(config?.program).to.equal(__filename);
         expect(config?.debugArtifact).to.equal('project/demo.elf');
+        expect(config).to.have.property('loadAddress', '0x100');
+        expect(config).to.have.property('speed', '100%');
+        expect(config).not.to.have.property('stopOnEntry');
     });
 
     it('removes a launch override when the active project has no debug artifact', async () => {
@@ -41,10 +50,21 @@ describe('V6DebugConfigurationProvider', () => {
             type: 'v6',
             request: 'launch',
             name: 'Launch demo',
-            program: __filename,
+            program: 'override/demo.rom',
             debugArtifact: 'override/demo.elf',
         });
 
         expect(config).not.to.have.property('debugArtifact');
+    });
+
+    it('generates a launch configuration without project runtime settings', async () => {
+        const provider = createProvider('project/demo.elf');
+        const [config] = await provider.provideDebugConfigurations(undefined);
+
+        expect(config).to.deep.equal({
+            type: 'v6',
+            request: 'launch',
+            name: 'Launch demo',
+        });
     });
 });
