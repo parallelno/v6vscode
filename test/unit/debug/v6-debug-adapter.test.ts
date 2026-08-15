@@ -24,7 +24,7 @@ describe('V6DebugAdapter', () => {
         assert.strictEqual(responses[1].body.result, '0x0100');
     });
 
-    it('exposes machine-state scopes for an unmapped CPU frame', async () => {
+    it('keeps machine-state scopes without exposing a source for an unmapped CPU frame', async () => {
         const adapter = new V6DebugAdapter(
             {} as any,
             {} as any,
@@ -39,7 +39,7 @@ describe('V6DebugAdapter', () => {
 
         await sendRequest(adapter, { seq: 1, command: 'stackTrace', arguments: { threadId: 1 } });
         const frame = responses[0].body.stackFrames[0];
-        assert.deepStrictEqual(frame.source, { name: 'Unknown Source', sourceReference: 1 });
+        assert.strictEqual(frame.source, undefined);
         assert.strictEqual(frame.line, 1);
         assert.strictEqual(frame.column, 1);
 
@@ -48,9 +48,40 @@ describe('V6DebugAdapter', () => {
             responses[1].body.scopes.map((scope: any) => scope.name),
             ['Registers', 'Flags', 'Raw Stack'],
         );
+    });
 
-        await sendRequest(adapter, { seq: 3, command: 'source', arguments: { sourceReference: 1 } });
-        assert.strictEqual(responses[2].body.content, 'Source is unavailable for the current CPU address.');
+    it('keeps the last source location when debug metadata cannot resolve the current address', async () => {
+        const adapter = new V6DebugAdapter(
+            {} as any,
+            {} as any,
+            { debug() {}, error() {} } as any,
+            {} as any,
+            () => ({} as any),
+        );
+        (adapter as any).workspaceRoot = 'C:\\project';
+        (adapter as any).debugIndex = {
+            resolveAddress: (address: number) => address === 0x0100
+                ? { file: 'src\\main.asm', line: 12, column: 3 }
+                : undefined,
+            symbolAtAddress: () => undefined,
+        };
+        (adapter as any).showUnavailableSourceIndicator = () => {};
+        const responses: any[] = [];
+        adapter.onDidSendMessage(message => responses.push(message));
+
+        (adapter as any).cachedRegs = { pc: 0x0100 };
+        await sendRequest(adapter, { seq: 1, command: 'stackTrace', arguments: { threadId: 1 } });
+        (adapter as any).cachedRegs = { pc: 0x0101 };
+        await sendRequest(adapter, { seq: 2, command: 'stackTrace', arguments: { threadId: 1 } });
+
+        const frame = responses[1].body.stackFrames[0];
+        assert.deepStrictEqual(frame.source, {
+            path: 'C:\\project\\src\\main.asm',
+            name: 'main.asm',
+            sourceReference: 0,
+        });
+        assert.strictEqual(frame.line, 12);
+        assert.strictEqual(frame.column, 3);
     });
 
     it('steps over by adding an auto-delete breakpoint at the backend address', async () => {

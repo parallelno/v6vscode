@@ -23,7 +23,7 @@ import {
     StopReason,
 } from '../../emulator/protocol/debug-models';
 import { loadDebugArtifact } from '../metadata/debug-artifact-loader';
-import { DebugIndex } from '../metadata/debug-index';
+import { DebugIndex, SourceLocation } from '../metadata/debug-index';
 import { resolveDebugSourcePath } from '../metadata/debug-source-path';
 import { Logger } from '../../platform/logging/logger';
 import { PathService } from '../../platform/files/path-service';
@@ -44,7 +44,6 @@ const POLL_INTERVAL_MS = 20;
 const VARREF_REGISTERS = 1;
 const VARREF_FLAGS = 2;
 const VARREF_STACK = 3;
-const UNKNOWN_SOURCE_REFERENCE = 1;
 const BYTE_REGISTER_EXPRESSIONS = new Set(['A', 'F', 'B', 'C', 'D', 'E', 'H', 'L', 'M']);
 const BYTE_BREAKPOINT_OPERANDS = new Set<BreakpointOperand>(['A', 'F', 'B', 'C', 'D', 'E', 'H', 'L']);
 const WORD_BREAKPOINT_OPERANDS = new Set<BreakpointOperand>(['BC', 'DE', 'HL', 'SP']);
@@ -119,6 +118,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private debugIndex: DebugIndex | null = null;
     private debugMetadataError = 'No debug artifact was configured in the active project.';
     private workspaceRoot = '';
+    private lastResolvedSource: SourceLocation | undefined;
+    private unavailableSourceDecoration: vscode.TextEditorDecorationType | undefined;
 
     // Session state
     private initialized = false;
@@ -193,7 +194,6 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             case 'configurationDone':    await this.onConfigurationDone(req); break;
             case 'threads':              await this.onThreads(req); break;
             case 'stackTrace':           await this.onStackTrace(req); break;
-            case 'source':                await this.onSource(req); break;
             case 'scopes':               await this.onScopes(req); break;
             case 'variables':            await this.onVariables(req); break;
             case 'continue':             await this.onContinue(req); break;
@@ -247,6 +247,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         try {
             this.debugIndex = null;
             this.debugMetadataError = 'No debug artifact was configured in the active project.';
+            this.lastResolvedSource = undefined;
+            this.clearUnavailableSourceIndicator();
             const bootRomPath = args.bootRom
                 ? String(args.bootRom)
                 : this.pathService.resolveExtensionPath('res/boot/boots.bin');
@@ -403,6 +405,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
         if (srcLoc) {
             const sourcePath = resolveDebugSourcePath(srcLoc.file, this.workspaceRoot);
+            this.lastResolvedSource = srcLoc;
+            this.clearUnavailableSourceIndicator();
             frame.source = {
                 path: sourcePath,
                 name: path.basename(sourcePath),
@@ -410,27 +414,21 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             };
             frame.line = srcLoc.line;
             frame.column = srcLoc.column;
-        } else {
+        } else if (this.debugIndex && this.lastResolvedSource) {
+            const sourcePath = resolveDebugSourcePath(this.lastResolvedSource.file, this.workspaceRoot);
             frame.source = {
-                name: 'Unknown Source',
-                sourceReference: UNKNOWN_SOURCE_REFERENCE,
+                path: sourcePath,
+                name: path.basename(sourcePath),
+                sourceReference: 0,
             };
+            frame.line = this.lastResolvedSource.line;
+            frame.column = this.lastResolvedSource.column;
+            this.showUnavailableSourceIndicator(sourcePath, this.lastResolvedSource.line);
         }
 
         this.sendResponseBody(req, {
             stackFrames: [frame],
             totalFrames: 1,
-        });
-    }
-
-    private async onSource(req: any): Promise<void> {
-        if (req.arguments?.sourceReference !== UNKNOWN_SOURCE_REFERENCE) {
-            this.sendResponse(req, false, 'Unknown source reference');
-            return;
-        }
-        this.sendResponseBody(req, {
-            content: 'Source is unavailable for the current CPU address.',
-            mimeType: 'text/plain',
         });
     }
 
@@ -559,6 +557,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         await this.syncServerBreakpoints();
         await this.captureStopBaseline();
         this.watchpointsProvider?.showStop([]);
+        this.clearUnavailableSourceIndicator();
         this.cachedRegs = null;
         this.pendingPause = false;
         this.pendingStep = false;
@@ -1448,6 +1447,37 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         return this.stopRecordsSupported && this.watchpointService?.available === true;
     }
 
+    private showUnavailableSourceIndicator(sourcePath: string, line: number): void {
+        if (!this.unavailableSourceDecoration) {
+            this.unavailableSourceDecoration = vscode.window.createTextEditorDecorationType({
+                isWholeLine: true,
+                backgroundColor: '#d96e045b',
+                after: {
+                    contentText: ' Source is unavailable.',
+                    color: '#f8dbcb',
+                    fontStyle: 'italic',
+                    margin: '0 0 0 1em',
+                },
+            });
+        }
+        const normalizedPath = path.normalize(sourcePath);
+        for (const editor of vscode.window.visibleTextEditors) {
+            const sameSource = process.platform === 'win32'
+                ? path.normalize(editor.document.uri.fsPath).toLowerCase() === normalizedPath.toLowerCase()
+                : path.normalize(editor.document.uri.fsPath) === normalizedPath;
+            editor.setDecorations(this.unavailableSourceDecoration, sameSource
+                ? [new vscode.Range(line - 1, 0, line - 1, 0)]
+                : []);
+        }
+    }
+
+    private clearUnavailableSourceIndicator(): void {
+        if (!this.unavailableSourceDecoration) { return; }
+        for (const editor of vscode.window.visibleTextEditors) {
+            editor.setDecorations(this.unavailableSourceDecoration, []);
+        }
+    }
+
     private publishDynamicCapabilities(): void {
         if (!this.stopRecordsSupported) { return; }
         this.sendEvent('capabilities', {
@@ -1504,7 +1534,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                         message: breakpoint.comment || undefined,
                         source: sourcePath
                             ? { name: path.basename(sourcePath), path: sourcePath, sourceReference: 0 }
-                            : { name: `Breakpoint ${hex4(breakpoint.addr)}`, sourceReference: UNKNOWN_SOURCE_REFERENCE },
+                            : undefined,
                         line: sourceLocation?.line,
                         column: sourceLocation?.column,
                     },
@@ -1542,6 +1572,10 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private async cleanup(terminateDebuggee: boolean): Promise<void> {
         this.stopPoll();
         this.sessionState = 'disconnected';
+        this.clearUnavailableSourceIndicator();
+        this.unavailableSourceDecoration?.dispose();
+        this.unavailableSourceDecoration = undefined;
+        this.lastResolvedSource = undefined;
 
         // Remove all DAP-owned breakpoints
         if (this.client?.connected) {
