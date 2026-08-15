@@ -27,7 +27,7 @@ describe('project-parser', () => {
         expect(result.run.loadAddr).to.equal('0x200');
         expect(result.run.fddReadOnly).to.equal(true);
         expect(result.run.speed).to.equal('200%');
-        expect(result.run.viewMode).to.equal('bordered');
+        expect(result.run.viewMode).to.equal('border');
     });
 
     it('should round-trip through JSON.stringify and parse', () => {

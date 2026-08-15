@@ -73,7 +73,7 @@ describe('Regression: project system', () => {
         if (result.ok) {
             expect(result.name).to.equal('full-project');
             expect(result.run.debugArtifact).to.equal('build/game.elf');
-            expect(result.run.viewMode).to.equal('bordered');
+            expect(result.run.viewMode).to.equal('border');
             expect(result.run.fddReadOnly).to.equal(true);
         }
     });

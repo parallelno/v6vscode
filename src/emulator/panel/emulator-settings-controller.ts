@@ -91,7 +91,7 @@ export class EmulatorSettingsController implements vscode.Disposable {
         if (this.client.connected) {
             await this.lifecycle.setFrameMode(viewMode);
         }
-        project.run.viewMode = viewMode === 'border' ? 'bordered' : viewMode;
+        project.run.viewMode = viewMode;
         await this.saveProject(project);
         this.update({ ...this.state, viewMode, hasProject: true });
     }
@@ -131,7 +131,7 @@ export class EmulatorSettingsController implements vscode.Disposable {
             : project.run.speed ?? '100%';
         const viewMode = project.run.viewMode === 'full'
             ? 'full'
-            : project.run.viewMode === 'bordered' || project.run.viewMode === 'border'
+            : project.run.viewMode === 'border'
                 ? 'border'
                 : 'borderless';
         return { speed, viewMode, hasProject: true, ...readOverlaySettings() };

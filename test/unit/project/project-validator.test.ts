@@ -18,7 +18,7 @@ describe('project-validator', () => {
                     loadAddr: '0x200',
                     fddReadOnly: true,
                     speed: '200%',
-                    viewMode: 'bordered',
+                    viewMode: 'border',
                 },
             });
             expect(result.ok).to.be.true;
@@ -30,7 +30,7 @@ describe('project-validator', () => {
                 expect(result.run.loadAddr).to.equal('0x200');
                 expect(result.run.fddReadOnly).to.equal(true);
                 expect(result.run.speed).to.equal('200%');
-                expect(result.run.viewMode).to.equal('bordered');
+                expect(result.run.viewMode).to.equal('border');
             }
         });
 
@@ -48,7 +48,7 @@ describe('project-validator', () => {
         });
 
         it('should accept all valid viewMode values', () => {
-            for (const mode of ['borderless', 'bordered', 'full']) {
+            for (const mode of ['borderless', 'border', 'full']) {
                 const result = validate({ name: 'test', run: { executable: 'a.rom', viewMode: mode } });
                 expect(result.ok, `viewMode "${mode}" should be accepted`).to.be.true;
             }

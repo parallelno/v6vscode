@@ -433,7 +433,7 @@ export class EmulatorLifecycle extends EventEmitter {
         switch (viewMode) {
             case 'full':
                 return { value: 0, panelMode: 'full' };
-            case 'bordered':
+            case 'border':
                 return { value: 1, panelMode: 'border' };
             default:
                 return { value: 2, panelMode: 'borderless' };

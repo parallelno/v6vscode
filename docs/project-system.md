@@ -24,4 +24,4 @@ Files named `*.project.json` at the workspace root. Validated by `config/schemas
 | `run.loadAddr` | string | no | `"0x100"` | Load address (hex) |
 | `run.fddReadOnly` | boolean | no | `false` | Discard FDD writes on stop |
 | `run.speed` | string | no | `"100%"` | Emulation speed |
-| `run.viewMode` | string | no | `"borderless"` | Display mode: borderless, bordered, full |
+| `run.viewMode` | string | no | `"borderless"` | Display mode: borderless, border, full |

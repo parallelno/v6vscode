@@ -7,6 +7,6 @@
     "loadAddr": "0x200",
     "fddReadOnly": true,
     "speed": "200%",
-    "viewMode": "bordered"
+    "viewMode": "border"
   }
 }

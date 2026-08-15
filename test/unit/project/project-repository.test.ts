@@ -26,7 +26,7 @@ describe('ProjectRepository', () => {
                 executable: '/workspace/out/demo.rom',
                 debugArtifact: '/workspace/out/demo.elf',
                 speed: '200%',
-                viewMode: 'bordered',
+                viewMode: 'border',
             },
         };
 
@@ -44,7 +44,7 @@ describe('ProjectRepository', () => {
                 executable: path.join('out', 'demo.rom'),
                 debugArtifact: path.join('out', 'demo.elf'),
                 speed: '200%',
-                viewMode: 'bordered',
+                viewMode: 'border',
             },
         });
     });

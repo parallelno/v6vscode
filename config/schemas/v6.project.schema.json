@@ -43,7 +43,7 @@
         },
         "viewMode": {
           "type": "string",
-          "enum": ["borderless", "bordered", "full"],
+          "enum": ["borderless", "border", "full"],
           "default": "borderless",
           "description": "Display mode for the emulator panel."
         }

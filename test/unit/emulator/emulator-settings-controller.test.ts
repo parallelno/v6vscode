@@ -39,8 +39,8 @@ describe('EmulatorSettingsController', () => {
         return { controller, sends, frameModes, saved: () => saved };
     }
 
-    it('maps bordered project values to the border UI mode', async () => {
-        const { controller } = setup(project('200%', 'bordered'));
+    it('preserves border project values in the UI mode', async () => {
+        const { controller } = setup(project('200%', 'border'));
         expect(await controller.refresh()).to.deep.equal({
             speed: '200%', viewMode: 'border', hasProject: true,
             scriptOverlaysHidden: false, scriptOverlayFontSize: 12,
@@ -53,7 +53,7 @@ describe('EmulatorSettingsController', () => {
         await state.controller.setViewMode('border');
         expect(state.sends).to.deep.equal([]);
         expect(state.saved()!.run.speed).to.equal('50%');
-        expect(state.saved()!.run.viewMode).to.equal('bordered');
+        expect(state.saved()!.run.viewMode).to.equal('border');
     });
 
     it('sends connected speed and display updates before persisting', async () => {

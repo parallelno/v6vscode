@@ -17,7 +17,7 @@ interface ValidatedRun {
     viewMode: string;
 }
 
-const VALID_VIEW_MODES = ['borderless', 'bordered', 'full'];
+const VALID_VIEW_MODES = ['borderless', 'border', 'full'];
 
 export function validate(data: unknown): ValidationResult {
     const errors: ValidationError[] = [];
