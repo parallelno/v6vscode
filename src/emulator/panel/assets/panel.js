@@ -11,22 +11,25 @@
     const overlayCanvas = /** @type {HTMLCanvasElement} */ (document.getElementById('overlays'));
     const overlayCtx = overlayCanvas.getContext('2d');
     const viewport = /** @type {HTMLDivElement} */ (document.getElementById('viewport'));
+    const canvasStack = /** @type {HTMLDivElement} */ (document.getElementById('canvas-stack'));
     const errorBar = /** @type {HTMLDivElement} */ (document.getElementById('error-bar'));
 
     let isWebviewFocused = document.hasFocus();
     let overlayState = { overlays: [], hidden: false, fontSize: 12 };
 
     function resizeScreen() {
-        const aspectRatio = canvas.width && canvas.height ? canvas.width / canvas.height : 4 / 3;
+        const aspectRatio = 4 / 3;
         const viewportWidth = viewport.clientWidth;
         const viewportHeight = viewport.clientHeight;
         const width = Math.min(viewportWidth, viewportHeight * aspectRatio);
         const height = width / aspectRatio;
 
-        canvas.style.width = `${Math.floor(width)}px`;
-        canvas.style.height = `${Math.floor(height)}px`;
-        overlayCanvas.style.width = `${Math.floor(width)}px`;
-        overlayCanvas.style.height = `${Math.floor(height)}px`;
+        canvasStack.style.width = `${Math.floor(width)}px`;
+        canvasStack.style.height = `${Math.floor(height)}px`;
+        canvas.style.width = '100%';
+        canvas.style.height = '100%';
+        overlayCanvas.style.width = '100%';
+        overlayCanvas.style.height = '100%';
     }
 
     new ResizeObserver(resizeScreen).observe(viewport);
@@ -58,7 +61,6 @@
             canvas.height = height;
             overlayCanvas.width = width;
             overlayCanvas.height = height;
-            document.getElementById('canvas-stack').style.aspectRatio = `${width} / ${height}`;
         }
         resizeScreen();
         // pixels arrives as Uint8Array via structured clone — wrap directly as ImageData
