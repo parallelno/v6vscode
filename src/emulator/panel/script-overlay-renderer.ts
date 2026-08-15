@@ -29,12 +29,15 @@ export function renderScriptOverlays(
         const sourceX = overlay.x < 0 ? source.width + overlay.x : overlay.x;
         const sourceY = overlay.y < 0 ? source.height + overlay.y : overlay.y;
         const originX = overlay.vectorScreenCoords ? ACTIVE_SCREEN.x : 0;
-        const originY = overlay.vectorScreenCoords ? ACTIVE_SCREEN.y : 0;
+        const originY = overlay.vectorScreenCoords
+            ? FRAME.height - ACTIVE_SCREEN.y - ACTIVE_SCREEN.height
+            : 0;
         const clip = intersection(overlay.vectorScreenCoords ? ACTIVE_SCREEN : FRAME, crop);
+        const itemHeight = overlay.type === 'rect' ? overlay.height : 0;
         return {
             ...overlay,
             x: originX + sourceX - crop.x,
-            y: originY + sourceY - crop.y,
+            y: FRAME.height - originY - sourceY - itemHeight - crop.y,
             clipX: clip.x - crop.x,
             clipY: clip.y - crop.y,
             clipWidth: clip.width,

@@ -214,14 +214,14 @@ The active Vector-06C screen is `512x256` at full-frame origin `(128,40)`.
 
 For each item:
 
-1. Resolve negative coordinates from the right or bottom of its selected coordinate space.
+1. Resolve negative `x` from the right and negative `y` from the top of its selected coordinate space.
 2. For `vectorScreenCoords: true`, transform from active-screen coordinates into full-frame coordinates and clip to the active screen.
 3. For `vectorScreenCoords: false`, clip to the full `768x312` framebuffer.
 4. Subtract the current display-mode crop origin.
 5. Clip partially visible primitives to the current cropped frame.
 6. Decode `0xRRGGBBAA` using unsigned operations and preserve alpha.
 
-Text uses top-left positioning, left alignment, top baseline, and a monospace font. Font Size is measured in framebuffer pixels. Rectangle outlines use one framebuffer pixel. Preserve server drawing order.
+Overlay coordinates use a left-bottom origin. Convert them to the canvas's left-top origin before drawing. Text uses left alignment, a bottom baseline, and a monospace font. Font Size is measured in framebuffer pixels. Rectangle coordinates identify their lower-left corner; rectangle outlines use one framebuffer pixel. Preserve server drawing order.
 
 #### 4.9 Add the overlay canvas
 

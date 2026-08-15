@@ -89,7 +89,7 @@
         }
         overlayCtx.font = `${overlayState.fontSize}px monospace`;
         overlayCtx.textAlign = 'left';
-        overlayCtx.textBaseline = 'top';
+        overlayCtx.textBaseline = 'bottom';
         for (const overlay of overlayState.overlays) {
             if ((overlay.color & 0xFF) === 0) {
                 continue;
