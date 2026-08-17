@@ -63,6 +63,8 @@ Do not merge same-name variables or show declarations outside their active scope
 
 ## 5. Location Evaluation
 
+Do not assume frame-relative storage. In verified V6C output, `-O0` locals and parameters are frequently static-home addresses (`DW_OP_addrx`), and optimized builds use register, `DW_OP_breg`, constant, and `DW_OP_stack_value` locations. The evaluator must handle memory, register, static-home, constant, and computed values uniformly.
+
 Evaluate each variable using:
 
 - Selected frame PC.

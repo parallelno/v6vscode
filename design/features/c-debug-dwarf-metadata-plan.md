@@ -118,12 +118,13 @@ Represent single expressions and location lists without evaluating them during p
 At query time select the entry whose half-open PC range contains the selected frame PC. Distinguish:
 
 - Constant value.
+- Static-home address (`DW_OP_addrx`, optionally with `DW_OP_plus_uconst`). At `-O0`, many locals and parameters are promoted to fixed global addresses rather than stack slots.
 - Active expression location.
 - In-scope variable with no active location.
 - Optimized-out variable.
 - Unsupported or malformed location.
 
-Never reuse a location outside its range.
+Never reuse a location outside its range. Do not assume a variable location is frame-relative; static-home and register locations are common.
 
 ## 9. DWARF Expression Evaluator
 
@@ -140,7 +141,15 @@ type EvaluatedLocation =
   | { kind: 'unavailable'; reason: string };
 ```
 
-Implement only operations in the V6C compatibility table. Enforce stack depth, operation count, memory-read count, address range, and result-size limits. One unsupported variable must not suppress siblings.
+Implement the operations verified in current V6C output. The producer doc `V6CDebugMetadata.md` currently names only `DW_OP_fbreg`, `DW_OP_addr`, `DW_OP_addrx`, and `DW_OP_plus_uconst`, but real `-O2` location lists also emit the following, which the evaluator must support:
+
+- `DW_OP_reg0..N` and `DW_OP_breg0..N`.
+- `DW_OP_consts`.
+- `DW_OP_plus`, `DW_OP_minus`, `DW_OP_div`.
+- `DW_OP_stack_value`.
+- `DW_OP_call_frame_cfa` (used by `DW_AT_frame_base`).
+
+Treat this list as the authoritative subset until the producer publishes a complete opcode table; `DW_OP_div` in particular is easy to omit. Enforce stack depth, operation count, memory-read count, address range, and result-size limits. One unsupported variable must not suppress siblings.
 
 ## 10. Call-Frame Information
 
@@ -154,6 +163,8 @@ Build:
 - CFA rules.
 - Register recovery rules.
 - Return-address register mapping.
+
+The CFI operations verified in current V6C output are `DW_CFA_def_cfa`, `DW_CFA_offset`, `DW_CFA_advance_loc`, `DW_CFA_undefined`, and `DW_CFA_nop`. The CIE uses code alignment 1, data alignment -2, and return-address column 11 (PC). A `DW_CFA_undefined` return address marks an honest unwind boundary (naked runtime helpers, interrupt/trampoline frames).
 
 The CFI evaluator returns verified caller state or a precise stop reason. It must reject cycles, unchanged CFA, invalid memory, unsupported expressions, and excessive depth.
 
