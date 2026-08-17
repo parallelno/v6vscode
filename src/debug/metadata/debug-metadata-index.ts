@@ -34,11 +34,13 @@ export class DebugMetadataIndex {
     readonly cfi: DwarfCfi;
     readonly features: DebugMetadataFeatures;
     private readonly dieByOffset = new Map<number, Die>();
+    private readonly addressResolver: (unit: CompilationUnit, index: number) => number;
 
     constructor(elf: Elf32) {
         const sections = new DwarfSections(elf);
         const strings = new DwarfStrings(sections.strings, sections.lineStrings, sections.stringOffsets);
         const reader = new DwarfReader(sections.info, sections.abbrev, strings, sections.addressTable);
+        this.addressResolver = (unit, index) => reader.resolveAddress(unit, index);
         this.units = sections.hasInfo ? reader.readUnits() : [];
 
         // Index all DIEs by offset for type and origin resolution.
@@ -87,6 +89,12 @@ export class DebugMetadataIndex {
 
     cfiRowAt(pc: number): UnwindRow | undefined {
         return this.cfi.rowAt(pc);
+    }
+
+    /** Resolve an addrx index against the first compilation unit's address table. */
+    resolveAddress(index: number): number {
+        const unit = this.units[0];
+        return unit ? this.addressResolver(unit, index) : 0;
     }
 
     /**

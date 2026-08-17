@@ -201,7 +201,107 @@ Cover:
 - CFI success and each honest unwind stop.
 - DWARF v4 line compatibility and ASM regression.
 
-## 13. Acceptance Gates
+## 13. Live-Emulator State Bridge
+
+Static parsing alone does not complete the consumer. The evaluators operate on live stopped state, so the plan must include the bridge from emulator IPC to `DwarfEvalContext`. v6emul already provides the required commands; no protocol change is needed.
+
+### 13.1 Register mapping
+
+Translate `GET_REGS` (command 11) into the frozen V6C DWARF register numbers (A=0, B=1, C=2, D=3, E=4, H=5, L=6, BC=7, DE=8, HL=9, SP=10, PC=11). Produce `DwarfEvalContext.registers`. FLAGS/PSW are intentionally unnumbered.
+
+### 13.2 Memory reader
+
+Wrap `GET_MEM` (command 93) and `GET_STACK_SAMPLE` (command 18) into a `readMemory(address, byteSize)` callback with 16-bit bounds checks and wrap handling. This feeds both `DW_OP_deref` and CFI unwinding (which reads `PC=[CFA-2]`).
+
+### 13.3 Real-stop verification
+
+Stop the real emulator inside a known function (the `temp/cdbg` probe), read live registers/memory, and:
+
+1. Evaluate a known local variable and confirm the resolved address/value matches the program's expected state.
+2. Unwind a real nested call chain and confirm recovered caller CFA/SP/PC match the live stack.
+
+### 13.4 Feature test
+
+Add a gated real-emulator scenario (Extension Host integration or `test/features/`, keyed on `V6EMUL`) that loads the probe ELF, stops at a breakpoint, and asserts a variable location and a caller frame are recovered from live state.
+
+## 14. Supported DWARF Compatibility Table
+
+This is the exact subset the consumer implements and the v6llvmc producer emits. It is the versioned contract both repositories test against. Verified against `temp/cdbg/probe-O0.elf` and `probe-O2.elf` on 2026-08-16.
+
+### 14.1 Object and section format
+
+| Item | Value |
+|---|---|
+| Object format | ELF32, little-endian |
+| Machine | `EM_V6C` (0x8080) |
+| Address size | 2 bytes (16-bit CPU addresses) |
+| DWARF format | v5 (DWARF32); v4 line tables remain a compatibility case |
+
+### 14.2 Sections
+
+| Section | Purpose |
+|---|---|
+| `.debug_info` | DIE tree (units, subprograms, variables, types, scopes, inline) |
+| `.debug_abbrev` | Abbreviation tables |
+| `.debug_line` | Source line programs (v4 and v5) |
+| `.debug_str` / `.debug_line_str` | String tables |
+| `.debug_str_offsets` | Indexed string base offsets (strx) |
+| `.debug_addr` | Indexed address table (addrx) |
+| `.debug_rnglists` | Subprogram/lexical/inline PC ranges |
+| `.debug_loclists` | Variable location lifetimes (optimized builds) |
+| `.debug_frame` | Call-frame information (CIE/FDE unwind rules) |
+
+### 14.3 DIE tags
+
+`compile_unit`, `subprogram`, `formal_parameter`, `variable`, `lexical_block`, `inlined_subroutine`, `base_type`, `pointer_type`, `typedef`, `array_type`, `subrange_type`, `structure_type`, `union_type`, `member`, `enumeration_type`, `enumerator`, `subroutine_type`, `unspecified_type`.
+
+### 14.4 Attribute forms
+
+| Category | Forms |
+|---|---|
+| Strings | `string`, `strp`, `line_strp`, `strx`, `strx1`–`strx4` |
+| Addresses | `addr`, `addrx`, `addrx1`–`addrx4` |
+| References | `ref4` (CU-relative); `ref1`/`ref2`/`ref8`/`ref_udata`/`ref_addr` decoded |
+| Constants | `data1/2/4/8/16`, `sdata`, `udata`, `implicit_const`, `flag`, `flag_present` |
+| Sections/lists | `sec_offset`, `rnglistx`, `loclistx` |
+| Expressions | `exprloc`, `block`, `block1/2/4` |
+
+### 14.5 Location expression operations
+
+`DW_OP_addr`, `DW_OP_addrx`, `DW_OP_plus_uconst`, `DW_OP_reg0..31`, `DW_OP_breg0..31`, `DW_OP_lit0..31`, `DW_OP_fbreg`, `DW_OP_call_frame_cfa`, `DW_OP_consts`, `DW_OP_plus`, `DW_OP_minus`, `DW_OP_div`, `DW_OP_deref`, `DW_OP_stack_value`.
+
+`DW_OP_piece` is deferred until the producer emits split values.
+
+### 14.6 Call-frame operations
+
+`DW_CFA_def_cfa`, `DW_CFA_def_cfa_register`, `DW_CFA_def_cfa_offset`, `DW_CFA_offset`, `DW_CFA_advance_loc`, `DW_CFA_advance_loc1/2/4`, `DW_CFA_set_loc`, `DW_CFA_undefined`, `DW_CFA_same_value`, `DW_CFA_register`, `DW_CFA_remember_state`, `DW_CFA_restore_state`, `DW_CFA_nop`.
+
+CIE: code alignment 1, data alignment -2, address size 2, return-address column 11 (PC). A `DW_CFA_undefined` return-PC rule marks an honest unwind boundary.
+
+### 14.7 DWARF register map (contract version 1)
+
+| Number | Register | Width |
+|---|---|---|
+| 0 | A | 8 |
+| 1 | B | 8 |
+| 2 | C | 8 |
+| 3 | D | 8 |
+| 4 | E | 8 |
+| 5 | H | 8 |
+| 6 | L | 8 |
+| 7 | BC | 16 |
+| 8 | DE | 16 |
+| 9 | HL | 16 |
+| 10 | SP | 16 |
+| 11 | PC | 16 (CFI return-address column) |
+
+FLAGS and PSW are intentionally unnumbered.
+
+### 14.8 Unsupported / degraded behavior
+
+Anything outside this table yields an `unavailable` result for that single entity — never a failed debug session or a lost line table. Optimized-out and inactive-range variables are reported, not reconstructed.
+
+## 15. Acceptance Gates
 
 - Current ASM and C source breakpoint tests remain green.
 - A final v6llvmc ELF builds complete subprogram, type, scope, variable, inline, and CFI indexes.
@@ -210,20 +310,24 @@ Cover:
 - CFI evaluation produces the expected physical caller chain for dedicated fixtures.
 - Downstream Call Stack and Variables plans consume only public immutable APIs.
 
-## 14. Implementation Checklist
+## 16. Implementation Checklist
 
-- [ ] Add bounded section and unit readers.
-- [ ] Add generic abbreviation, DIE, form, and reference parsing.
-- [ ] Resolve indexed strings and addresses.
-- [ ] Parse v4/v5 ranges and v5 range lists.
-- [ ] Build immutable compilation-unit and subprogram graphs.
-- [ ] Build C type, lexical-scope, variable, and inline graphs.
-- [ ] Parse expression locations and location lists.
-- [ ] Implement the bounded V6C DWARF expression subset.
-- [ ] Parse CIE/FDE records and PC-indexed unwind rows.
-- [ ] Implement the bounded V6C CFI subset.
-- [ ] Add metadata feature detection and diagnostics.
-- [ ] Preserve current line, symbol, breakpoint, and ASM APIs during migration.
-- [ ] Add deterministic valid and malformed fixtures.
-- [ ] Verify locations and CFI against real emulator state.
-- [ ] Publish the supported DWARF compatibility table.
+- [x] Add bounded section and unit readers.
+- [x] Add generic abbreviation, DIE, form, and reference parsing.
+- [x] Resolve indexed strings and addresses.
+- [x] Parse v4/v5 ranges and v5 range lists.
+- [x] Build immutable compilation-unit and subprogram graphs.
+- [x] Build C type, lexical-scope, variable, and inline graphs.
+- [x] Parse expression locations and location lists.
+- [x] Implement the bounded V6C DWARF expression subset.
+- [x] Parse CIE/FDE records and PC-indexed unwind rows.
+- [x] Implement the bounded V6C CFI subset.
+- [x] Add metadata feature detection and diagnostics.
+- [x] Preserve current line, symbol, breakpoint, and ASM APIs during migration.
+- [x] Add deterministic valid and malformed fixtures.
+- [x] Verify locations and CFI against real emulator state.
+- [x] Translate GET_REGS into the DWARF register map for the evaluation context.
+- [x] Build a bounded GET_MEM/GET_STACK_SAMPLE-backed memory reader with 16-bit wrapping.
+- [x] Evaluate a known local and unwind a real call chain against a live stop.
+- [x] Add a gated real-emulator consumer feature test (keyed on V6EMUL).
+- [x] Publish the supported DWARF compatibility table.

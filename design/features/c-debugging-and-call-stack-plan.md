@@ -100,7 +100,7 @@ Required end-to-end scenarios:
 ## 6. Implementation Checklist
 
 - [x] Approve the V6C ABI and DWARF producer contract.
-- [x] Complete `89-.
+- [x] Complete `v6llvmc-c-debug-metadata-plan.md`.
 - [x] Complete `c-debug-dwarf-metadata-plan.md`.
 - [ ] Complete `c-debug-call-stack-plan.md`.
 - [ ] Complete `c-debug-variables-and-expressions-plan.md`.

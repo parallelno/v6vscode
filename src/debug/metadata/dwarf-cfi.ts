@@ -112,18 +112,24 @@ export class DwarfCfi {
         if (version !== 1 && version !== 4) {
             throw new DwarfError(`Unsupported CIE version ${version}`, offset);
         }
+        let addressSize = 8;
+        let segmentSize = 0;
+        if (version === 4) {
+            // DWARF4 CIE: address_size and segment_selector_size precede the
+            // alignment factors.
+            addressSize = this.frame[cursor++];
+            segmentSize = this.frame[cursor++];
+        }
         const [codeAlignment, caLen] = readULEB128(this.frame, cursor); cursor += caLen;
         const [dataAlignment, daLen] = readSLEB128(this.frame, cursor); cursor += daLen;
         const returnAddressRegister = version === 1
             ? this.frame[cursor++]
             : (() => { const [r, l] = readULEB128(this.frame, cursor); cursor += l; return r; })();
 
-        let addressSize = 8;
-        let segmentSize = 0;
         if (augmentation === 'zR' || augmentation.startsWith('z')) {
             const [augLen, augLenBytes] = readULEB128(this.frame, cursor); cursor += augLenBytes;
             const augEnd = cursor + augLen;
-            if (augmentation.includes('a')) {
+            if (version !== 4 && augmentation.includes('a')) {
                 addressSize = this.frame[cursor++];
                 segmentSize = this.frame[cursor++];
             }
