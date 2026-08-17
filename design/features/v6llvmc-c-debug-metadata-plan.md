@@ -210,19 +210,19 @@ The producer prerequisite is complete only when:
 
 ## 14. Implementation Checklist
 
-- [ ] Document the debugger-relevant V6C ABI.
-- [ ] Freeze V6C DWARF register numbering.
-- [ ] Add backend tests for overlapping byte and word register locations.
-- [ ] Preserve debug values through custom V6C machine passes.
-- [ ] Emit formal-parameter and local-variable locations.
-- [ ] Emit valid frame-base expressions where required.
-- [ ] Emit `.debug_loclists` with accurate transitions and gaps.
-- [ ] Emit lexical-block and discontinuous function ranges.
-- [ ] Emit nested inline-subroutine DIEs and abstract origins.
-- [ ] Verify C scalar, pointer, array, structure, union, enum, typedef, and qualifier types.
-- [ ] Emit `.debug_frame` CIE/FDE data.
-- [ ] Cover leaf/non-leaf, spills, stack arguments, frame-pointer modes, returns, tail calls, and unwind boundaries.
-- [ ] Verify final linked addresses and relocations against ROM execution.
-- [ ] Run `-O0`, debug-friendly, `-O1`, and `-O2` metadata tests.
-- [ ] Publish the supported forms, operations, register map, and known limitations.
-- [ ] Pass v6vscode parser and real-emulator consumer tests.
+- [x] Document the debugger-relevant V6C ABI.
+- [x] Freeze V6C DWARF register numbering.
+- [x] Add backend tests for overlapping byte and word register locations.
+- [x] Preserve debug values through custom V6C machine passes.
+- [x] Emit formal-parameter and local-variable locations.
+- [x] Emit valid frame-base expressions where required.
+- [x] Emit `.debug_loclists` with accurate transitions and gaps.
+- [x] Emit lexical-block and discontinuous function ranges.
+- [x] Emit nested inline-subroutine DIEs and abstract origins.
+- [x] Verify C scalar, pointer, array, structure, union, enum, typedef, and qualifier types.
+- [x] Emit `.debug_frame` CIE/FDE data.
+- [x] Cover leaf/non-leaf, spills, stack arguments, frame-pointer modes, returns, tail calls, and unwind boundaries.
+- [x] Verify final linked addresses and relocations against ROM execution.
+- [x] Run `-O0`, debug-friendly, `-O1`, and `-O2` metadata tests.
+- [x] Publish the supported forms, operations, register map, and known limitations.
+- [~] Pass v6vscode parser and real-emulator consumer tests.

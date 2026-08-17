@@ -14,6 +14,15 @@ const ELF_EXISTS = fs.existsSync(ELF_PATH);
 const C_ELF_PATH = path.join(__dirname, '..', '..', '..', 'temp', 'project', 'out', 'demo2.elf');
 const C_ELF_EXISTS = fs.existsSync(C_ELF_PATH);
 
+/** Find a line that maps to an exact (unrelocated) executable statement. */
+function findExecutableLine(index: ReturnType<typeof buildDebugIndex>, file: string): number {
+    for (let line = 1; line < 200; line++) {
+        const resolved = index.resolveBreakpoint(file, line);
+        if (resolved && resolved.verifiedLine === line) { return line; }
+    }
+    return 0;
+}
+
 // ---------------------------------------------------------------------------
 // LEB128 helpers
 // ---------------------------------------------------------------------------
@@ -403,7 +412,11 @@ describe('DebugIndex source paths', () => {
 
         expect(result.compDir).to.equal('');
         expect(result.index.sourceFiles).to.include(sourcePath);
-        const breakpoint = result.index.resolveBreakpoint(sourcePath, 70);
+        // Resolve any executable line in main.c rather than a hardcoded line,
+        // since the fixture source changes as it evolves.
+        const executableLine = findExecutableLine(result.index, sourcePath);
+        expect(executableLine).to.be.greaterThan(0);
+        const breakpoint = result.index.resolveBreakpoint(sourcePath, executableLine);
         expect(breakpoint).to.not.equal(undefined);
         expect(result.index.resolveAddress(breakpoint!.address)).to.include({
             file: sourcePath,
