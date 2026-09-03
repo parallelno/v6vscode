@@ -8,7 +8,7 @@ import {
 
 describe('Assembly highlighter', () => {
     it('maps the existing grammar to stable presentation classes', async () => {
-        const highlighter = await createAssemblyHighlighter(path.resolve(__dirname, '../../..'));
+        const highlighter = await createAssemblyHighlighter(process.cwd());
         const line = 'main: lxi h, 0x1234 + VALUE ; note';
         const spans = highlighter.tokenizeLine(line);
         const classified = (tokenClass: AssemblyTokenClass) => spans
@@ -24,7 +24,7 @@ describe('Assembly highlighter', () => {
     });
 
     it('preserves rule state across document lines but not standalone lines', async () => {
-        const highlighter = await createAssemblyHighlighter(path.resolve(__dirname, '../../..'));
+        const highlighter = await createAssemblyHighlighter(process.cwd());
         const document = highlighter.tokenizeDocument('/* first\nsecond */ mvi a, 1');
 
         expect(document[1][0].tokenClass).to.equal('comment');
@@ -32,7 +32,7 @@ describe('Assembly highlighter', () => {
     });
 
     it('bounds standalone and source-document caches', async () => {
-        const highlighter = await createAssemblyHighlighter(path.resolve(__dirname, '../../..'), 2, 2);
+        const highlighter = await createAssemblyHighlighter(process.cwd(), 2, 2);
         highlighter.tokenizeLine('nop');
         highlighter.tokenizeLine('ret');
         highlighter.tokenizeLine('hlt');
@@ -44,7 +44,7 @@ describe('Assembly highlighter', () => {
     });
 
     it('invalidates source-document tokenization when the version changes', async () => {
-        const highlighter = await createAssemblyHighlighter(path.resolve(__dirname, '../../..'));
+        const highlighter = await createAssemblyHighlighter(process.cwd());
         const initial = highlighter.tokenizeSourceDocument('main.asm', '1', '/* open');
         const sameVersion = highlighter.tokenizeSourceDocument('main.asm', '1', 'nop');
         const nextVersion = highlighter.tokenizeSourceDocument('main.asm', '2', 'nop');
@@ -78,7 +78,7 @@ describe('Assembly highlighter', () => {
     });
 
     it('classifies representative source with the registered grammar', async () => {
-        const highlighter = await createAssemblyHighlighter(path.resolve(__dirname, '../../..'));
+        const highlighter = await createAssemblyHighlighter(process.cwd());
         const lines = [
             '.org 0x1000',
             '.if true',
@@ -97,7 +97,7 @@ describe('Assembly highlighter', () => {
     });
 
     it('distinguishes gray one-line comments from block comments', async () => {
-        const highlighter = await createAssemblyHighlighter(path.resolve(__dirname, '../../..'));
+        const highlighter = await createAssemblyHighlighter(process.cwd());
         const tokenClasses = highlighter.tokenizeDocument('; semicolon\n// slash\n/* block */')
             .map(spans => spans[0]?.tokenClass);
 

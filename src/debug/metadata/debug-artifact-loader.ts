@@ -13,6 +13,7 @@ import { parseElf32, SHF_ALLOC, SHT_PROGBITS } from './elf32-reader';
 import { parseDwarf4LineFiles, parseDwarf4LineSection } from './dwarf4-line-reader';
 import { parseDwarf4CompilationDirectories, parseDwarf4VariableDeclarations } from './dwarf4-info-reader';
 import { buildDebugIndex, DebugIndex } from './debug-index';
+import { DebugMetadataIndex } from './debug-metadata-index';
 
 // ---------------------------------------------------------------------------
 // Compilation directory extraction
@@ -79,6 +80,8 @@ function validateRomElf(elf: ReturnType<typeof parseElf32>, romPath: string): st
 
 export interface LoadResult {
     index: DebugIndex;
+    /** Semantic DWARF metadata when supported by the companion artifact. */
+    metadata: DebugMetadataIndex | undefined;
     /** Non-empty if the ROM and ELF do not match — source breakpoints may be unreliable. */
     validationWarning: string | undefined;
     compDir: string;
@@ -121,8 +124,14 @@ export async function loadDebugArtifact(elfPath: string, romPath = ''): Promise<
         }
     }
 
-    // Build index
-    const index = buildDebugIndex(rows, elf.symbols, compDir, declarations);
+    // Build the legacy line/symbol index and optional semantic metadata independently.
+    const index = buildDebugIndex(rows, elf.symbols, compDir, declarations, files);
+    let metadata: DebugMetadataIndex | undefined;
+    try {
+        metadata = new DebugMetadataIndex(elf);
+    } catch {
+        // Optional semantic metadata must not disable baseline source debugging.
+    }
 
     // Validate ROM/ELF match
     const validationWarning = validateRomElf(elf, romPath);
@@ -130,5 +139,5 @@ export async function loadDebugArtifact(elfPath: string, romPath = ''): Promise<
         throw new Error(validationWarning);
     }
 
-    return { index, validationWarning, compDir };
+    return { index, metadata, validationWarning, compDir };
 }

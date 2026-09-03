@@ -1,0 +1,6 @@
+status=passed
+scenarios=extension-host-startup,c-source-breakpoint,three-function-call-stack
+v6emul.version=2026.08.08-9fdd139
+elf.sha256=d6255ae29cd1a8a6b84a7b8796127cc5054299ba7bee3187311e6a80a3cf0027
+rom.sha256=5cd194769daea1339a146c86d23f202bc5bfc790a22bd5c842dd51148f27cd7d
+

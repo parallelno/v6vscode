@@ -1,6 +1,6 @@
 # C Semantic Call Stack Implementation Plan
 
-**Status:** Proposed
+**Status:** In Progress
 **Date:** 2026-08-15
 **Owner:** v6vscode maintainers
 **Prerequisites:** `v6llvmc-c-debug-metadata-plan.md`, `c-debug-dwarf-metadata-plan.md`
@@ -200,19 +200,28 @@ Real Extension Host plus emulator tests:
 
 ## 13. Implementation Checklist
 
-- [ ] Add stopped-generation context and invalidation.
-- [ ] Add stopped-state register and memory abstraction.
-- [ ] Map top-frame PC/SP/registers into a physical frame.
-- [ ] Implement bounded physical CFI unwinding.
-- [ ] Recover caller registers, CFA, SP, and return PC.
-- [ ] Separate resume PC from display PC.
-- [ ] Stop honestly at unsupported rules and unwind boundaries.
-- [ ] Expand active inline DIEs into logical frames.
-- [ ] Assign stable generation-bound DAP frame IDs.
-- [ ] Implement `startFrame`, `levels`, and `totalFrames`.
-- [ ] Use semantic function names in Call Stack.
-- [ ] Preserve instruction pointers and honest unknown-frame fallbacks.
-- [ ] Extract stack-trace and handle services from the adapter.
-- [ ] Add physical, inline, malformed, and fallback unit tests.
-- [ ] Pass a real-emulator three-function Call Stack test.
-- [ ] Document Call Stack behavior and metadata prerequisites.
+- [x] Add stopped-generation context and invalidation.
+- [x] Add stopped-state register and memory abstraction.
+- [x] Map top-frame PC/SP/registers into a physical frame.
+- [x] Implement bounded physical CFI unwinding.
+- [x] Recover caller registers, CFA, SP, and return PC.
+- [x] Separate resume PC from display PC.
+- [x] Stop honestly at unsupported rules and unwind boundaries.
+- [x] Expand active inline DIEs into logical frames.
+- [x] Assign stable generation-bound DAP frame IDs.
+- [x] Implement `startFrame`, `levels`, and `totalFrames`.
+- [x] Use semantic function names in Call Stack.
+- [x] Preserve instruction pointers and honest unknown-frame fallbacks.
+- [~] Extract stack-trace and handle services from the adapter.
+- [x] Add physical, inline, malformed, and fallback unit tests.
+- [x] Pass a real-emulator three-function Call Stack test.
+- [x] Document Call Stack behavior and metadata prerequisites.
+
+## Implementation Notes
+
+- Added generation-bound paused-state contexts to the adapter. The context is captured only at a stop boundary and invalidated on resume, stepping, restart, ROM reload, and disconnect.
+- Retained optional semantic metadata when loading a companion ELF and added `StackTraceService` for CFI-verified physical frames, active inline scopes, stable DAP IDs, and pagination.
+- Added focused unit coverage for physical frame ordering, semantic names, generation-stable IDs, pagination, and inline-before-physical ordering. `npm run compile` and `npm run test:regression` pass; the focused Call Stack/adapter unit tests pass using `mocha --no-config`.
+- Added a generation-aware DAP handle store and rejected stale semantic frame scope/variable requests. Physical caller instruction PCs retain exact verified return addresses while source presentation uses a preceding statement only within the verified caller subprogram.
+- Fixed FDE CFI row construction so leading unwind instructions apply even when an FDE has no location advance. The real Extension Host/emulator scenario now stops in `add8` and verifies the `add8`, `accumulate`, `main` Call Stack; `test:feature:debug` writes a hash-stamped result after it passes.
+- Preserved DWARF line-file ordering in the debug index so inline `DW_AT_call_file`, line, and column values populate DAP source fields. Added malformed CFI tests for unreadable memory, unsupported rules, prologue/body/epilogue rows, saved registers, repeated PCs, invalid CFA movement, address overflow, and the 64-frame limit.

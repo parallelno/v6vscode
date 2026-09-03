@@ -11,7 +11,7 @@ import {
     validateProjectName,
 } from '../../../src/templates/template-utils';
 
-const EXTENSION_ROOT = path.resolve(__dirname, '..', '..', '..');
+const EXTENSION_ROOT = process.cwd();
 
 describe('template-utils', () => {
     describe('expandTemplate', () => {

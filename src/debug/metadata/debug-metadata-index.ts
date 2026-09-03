@@ -65,6 +65,10 @@ export class DebugMetadataIndex {
         return this.scopes.subprogramAt(pc);
     }
 
+    subprogram(id: number): SubprogramNode | undefined {
+        return this.scopes.subprogram(id);
+    }
+
     scopeAt(pc: number): ScopeNode | undefined {
         return this.scopes.scopeAt(pc);
     }

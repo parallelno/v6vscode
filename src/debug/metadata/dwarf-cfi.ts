@@ -162,7 +162,7 @@ export class DwarfCfi {
         cursor += addressSize;
 
         const rows: UnwindRow[] = [];
-        let row: UnwindRow = {
+        const initialRow: UnwindRow = {
             pc: start,
             cfa: { ...cie.initialRules.cfa },
             registers: new Map(cie.initialRules.registers),
@@ -170,9 +170,9 @@ export class DwarfCfi {
         // Read all instructions; advance/set_loc produce new rows. The final
         // state applies from the last advance; we capture the state at `start`
         // by taking the first row if one exists, else the final state.
-        this.readInstructions(cursor, end, cie, row, rows);
+        const finalRow = this.readInstructions(cursor, end, cie, initialRow, rows);
         if (rows.length === 0) {
-            rows.push({ pc: start, cfa: { ...row.cfa }, registers: new Map(row.registers) });
+            rows.push({ pc: start, cfa: { ...finalRow.cfa }, registers: new Map(finalRow.registers) });
         }
         this.fdes.push({ start, end: start + rangeLength, rows });
     }

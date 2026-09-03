@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { expect } from 'chai';
 
-const ROOT = path.resolve(__dirname, '..', '..', '..');
+const ROOT = process.cwd();
 const read = (relativePath: string) => fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
 
 describe('Performance webview contract', () => {

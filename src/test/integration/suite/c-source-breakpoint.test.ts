@@ -14,17 +14,17 @@ suite('C source breakpoint', () => {
             return;
         }
 
-        const sourceUri = vscode.Uri.file(path.join(extensionRoot, 'temp', 'project', 'src2', 'main.c'));
+        const sourceUri = vscode.Uri.file(path.join(extensionRoot, 'temp', 'cdbg', 'probe.c'));
         const sourceLines = fs.readFileSync(sourceUri.fsPath, 'utf8').split(/\r?\n/);
-        const targetLine = sourceLines.findIndex(line => line.includes('addr[0] = 0x0F;')) + 1;
-        assert.ok(targetLine > 0, 'Expected the C integration breakpoint statement.');
+        const targetLine = sourceLines.findIndex(line => line.includes('uint8_t s =')) + 1;
+        assert.ok(targetLine > 0, 'Expected the innermost C integration breakpoint statement.');
         const artifact = await loadDebugArtifact(
-            path.join(extensionRoot, 'temp', 'project', 'out', 'demo2.elf'),
-            path.join(extensionRoot, 'temp', 'project', 'out', 'demo2.rom'),
+            path.join(extensionRoot, 'temp', 'cdbg', 'probe-O0.elf'),
+            path.join(extensionRoot, 'temp', 'cdbg', 'probe-O0.rom'),
         );
-        assert.deepStrictEqual(
-            artifact.index.resolveBreakpoint(sourceUri.fsPath, targetLine),
-            { address: 0x0151, verifiedLine: targetLine },
+        const resolvedBreakpoint = artifact.index.resolveBreakpoint(sourceUri.fsPath, targetLine);
+        assert.ok(
+            resolvedBreakpoint && resolvedBreakpoint.verifiedLine === targetLine,
             `Extension Host source files: ${JSON.stringify(artifact.index.sourceFiles)}`,
         );
         const breakpoint = new vscode.SourceBreakpoint(
@@ -43,14 +43,14 @@ suite('C source breakpoint', () => {
                 const response = await item.session.customRequest('stackTrace', {
                     threadId: item.threadId,
                     startFrame: 0,
-                    levels: 1,
+                    levels: 10,
                 });
                 const frame = response?.stackFrames?.[0];
                 if (path.normalize(frame?.source?.path ?? '') !== path.normalize(sourceUri.fsPath)
                     || frame?.line !== targetLine) { return; }
                 clearTimeout(timer);
                 disposable.dispose();
-                resolve(frame);
+                resolve(response.stackFrames);
             });
         });
 
@@ -62,9 +62,10 @@ suite('C source breakpoint', () => {
         assert.strictEqual(started, true);
 
         try {
-            const frame = await stopped;
-            assert.strictEqual(frame.line, targetLine);
-            assert.strictEqual(frame.instructionPointerReference, '0x0151');
+            const frames = await stopped;
+            assert.deepStrictEqual(frames.slice(0, 3).map((frame: any) => frame.name), ['add8', 'accumulate', 'main']);
+            assert.strictEqual(frames[0].line, targetLine);
+            assert.match(frames[0].instructionPointerReference, /^0x[0-9A-F]{4}$/);
         } finally {
             await vscode.commands.executeCommand('workbench.action.debug.stop');
             vscode.debug.removeBreakpoints([breakpoint]);

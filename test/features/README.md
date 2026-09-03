@@ -43,7 +43,7 @@ On Windows, persist the variable for future VS Code and terminal processes with:
 
 Restart VS Code after changing a persistent environment variable because an existing extension host retains the environment with which it was started.
 
-This scenario is reserved for end-to-end launch, breakpoint, stepping, display coexistence, and cleanup checks. It must fail explicitly when the emulator or fixture is unavailable. A successful run writes `test/features/debug-adapter/result.txt`; failed or partial runs must not update that file.
+This scenario verifies Extension Host startup and a real C `add8 -> accumulate -> main` Call Stack from the checked-in `temp/cdbg` probe. It asserts semantic frame names and order after stopping in `add8`. Each frame remains valid only for the current stopped generation. The runner must fail explicitly when the emulator or fixture is unavailable. A successful run writes `test/features/debug-adapter/result.txt`; failed or partial runs must not update that file.
 
 ## Result policy
 

@@ -41,7 +41,7 @@ Closing the display panel terminates the active debug launch and closes the Run 
 - Continue, pause, Step Into, and basic Step Over.
 - ASM source breakpoints resolved through final ELF/DWARF metadata.
 - Instruction breakpoints using CPU addresses.
-- One current CPU stack frame with source highlighting when mapped.
+- A verified semantic Call Stack from DWARF subprogram and call-frame metadata with readable stopped-state stack memory. Known C functions display their function name, with source and instruction pointer provided in the standard DAP fields. A physical caller preserves its verified return address for instruction navigation while its source display may use the preceding statement only within the same verified subprogram. Inline frames use DWARF call-file, line, and column metadata and appear before their physical frame. Frames stop at the first missing or unsupported unwind rule; raw stack values are never guessed as callers. Frame IDs are valid only until execution resumes, restarts, reloads ROM, disconnects, or reaches another stop.
 - Registers, flags, and a raw stack sample in Variables.
 - Register names and numeric literals in Watch/evaluate.
 - V6 Hardware Statistics in the Run and Debug sidebar, including timing/display state, palette clipboard actions, RAM-disk mapping, and four-drive FDD mount/dismount actions when hardware-statistics schema 1 is advertised.
@@ -105,7 +105,7 @@ Older backends without stop-record schema 1 use running-state detection. Consequ
 - DAP data breakpoints and exception details are not enabled.
 - Logpoints are not enabled because their address attribution requires stop records.
 - The Hex Viewer reports an unsupported backend instead of falling back to repeated per-byte requests when `GET_MEM` is unavailable.
-- Semantic caller frames, C locals, and Step Out require variable-location and unwind metadata not currently emitted by the toolchain.
+- C locals and source-level Step Out remain unavailable pending their dedicated metadata and stepping support.
 - Debug attach does not yet share an externally owned emulator session with the display panel.
 
 ## Verification
@@ -114,6 +114,7 @@ Older backends without stop-record schema 1 use running-state detection. Consequ
 npm run test:unit
 npm run test:regression
 npm run test:feature:metadata
+npm run test:feature:debug
 ```
 
-The gated real-emulator scenario is documented in `test/features/README.md`.
+`test:feature:debug` requires `V6EMUL` and verifies the real `add8 -> accumulate -> main` Call Stack scenario. Feature-runner prerequisites and result files are documented in `test/features/README.md`.

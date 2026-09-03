@@ -8,7 +8,7 @@ import { toDwarfRegisters, DWARF_REG } from '../../../src/debug/metadata/v6c-reg
 import { StopMemoryReader } from '../../../src/debug/metadata/stop-memory-reader';
 import { IpcCommand } from '../../../src/emulator/protocol/ipc-commands';
 
-const FIXTURE_O0 = path.join(__dirname, '..', '..', '..', 'temp', 'cdbg', 'probe-O0.elf');
+const FIXTURE_O0 = path.join(process.cwd(), 'temp', 'cdbg', 'probe-O0.elf');
 const FIXTURE_EXISTS = fs.existsSync(FIXTURE_O0);
 
 describe('v6c-register-map', () => {
@@ -57,6 +57,82 @@ describe('StopMemoryReader', () => {
     it('returns undefined when the backend read fails', async () => {
         const reader = new StopMemoryReader({ send: async () => ({ ok: false }) } as any);
         expect(await reader.read(0x0100, 2)).to.equal(undefined);
+    });
+});
+
+describe('DebugStopContext unwind boundaries', () => {
+    function contextFor(row: any, registers: Record<number, number>) {
+        const metadata = { cfiRowAt: () => row };
+        const memory = { read: async () => 0x0200 };
+        return new (DebugStopContext as any)(metadata, memory, registers) as DebugStopContext;
+    }
+
+    it('stops rather than wrapping an overflowing CFA', async () => {
+        const context = contextFor({ cfa: { register: DWARF_REG.SP, offset: 2 }, registers: new Map([[DWARF_REG.PC, { kind: 'offset', offset: -2 }]]) }, {
+            [DWARF_REG.PC]: 0x0100, [DWARF_REG.SP]: 0xFFFF,
+        });
+
+        expect(await context.unwind()).to.have.length(1);
+    });
+
+    it('stops when CFI does not advance the caller stack pointer', async () => {
+        const context = contextFor({ cfa: { register: DWARF_REG.SP, offset: 0 }, registers: new Map([[DWARF_REG.PC, { kind: 'offset', offset: -2 }]]) }, {
+            [DWARF_REG.PC]: 0x0100, [DWARF_REG.SP]: 0x7000,
+        });
+
+        expect(await context.unwind()).to.have.length(1);
+    });
+
+    it('stops when a recovered caller repeats a previously visited frame', async () => {
+        const context = contextFor({ cfa: { register: DWARF_REG.SP, offset: 2 }, registers: new Map([[DWARF_REG.PC, { kind: 'offset', offset: -2 }]]) }, {
+            [DWARF_REG.PC]: 0x0100, [DWARF_REG.SP]: 0x7000,
+        });
+        (context as any).memory.read = async () => 0x0100;
+
+        expect(await context.unwind()).to.have.length(1);
+    });
+
+    it('stops when the saved return address is unreadable or uses an unsupported rule', async () => {
+        const row = { cfa: { register: DWARF_REG.SP, offset: 2 }, registers: new Map([[DWARF_REG.PC, { kind: 'offset', offset: -2 }]]) };
+        const unreadable = contextFor(row, { [DWARF_REG.PC]: 0x0100, [DWARF_REG.SP]: 0x7000 });
+        (unreadable as any).memory.read = async () => undefined;
+        expect(await unreadable.unwind()).to.have.length(1);
+
+        const unsupported = contextFor({ ...row, registers: new Map([[DWARF_REG.PC, { kind: 'expression' }]]) }, {
+            [DWARF_REG.PC]: 0x0100, [DWARF_REG.SP]: 0x7000,
+        });
+        expect(await unsupported.unwind()).to.have.length(1);
+    });
+
+    it('uses the CFI row selected for prologue, body, and epilogue PCs', async () => {
+        const rows = new Map([
+            [0x0100, { cfa: { register: DWARF_REG.SP, offset: 2 }, registers: new Map([[DWARF_REG.PC, { kind: 'offset', offset: -2 }]]) }],
+            [0x0110, { cfa: { register: DWARF_REG.SP, offset: 4 }, registers: new Map([[DWARF_REG.PC, { kind: 'offset', offset: -4 }]]) }],
+            [0x0120, { cfa: { register: DWARF_REG.SP, offset: 2 }, registers: new Map([[DWARF_REG.PC, { kind: 'offset', offset: -2 }]]) }],
+        ]);
+        for (const [pc, row] of rows) {
+            const context = contextFor(row, { [DWARF_REG.PC]: pc, [DWARF_REG.SP]: 0x7000 });
+            const frames = await context.unwind();
+            expect(frames[0].cfa).to.equal(0x7000 + row.cfa.offset);
+        }
+    });
+
+    it('recovers saved registers and enforces the 64-frame limit', async () => {
+        const row = {
+            cfa: { register: DWARF_REG.SP, offset: 2 },
+            registers: new Map([
+                [DWARF_REG.PC, { kind: 'offset', offset: -2 }],
+                [DWARF_REG.BC, { kind: 'offset', offset: -4 }],
+            ]),
+        };
+        const context = contextFor(row, { [DWARF_REG.PC]: 1, [DWARF_REG.SP]: 0x7000 });
+        let returnPc = 1;
+        let memoryRead = 0;
+        (context as any).memory.read = async () => (++memoryRead % 2 === 1 ? ++returnPc : 0x1234);
+        const frames = await context.unwind();
+
+        expect(frames).to.have.length(64);
+        expect(frames[1].registers[DWARF_REG.BC]).to.equal(0x1234);
     });
 });
 

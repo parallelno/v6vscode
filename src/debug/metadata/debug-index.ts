@@ -33,6 +33,11 @@ export interface SymbolInfo {
     declaration?: SourceLocation;
 }
 
+export interface AddressRange {
+    start: number;
+    end: number;
+}
+
 export interface DebugIndex {
     /** All source file paths in the index. */
     readonly sourceFiles: ReadonlyArray<string>;
@@ -48,6 +53,12 @@ export interface DebugIndex {
 
     /** Reverse: CPU address → source location. */
     resolveAddress(address: number): SourceLocation | undefined;
+
+    /** Nearest preceding statement address within a verified function range. */
+    resolvePrecedingStatement(address: number, ranges: readonly AddressRange[]): number | undefined;
+
+    /** Resolve a DWARF line-table file index to its normalized source path. */
+    sourceFile(index: number): string | undefined;
 
     /** Symbol by name. */
     symbol(name: string): SymbolInfo | undefined;
@@ -74,6 +85,7 @@ export function buildDebugIndex(
     symbols: Elf32Symbol[],
     compDir: string,
     declarations: DwarfVariableDeclaration[] = [],
+    lineFiles: readonly string[] = [],
 ): DebugIndex {
     // ---- Normalize all file paths relative to compDir ----
     const norm = (f: string) => normalizePath(f, compDir);
@@ -81,11 +93,16 @@ export function buildDebugIndex(
 
     // ---- Address → source (first is_stmt row wins for each address) ----
     const byAddress = new Map<number, SourceLocation>();
+    const statementAddresses: number[] = [];
     for (const r of normalizedRows) {
         if (!byAddress.has(r.address)) {
             byAddress.set(r.address, { file: r.file, line: r.line, column: r.column, isStmt: r.isStmt });
         }
     }
+    for (const row of normalizedRows) {
+        if (row.isStmt && !statementAddresses.includes(row.address)) { statementAddresses.push(row.address); }
+    }
+    statementAddresses.sort((left, right) => left - right);
 
     // ---- Source (file, line) → addresses (sorted) ----
     // Key: normalized file path + ':' + line number
@@ -173,6 +190,21 @@ export function buildDebugIndex(
 
         resolveAddress(address) {
             return byAddress.get(address);
+        },
+
+        resolvePrecedingStatement(address, ranges) {
+            for (let index = statementAddresses.length - 1; index >= 0; index--) {
+                const candidate = statementAddresses[index];
+                if (candidate >= address) { continue; }
+                if (ranges.some(range => candidate >= range.start && candidate < range.end)) {
+                    return candidate;
+                }
+            }
+            return undefined;
+        },
+
+        sourceFile(index) {
+            return lineFiles[index] ?? lineFiles[index - 1];
         },
 
         symbol(name) {

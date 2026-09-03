@@ -10,8 +10,8 @@ import { IpcClient } from '../../../src/emulator/client/ipc-client';
 import { IpcCommand } from '../../../src/emulator/protocol/ipc-commands';
 import { Logger } from '../../../src/platform/logging/logger';
 
-const PROBE_ELF = path.join(__dirname, '..', '..', '..', 'temp', 'cdbg', 'probe-O0.elf');
-const PROBE_ROM = path.join(__dirname, '..', '..', '..', 'temp', 'cdbg', 'probe-O0.rom');
+const PROBE_ELF = path.join(process.cwd(), 'temp', 'cdbg', 'probe-O0.elf');
+const PROBE_ROM = path.join(process.cwd(), 'temp', 'cdbg', 'probe-O0.rom');
 const EMULATOR = process.env.V6EMUL;
 const CAN_RUN = !!EMULATOR && fs.existsSync(EMULATOR) && fs.existsSync(PROBE_ELF) && fs.existsSync(PROBE_ROM);
 const PORT = 39777; // arbitrary high port, avoids common clashes
@@ -27,7 +27,7 @@ const PORT = 39777; // arbitrary high port, avoids common clashes
         metadata = new DebugMetadataIndex(parseElf32(fs.readFileSync(PROBE_ELF)));
         emulator = spawn(EMULATOR!, [
             '--serve', '--tcp-port', String(PORT),
-            '--boot-rom', path.join(__dirname, '..', '..', '..', 'res', 'boot', 'boots.bin'),
+            '--boot-rom', path.join(process.cwd(), 'res', 'boot', 'boots.bin'),
             '--speed', 'max',
         ], { stdio: ['ignore', 'pipe', 'pipe'] });
         emulator.stderr?.on('data', () => {});

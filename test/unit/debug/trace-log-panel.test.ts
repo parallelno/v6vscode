@@ -4,7 +4,7 @@ import { expect } from 'chai';
 import * as vscode from 'vscode';
 import { TraceLogPanel } from '../../../src/debug/views/trace-log-panel';
 
-const ROOT = path.resolve(__dirname, '..', '..', '..');
+const ROOT = process.cwd();
 const read = (relativePath: string) => fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
 
 describe('Trace Log panel', () => {

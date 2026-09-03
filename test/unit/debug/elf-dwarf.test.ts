@@ -9,9 +9,9 @@ import { buildDebugIndex } from '../../../src/debug/metadata/debug-index';
 import { loadDebugArtifact } from '../../../src/debug/metadata/debug-artifact-loader';
 
 // Path to the companion ELF built by `make` in the test project
-const ELF_PATH = path.join(__dirname, '..', '..', '..', 'temp', 'project', 'out', 'demo1.elf');
+const ELF_PATH = path.join(process.cwd(), 'temp', 'project', 'out', 'demo1.elf');
 const ELF_EXISTS = fs.existsSync(ELF_PATH);
-const C_ELF_PATH = path.join(__dirname, '..', '..', '..', 'temp', 'project', 'out', 'demo2.elf');
+const C_ELF_PATH = path.join(process.cwd(), 'temp', 'project', 'out', 'demo2.elf');
 const C_ELF_EXISTS = fs.existsSync(C_ELF_PATH);
 
 /** Find a line that maps to an exact (unrelocated) executable statement. */
@@ -267,7 +267,7 @@ describe('DebugIndex source paths', () => {
     });
 
     it('resolves an absolute editor path against a DWARF-relative source path', () => {
-        const sourcePath = path.join(__dirname, '..', '..', '..', 'temp', 'project', 'src', 'main.asm');
+        const sourcePath = path.join(process.cwd(), 'temp', 'project', 'src', 'main.asm');
         const firstMainRow = rows.find(row => row.isStmt && row.file === 'src/main.asm')!;
         expect(index.resolveBreakpoint(sourcePath, firstMainRow.line)).to.deep.equal({
             address: firstMainRow.address,

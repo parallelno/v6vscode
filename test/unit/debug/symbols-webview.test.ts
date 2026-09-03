@@ -4,11 +4,11 @@ import { expect } from 'chai';
 
 describe('Symbols webview interactions', () => {
     const source = fs.readFileSync(
-        path.join(__dirname, '../../../src/debug/views/assets/symbols.js'),
+        path.join(process.cwd(), 'src/debug/views/assets/symbols.js'),
         'utf8',
     );
     const providerSource = fs.readFileSync(
-        path.join(__dirname, '../../../src/debug/views/symbols-panel.ts'),
+        path.join(process.cwd(), 'src/debug/views/symbols-panel.ts'),
         'utf8',
     );
 

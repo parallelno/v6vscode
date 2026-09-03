@@ -53,6 +53,7 @@ export class DwarfScopes {
     readonly subprograms: SubprogramNode[] = [];
     readonly variables: VariableNode[] = [];
     private readonly scopeById = new Map<number, ScopeNode>();
+    private readonly subprogramById = new Map<number, SubprogramNode>();
     private readonly variableById = new Map<number, VariableNode>();
 
     constructor(
@@ -71,6 +72,10 @@ export class DwarfScopes {
             if (inRanges(sub.ranges, pc)) { return sub; }
         }
         return undefined;
+    }
+
+    subprogram(id: number): SubprogramNode | undefined {
+        return this.subprogramById.get(id);
     }
 
     /** Innermost scope containing the PC. */
@@ -170,6 +175,7 @@ export class DwarfScopes {
             declaration: this.declaration(die),
         };
         this.subprograms.push(sub);
+        this.subprogramById.set(sub.id, sub);
         return sub;
     }
 

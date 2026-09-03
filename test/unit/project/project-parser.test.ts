@@ -4,7 +4,7 @@ import * as path from 'path';
 import { parse } from '../../../src/project/parsing/project-parser';
 import { V6Error } from '../../../src/platform/errors/v6-error';
 
-const FIXTURES = path.join(__dirname, '..', '..', 'fixtures', 'projects');
+const FIXTURES = path.join(process.cwd(), 'test', 'fixtures', 'projects');
 
 function readFixture(name: string): string {
     return fs.readFileSync(path.join(FIXTURES, name), 'utf-8');

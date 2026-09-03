@@ -24,6 +24,8 @@ import {
 } from '../../emulator/protocol/debug-models';
 import { loadDebugArtifact } from '../metadata/debug-artifact-loader';
 import { DebugIndex, SourceLocation } from '../metadata/debug-index';
+import { DebugMetadataIndex } from '../metadata/debug-metadata-index';
+import { DebugStopContext } from '../metadata/debug-stop-context';
 import { resolveDebugSourcePath } from '../metadata/debug-source-path';
 import { Logger } from '../../platform/logging/logger';
 import { PathService } from '../../platform/files/path-service';
@@ -31,6 +33,7 @@ import { getServerInfo, supportsStopRecords, validateDebuggerServer } from '../.
 import { WatchpointService } from '../watchpoints/watchpoint-service';
 import { evaluateSymbolExpression, validateSymbolExpression } from '../utilities/symbol-expression';
 import { WatchpointsProvider } from '../views/watchpoints-provider';
+import { StackTraceService } from './stack-trace-service';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -77,6 +80,18 @@ interface AdapterBreakpoint {
     logMessage?: ParsedLogMessage;
 }
 
+interface InlineFrameSource {
+    file: string;
+    line: number;
+    column: number;
+}
+
+interface InlineFrameName {
+    id: number;
+    name: string;
+    source: InlineFrameSource | undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -116,6 +131,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
     // Debug metadata
     private debugIndex: DebugIndex | null = null;
+    private debugMetadata: DebugMetadataIndex | undefined;
     private debugMetadataError = 'No debug artifact was configured in the active project.';
     private workspaceRoot = '';
     private lastResolvedSource: SourceLocation | undefined;
@@ -153,6 +169,9 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
     // Frame-level cache — refreshed on each pause
     private cachedRegs: GetRegsResponse | null = null;
+    private stoppedGeneration = 0;
+    private stopContext: DebugStopContext | undefined;
+    private readonly stackTraceService = new StackTraceService();
 
     constructor(
         private readonly lifecycle: EmulatorLifecycle,
@@ -246,6 +265,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         const args = req.arguments ?? {};
         try {
             this.debugIndex = null;
+            this.debugMetadata = undefined;
+            this.invalidateStopContext();
             this.debugMetadataError = 'No debug artifact was configured in the active project.';
             this.lastResolvedSource = undefined;
             this.clearUnavailableSourceIndicator();
@@ -286,6 +307,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                 try {
                     const loadResult = await loadDebugArtifact(elfPath, romPath);
                     this.debugIndex = loadResult.index;
+                    this.debugMetadata = loadResult.metadata;
                     this.debugMetadataError = '';
                     if (loadResult.validationWarning) {
                         this.sendEvent('output', { category: 'important', output: `V6: ${loadResult.validationWarning}\n` });
@@ -362,6 +384,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             if (this.stopOnEntry) {
                 this.stopReason = 'entry';
                 await this.refreshRegs();
+                this.captureStopContext();
                 this.emitStopped('entry');
             } else {
                 await this.run();
@@ -387,17 +410,72 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // -----------------------------------------------------------------------
 
     private async onStackTrace(req: any): Promise<void> {
+        if (this.stopContext) {
+            await this.stackTraceService.capture(
+                this.stoppedGeneration,
+                this.stopContext,
+                pc => this.debugMetadata?.subprogramAt(pc)?.name ?? this.debugIndex?.symbolAtAddress(pc)?.name,
+                pc => this.debugMetadata?.inlineChainAt(pc)
+                    .map(scope => {
+                        const name = scope.abstractOrigin === undefined
+                            ? undefined
+                            : this.debugMetadata?.subprogram(scope.abstractOrigin)?.name;
+                        const file = scope.callFile === undefined
+                            ? undefined
+                            : this.debugIndex?.sourceFile(scope.callFile);
+                        return name ? {
+                            id: scope.id,
+                            name,
+                            source: file && scope.callLine !== undefined
+                                ? { file, line: scope.callLine, column: scope.callColumn ?? 0 }
+                                : undefined,
+                        } : undefined;
+                    })
+                    .filter((frame): frame is InlineFrameName => frame !== undefined) ?? [],
+                frame => this.resolveFrameDisplayPc(frame),
+            );
+            const page = this.stackTraceService.page(req.arguments?.startFrame, req.arguments?.levels);
+            this.sendResponseBody(req, {
+                stackFrames: page.frames.map(frame => this.makeStackFrame(
+                    frame.id, frame.name, frame.instructionPc, frame.displayPc, frame.source,
+                )),
+                totalFrames: page.totalFrames,
+            });
+            return;
+        }
+
         const regs = await this.safeGetRegs();
         const pc = regs?.pc ?? 0;
 
-        // Resolve PC to source location using debug index
-        const srcLoc = this.debugIndex?.resolveAddress(pc);
-        const funcName = this.debugIndex?.symbolAtAddress(pc)?.name;
-        const frameName = funcName ? `${funcName} ${hex4(pc)}` : hex4(pc);
+        this.sendResponseBody(req, {
+            stackFrames: [this.makeStackFrame(1, this.debugIndex?.symbolAtAddress(pc)?.name ?? hex4(pc), pc)],
+            totalFrames: 1,
+        });
+    }
 
+    private resolveFrameDisplayPc(frame: import('../metadata/debug-stop-context').PhysicalFrame): number {
+        if (frame.index === 0 || !this.debugMetadata || !this.debugIndex) { return frame.pc; }
+        const subprogram = this.debugMetadata.subprogramAt(frame.pc);
+        return subprogram
+            ? this.debugIndex.resolvePrecedingStatement(frame.pc, subprogram.ranges)
+                ?? frame.pc
+            : frame.pc;
+    }
+
+    private makeStackFrame(
+        id: number,
+        name: string,
+        pc: number,
+        displayPc = pc,
+        sourceOverride?: { file: string; line: number; column: number },
+    ): any {
+        // Resolve PC to source location using debug index
+        const srcLoc = sourceOverride
+            ? { ...sourceOverride, isStmt: false }
+            : this.debugIndex?.resolveAddress(displayPc);
         const frame: any = {
-            id: 1,
-            name: frameName,
+            id,
+            name,
             instructionPointerReference: hex4(pc),
             line: 1,
             column: 1,
@@ -425,11 +503,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             frame.column = this.lastResolvedSource.column;
             this.showUnavailableSourceIndicator(sourcePath, this.lastResolvedSource.line);
         }
-
-        this.sendResponseBody(req, {
-            stackFrames: [frame],
-            totalFrames: 1,
-        });
+        return frame;
     }
 
     // -----------------------------------------------------------------------
@@ -437,6 +511,10 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // -----------------------------------------------------------------------
 
     private async onScopes(req: any): Promise<void> {
+        if (this.stopContext && this.stackTraceService.frame(this.stoppedGeneration, req.arguments?.frameId ?? 0) === undefined) {
+            this.sendResponseBody(req, { scopes: [] });
+            return;
+        }
         this.sendResponseBody(req, {
             scopes: [
                 {
@@ -464,6 +542,10 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // -----------------------------------------------------------------------
 
     private async onVariables(req: any): Promise<void> {
+        if (this.stopContext && this.stackTraceService.frame(this.stoppedGeneration, req.arguments?.frameId ?? 0) === undefined) {
+            this.sendResponseBody(req, { variables: [] });
+            return;
+        }
         const ref = req.arguments?.variablesReference ?? 0;
         const regs = await this.safeGetRegs();
 
@@ -559,6 +641,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         this.watchpointsProvider?.showStop([]);
         this.clearUnavailableSourceIndicator();
         this.cachedRegs = null;
+        this.invalidateStopContext();
         this.pendingPause = false;
         this.pendingStep = false;
         this.sessionState = 'running';
@@ -589,6 +672,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
         this.pendingStep = true;
         this.cachedRegs = null;
+        this.invalidateStopContext();
 
         try {
             // Ask backend for step-over address (address after current instruction / CALL target)
@@ -628,6 +712,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         this.sendResponseBody(req, {});
         this.pendingStep = true;
         this.cachedRegs = null;
+        this.invalidateStopContext();
         await this.singleStep();
     }
 
@@ -1180,6 +1265,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         this.pendingStep = false;
         this.pendingStepOverAddr = undefined;
         this.cachedRegs = null;
+        this.invalidateStopContext();
 
         try {
             const response = await this.client.send(IpcCommand.RESTART, undefined, 5000, 'critical');
@@ -1241,6 +1327,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         this.pendingStep = false;
         this.pendingStepOverAddr = undefined;
         this.cachedRegs = null;
+        this.invalidateStopContext();
     }
 
     private async sendControl(command: IpcCommand, errorMessage: string, data?: unknown): Promise<void> {
@@ -1326,6 +1413,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
     private async onStop(record?: StopRecord): Promise<void> {
         await this.refreshRegs();
+        this.captureStopContext();
 
         const stoppedAtStepOver = this.pendingStepOverAddr !== undefined
             && ((record?.reason === 'breakpoint' && record.breakpointAddress === this.pendingStepOverAddr)
@@ -1577,6 +1665,18 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         return this.cachedRegs;
     }
 
+    private invalidateStopContext(): void {
+        this.stoppedGeneration++;
+        this.stopContext = undefined;
+        this.stackTraceService.clear();
+    }
+
+    private captureStopContext(): void {
+        if (!this.debugMetadata || !this.client || !this.cachedRegs) { return; }
+        this.stoppedGeneration++;
+        this.stopContext = DebugStopContext.from(this.debugMetadata, this.client, this.cachedRegs);
+    }
+
     private async cleanup(terminateDebuggee: boolean): Promise<void> {
         this.stopPoll();
         this.sessionState = 'disconnected';
@@ -1620,6 +1720,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         this.client = null;
         this.emulatorProcess = null;
         this.cachedRegs = null;
+        this.invalidateStopContext();
         this.stopRecordsSupported = false;
         this.lastStopSequence = undefined;
         this.lastExceptionRecord = undefined;

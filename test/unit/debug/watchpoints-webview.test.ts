@@ -4,7 +4,7 @@ import { expect } from 'chai';
 
 describe('Watchpoints webview editing', () => {
     const source = fs.readFileSync(
-        path.join(__dirname, '../../../src/debug/views/assets/watchpoints.js'),
+        path.join(process.cwd(), 'src/debug/views/assets/watchpoints.js'),
         'utf8',
     );
 

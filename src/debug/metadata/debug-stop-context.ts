@@ -55,18 +55,20 @@ export class DebugStopContext {
         let pc = this.pc;
         let sp = this.sp;
         const seen = new Set<string>();
+        const seenPcs = new Set<number>();
 
         for (let index = 0; index < MAX_FRAMES; index++) {
             const key = `${pc}:${sp}`;
-            if (seen.has(key)) { break; }
+            if (seen.has(key) || seenPcs.has(pc)) { break; }
             seen.add(key);
+            seenPcs.add(pc);
 
             const row = this.metadata.cfiRowAt(pc);
             const frame: PhysicalFrame = { index, pc, sp, registers: { ...registers} };
             frames.push(frame);
 
             if (!row) { break; } // no CFI: honest single frame
-            const next = await this.unwindOne(row, registers);
+            const next = await this.unwindOne(row, registers, sp);
             if (!next) { break; }
 
             frame.cfa = next.cfa;
@@ -121,10 +123,12 @@ export class DebugStopContext {
     private async unwindOne(
         row: UnwindRow,
         registers: Record<number, number>,
+        currentSp: number,
     ): Promise<{ cfa: number; returnPc: number; callerSp: number; registers: Record<number, number> } | undefined> {
         const cfaRegister = registers[row.cfa.register];
         if (cfaRegister === undefined) { return undefined; }
-        const cfa = (cfaRegister + row.cfa.offset) & 0xFFFF;
+        const cfa = cfaRegister + row.cfa.offset;
+        if (cfa < 0 || cfa > 0xFFFF || cfa <= currentSp) { return undefined; }
 
         const returnPc = await this.recoverRegister(row, DWARF_REG.PC, cfa, registers);
         if (returnPc === undefined) { return undefined; } // undefined PC = honest boundary
@@ -157,7 +161,8 @@ export class DebugStopContext {
             case 'register':
                 return registers[rule.register];
             case 'offset': {
-                const address = (cfa + rule.offset) & 0xFFFF;
+                const address = cfa + rule.offset;
+                if (address < 0 || address + 1 > 0xFFFF) { return undefined; }
                 return this.memory.read(address, 2);
             }
         }

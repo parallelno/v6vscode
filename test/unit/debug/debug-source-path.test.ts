@@ -38,7 +38,7 @@ describe('resolveDebugSourcePath', () => {
     });
 
     it('is shared by source navigation and DAP stack frames', () => {
-        const root = path.resolve(__dirname, '..', '..', '..');
+        const root = process.cwd();
         for (const relativePath of [
             'src/debug/views/debug-source-navigation.ts',
             'src/debug/adapter/v6-debug-adapter.ts',

@@ -5,8 +5,8 @@ import { parseElf32 } from '../../../src/debug/metadata/elf32-reader';
 import { DebugMetadataIndex } from '../../../src/debug/metadata/debug-metadata-index';
 import { DwarfError } from '../../../src/debug/metadata/dwarf-sections';
 
-const FIXTURE_O0 = path.join(__dirname, '..', '..', '..', 'temp', 'cdbg', 'probe-O0.elf');
-const FIXTURE_O2 = path.join(__dirname, '..', '..', '..', 'temp', 'cdbg', 'probe-O2.elf');
+const FIXTURE_O0 = path.join(process.cwd(), 'temp', 'cdbg', 'probe-O0.elf');
+const FIXTURE_O2 = path.join(process.cwd(), 'temp', 'cdbg', 'probe-O2.elf');
 const FIXTURES_EXIST = fs.existsSync(FIXTURE_O0) && fs.existsSync(FIXTURE_O2);
 
 function loadIndex(file: string): DebugMetadataIndex {
