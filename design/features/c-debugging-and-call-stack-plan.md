@@ -102,8 +102,8 @@ Required end-to-end scenarios:
 - [x] Approve the V6C ABI and DWARF producer contract.
 - [x] Complete `v6llvmc-c-debug-metadata-plan.md`.
 - [x] Complete `c-debug-dwarf-metadata-plan.md`.
-- [ ] Complete `c-debug-call-stack-plan.md`.
-- [ ] Complete `c-debug-variables-and-expressions-plan.md`.
+- [x] Complete `c-debug-call-stack-plan.md`.
+- [x] Complete `c-debug-variables-and-expressions-plan.md`.
 - [ ] Complete `c-debug-source-stepping-plan.md`.
 - [ ] Preserve existing ASM and baseline C debugging through every phase.
 - [ ] Run compiler, parser, adapter, Extension Host, real-emulator, and sanitizer verification.

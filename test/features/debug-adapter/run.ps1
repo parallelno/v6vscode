@@ -36,7 +36,7 @@ try {
     $romHash = Get-Sha256 $romPath
     $result = @(
         'status=passed',
-        'scenarios=extension-host-startup,c-source-breakpoint,three-function-call-stack',
+        'scenarios=extension-host-startup,c-source-breakpoint,three-function-call-stack,c-frame-scopes-and-watch',
         "v6emul.version=$version",
         "elf.sha256=$elfHash",
         "rom.sha256=$romHash",

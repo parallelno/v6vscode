@@ -43,7 +43,7 @@ Closing the display panel terminates the active debug launch and closes the Run 
 - Instruction breakpoints using CPU addresses.
 - A verified semantic Call Stack from DWARF subprogram and call-frame metadata with readable stopped-state stack memory. Known C functions display their function name, with source and instruction pointer provided in the standard DAP fields. A physical caller preserves its verified return address for instruction navigation while its source display may use the preceding statement only within the same verified subprogram. Inline frames use DWARF call-file, line, and column metadata and appear before their physical frame. Frames stop at the first missing or unsupported unwind rule; raw stack values are never guessed as callers. Frame IDs are valid only until execution resumes, restarts, reloads ROM, disconnects, or reaches another stop.
 - Registers, flags, and a raw stack sample in Variables.
-- Register names and numeric literals in Watch/evaluate.
+- Watch and Debug Console source-level C expressions against the selected stopped frame: visible locals, parameters, statics, globals, enum constants, and supported register aliases; integer and character literals; parentheses; unary `+`, `-`, `~`, `!`, `*`, and `&`; arithmetic, shifts, bitwise, comparison, and logical operators; array indexing; structure and union `.` members; pointer `->` members; and scalar or pointer casts. Pointer, array, structure, and union results can be expanded through the normal Variables handle system. Expressions are read-only: assignments, calls, increments, decrements, and comma expressions are rejected and never execute target code.
 - V6 Hardware Statistics in the Run and Debug sidebar, including timing/display state, palette clipboard actions, RAM-disk mapping, and four-drive FDD mount/dismount actions when hardware-statistics schema 1 is advertised.
 - A standalone Ports editor panel showing complete In and Out tables with changes since the previous paused update highlighted.
 - A standalone Hex Viewer editor panel with numeric, symbol, and inclusive-range navigation when the backend advertises `GET_MEM` command 93. Inclusive ranges accept `11-14` and `11..14`. Clearing the search clears its highlight; clicking a visible symbol selects its range without scrolling.
@@ -97,6 +97,8 @@ Source breakpoints remain unverified when the ELF is missing, malformed, or does
 
 ## Current Limitations
 
+Source-level values report `<optimized out>` when the compiler removed their recoverable location, `<not available at this location>` for a location-list gap, `<unsupported location: ...>` for unsupported DWARF location operations, and `<memory unavailable>` when a bounded memory read fails. Invalid pointer dereference and expansion report the unreadable target address. Hover evaluation remains disabled while its bounded-latency policy is unverified.
+
 The stable VS Code extension API exposes `SourceBreakpoint` but no instruction-breakpoint constructor. Trace Log can therefore toggle source-backed breakpoints through the authoritative Breakpoints view; the action is disabled for disassembly-only rows rather than sending breakpoint IPC directly or creating breakpoint state VS Code cannot track.
 
 Older backends without stop-record schema 1 use running-state detection. Consequently, with those backends:
@@ -105,7 +107,7 @@ Older backends without stop-record schema 1 use running-state detection. Consequ
 - DAP data breakpoints and exception details are not enabled.
 - Logpoints are not enabled because their address attribution requires stop records.
 - The Hex Viewer reports an unsupported backend instead of falling back to repeated per-byte requests when `GET_MEM` is unavailable.
-- C locals and source-level Step Out remain unavailable pending their dedicated metadata and stepping support.
+- Source-level Step Out remains unavailable pending its dedicated stepping support.
 - Debug attach does not yet share an externally owned emulator session with the display panel.
 
 ## Verification

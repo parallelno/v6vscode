@@ -1,8 +1,8 @@
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..\..\..')
-$elfPath = Join-Path $repoRoot 'temp\project\out\demo1.elf'
-$romPath = Join-Path $repoRoot 'temp\project\out\demo1.rom'
+$elfPath = Join-Path $repoRoot 'temp\project\out\demo2.elf'
+$romPath = Join-Path $repoRoot 'temp\project\out\demo2.rom'
 $resultPath = Join-Path $PSScriptRoot 'result.txt'
 
 Remove-Item $resultPath -ErrorAction SilentlyContinue
@@ -20,12 +20,12 @@ const crypto = require('crypto');
 const { loadDebugArtifact } = require('./src/debug/metadata/debug-artifact-loader');
 
 (async () => {
-    const elfPath = path.resolve('./temp/project/out/demo1.elf');
-    const romPath = path.resolve('./temp/project/out/demo1.rom');
-    const sourcePath = path.resolve('./temp/project/src/main.asm');
+    const elfPath = path.resolve('./temp/project/out/demo2.elf');
+    const romPath = path.resolve('./temp/project/out/demo2.rom');
+    const sourcePath = path.resolve('./temp/project/src2/main.c');
     const loaded = await loadDebugArtifact(elfPath, romPath);
-    const breakpoint = loaded.index.resolveBreakpoint(sourcePath, 46);
-    if (!breakpoint) throw new Error('source-line-46 did not resolve');
+    const breakpoint = loaded.index.resolveBreakpoint(sourcePath, 43);
+    if (!breakpoint) throw new Error('source-line-43 did not resolve');
     const location = loaded.index.resolveAddress(breakpoint.address);
     if (!location || location.line !== breakpoint.verifiedLine) {
         throw new Error('address-to-source round trip failed');

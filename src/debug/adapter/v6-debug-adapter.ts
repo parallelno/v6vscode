@@ -33,7 +33,13 @@ import { getServerInfo, supportsStopRecords, validateDebuggerServer } from '../.
 import { WatchpointService } from '../watchpoints/watchpoint-service';
 import { evaluateSymbolExpression, validateSymbolExpression } from '../utilities/symbol-expression';
 import { WatchpointsProvider } from '../views/watchpoints-provider';
+import { DapHandleStore } from './dap-handle-store';
+import { ScopeService, SemanticScope, SemanticScopeKind } from './scope-service';
 import { StackTraceService } from './stack-trace-service';
+import { dapVariableValue, TypedValue, VariableService } from './variable-service';
+import { CExpressionService } from './c-expression-service';
+import { TypeInfo } from '../metadata/dwarf-types';
+import { DWARF_REG } from '../metadata/v6c-register-map';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -42,11 +48,29 @@ import { StackTraceService } from './stack-trace-service';
 const THREAD_ID = 1;
 const THREAD_NAME = 'V6 CPU';
 const POLL_INTERVAL_MS = 20;
+const HOVER_EVALUATION_TIMEOUT_MS = 100;
 
-// variablesReference identifiers — non-zero means expandable
-const VARREF_REGISTERS = 1;
-const VARREF_FLAGS = 2;
-const VARREF_STACK = 3;
+type MachineScopeKind = 'registers' | 'flags' | 'stack';
+
+interface MachineScopeHandle {
+    frameId: number;
+    kind: MachineScopeKind;
+}
+
+interface SemanticScopeHandle {
+    frameId: number;
+    scope: SemanticScope;
+    kind: SemanticScopeKind;
+}
+
+interface VariableHandle {
+    context: DebugStopContext;
+    value: TypedValue;
+    depth: number;
+}
+
+type ScopeHandle = MachineScopeHandle | SemanticScopeHandle;
+
 const BYTE_REGISTER_EXPRESSIONS = new Set(['A', 'F', 'B', 'C', 'D', 'E', 'H', 'L', 'M']);
 const BYTE_BREAKPOINT_OPERANDS = new Set<BreakpointOperand>(['A', 'F', 'B', 'C', 'D', 'E', 'H', 'L']);
 const WORD_BREAKPOINT_OPERANDS = new Set<BreakpointOperand>(['BC', 'DE', 'HL', 'SP']);
@@ -100,6 +124,28 @@ function hex4(n: number): string { return `0x${(n >>> 0).toString(16).padStart(4
 function hex2(n: number): string { return `0x${(n >>> 0).toString(16).padStart(2, '0').toUpperCase()}`; }
 
 function flag(f: number, bit: number): string { return (f >> bit & 1) ? '1' : '0'; }
+
+function selectedFrameRegister(name: string, registers: Record<number, number>): number | undefined {
+    const aliases: Record<string, number> = {
+        A: DWARF_REG.A, B: DWARF_REG.B, C: DWARF_REG.C, D: DWARF_REG.D,
+        E: DWARF_REG.E, H: DWARF_REG.H, L: DWARF_REG.L, BC: DWARF_REG.BC,
+        DE: DWARF_REG.DE, HL: DWARF_REG.HL, SP: DWARF_REG.SP, PC: DWARF_REG.PC,
+    };
+    const register = aliases[name.toUpperCase()];
+    return register === undefined ? undefined : registers[register];
+}
+
+function expressionTypeResolver(types: readonly (TypeInfo | undefined)[]): (name: string) => TypeInfo | undefined {
+    const byName = new Map<string, TypeInfo>();
+    const visit = (type: TypeInfo | undefined): void => {
+        if (!type || byName.has(type.name)) { return; }
+        byName.set(type.name, type);
+        visit(type.of);
+        for (const member of type.members ?? []) { visit(member.type); }
+    };
+    types.forEach(visit);
+    return name => byName.get(name) ?? (name === 'int' ? { id: -1, kind: 'base', name, byteSize: 2, signed: true } : undefined);
+}
 
 // ---------------------------------------------------------------------------
 // V6DebugAdapter
@@ -172,6 +218,11 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private stoppedGeneration = 0;
     private stopContext: DebugStopContext | undefined;
     private readonly stackTraceService = new StackTraceService();
+    private readonly scopeService = new ScopeService();
+    private readonly variableService = new VariableService();
+    private readonly cExpressionService = new CExpressionService();
+    private readonly scopeHandles = new DapHandleStore<ScopeHandle>();
+    private readonly variableHandles = new DapHandleStore<VariableHandle>();
 
     constructor(
         private readonly lifecycle: EmulatorLifecycle,
@@ -243,7 +294,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             supportsConfigurationDoneRequest: true,
             supportsStepInTargetsRequest: false,
             supportsSetVariable: false,
-            supportsEvaluateForHovers: false,
+            supportsEvaluateForHovers: true,
             supportsInstructionBreakpoints: true,
             supportsBreakpointEvents: true,
             supportsBreakpointLocationsRequest: false,
@@ -511,30 +562,43 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // -----------------------------------------------------------------------
 
     private async onScopes(req: any): Promise<void> {
-        if (this.stopContext && this.stackTraceService.frame(this.stoppedGeneration, req.arguments?.frameId ?? 0) === undefined) {
+        const frameId = req.arguments?.frameId ?? 0;
+        const frame = this.stopContext
+            ? this.stackTraceService.frame(this.stoppedGeneration, frameId)
+            : undefined;
+        if (this.stopContext && !frame) {
             this.sendResponseBody(req, { scopes: [] });
             return;
         }
+        if (this.debugMetadata && frame) {
+            const semanticScopes = this.scopeService.scopes(this.debugMetadata, frame);
+            this.sendResponseBody(req, {
+                scopes: [
+                    ...semanticScopes.map(scope => ({
+                        name: scope.name,
+                        variablesReference: this.scopeHandles.create(this.stoppedGeneration, {
+                            frameId,
+                            kind: scope.kind,
+                            scope,
+                        }),
+                        expensive: scope.expensive,
+                    })),
+                    ...this.machineScopes(frameId),
+                ],
+            });
+            return;
+        }
         this.sendResponseBody(req, {
-            scopes: [
-                {
-                    name: 'Registers',
-                    variablesReference: VARREF_REGISTERS,
-                    expensive: false,
-                    presentationHint: 'registers',
-                },
-                {
-                    name: 'Flags',
-                    variablesReference: VARREF_FLAGS,
-                    expensive: false,
-                },
-                {
-                    name: 'Raw Stack',
-                    variablesReference: VARREF_STACK,
-                    expensive: false,
-                },
-            ],
+            scopes: this.machineScopes(frameId),
         });
+    }
+
+    private machineScopes(frameId: number): any[] {
+        return [
+            { name: 'Registers', variablesReference: this.scopeHandles.create(this.stoppedGeneration, { frameId, kind: 'registers' }), expensive: false, presentationHint: 'registers' },
+            { name: 'Flags', variablesReference: this.scopeHandles.create(this.stoppedGeneration, { frameId, kind: 'flags' }), expensive: false },
+            { name: 'Raw Stack', variablesReference: this.scopeHandles.create(this.stoppedGeneration, { frameId, kind: 'stack' }), expensive: false },
+        ];
     }
 
     // -----------------------------------------------------------------------
@@ -542,11 +606,43 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // -----------------------------------------------------------------------
 
     private async onVariables(req: any): Promise<void> {
-        if (this.stopContext && this.stackTraceService.frame(this.stoppedGeneration, req.arguments?.frameId ?? 0) === undefined) {
+        const ref = req.arguments?.variablesReference ?? 0;
+        const variable = this.variableHandles.get(this.stoppedGeneration, ref);
+        if (variable) {
+            if (variable.depth >= 8) {
+                this.sendResponseBody(req, { variables: [] });
+                return;
+            }
+            const children = await this.variableService.children(variable.context, variable.value, req.arguments?.start, req.arguments?.count);
+            this.sendResponseBody(req, { variables: children.map(child => this.withVariableHandle(child, variable.context, variable.depth + 1)) });
+            return;
+        }
+        const scope = this.scopeHandles.get(this.stoppedGeneration, ref);
+        if (!scope) {
             this.sendResponseBody(req, { variables: [] });
             return;
         }
-        const ref = req.arguments?.variablesReference ?? 0;
+        if ('scope' in scope) {
+            const frame = this.stopContext && this.stackTraceService.frame(this.stoppedGeneration, scope.frameId);
+            if (!this.debugMetadata || !this.stopContext || !frame) {
+                this.sendResponseBody(req, { variables: [] });
+                return;
+            }
+            const variables = await this.variableService.dapVariables(
+                this.debugMetadata,
+                this.stopContext,
+                frame.physicalFrame,
+                scope.scope.variables,
+                req.arguments?.start,
+                req.arguments?.count,
+            );
+            this.sendResponseBody(req, { variables: variables.map(variable => this.withVariableHandle(variable, this.stopContext!, 0)) });
+            return;
+        }
+        if (!['registers', 'flags', 'stack'].includes(scope.kind)) {
+            this.sendResponseBody(req, { variables: [] });
+            return;
+        }
         const regs = await this.safeGetRegs();
 
         if (!regs) {
@@ -563,7 +659,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         const h = (regs.hl >> 8) & 0xFF;
         const l = regs.hl & 0xFF;
 
-        if (ref === VARREF_REGISTERS) {
+        if (scope.kind === 'registers') {
             this.sendResponseBody(req, {
                 variables: [
                     mkVar('F',  hex2(f),         0, 'register'),
@@ -583,7 +679,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                     mkVar('M',  hex2(regs.m),    0, 'register'),
                 ],
             });
-        } else if (ref === VARREF_FLAGS) {
+        } else if (scope.kind === 'flags') {
             // 8080 F register: S=bit7 Z=bit6 AC=bit4 P=bit2 CY=bit0
             this.sendResponseBody(req, {
                 variables: [
@@ -594,12 +690,21 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                     mkVar('CY (Carry)',          flag(f, 0), 0),
                 ],
             });
-        } else if (ref === VARREF_STACK) {
+        } else if (scope.kind === 'stack') {
             const stackVars = await this.buildStackVars(regs.sp);
             this.sendResponseBody(req, { variables: stackVars });
         } else {
             this.sendResponseBody(req, { variables: [] });
         }
+    }
+
+    private withVariableHandle(variable: import('./variable-service').DapVariableValue, context: DebugStopContext, depth: number): any {
+        const { valueData, ...dapVariable } = variable;
+        const count = (dapVariable.namedVariables ?? 0) + (dapVariable.indexedVariables ?? 0);
+        return {
+            ...dapVariable,
+            variablesReference: count === 0 ? 0 : this.variableHandles.create(this.stoppedGeneration, { context, value: valueData, depth }),
+        };
     }
 
     private async buildStackVars(sp: number): Promise<any[]> {
@@ -1202,11 +1307,44 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     }
 
     // -----------------------------------------------------------------------
-    // evaluate — register names and hex literals
+    // evaluate — selected-frame C scalars, then register names and hex literals
     // -----------------------------------------------------------------------
 
     private async onEvaluate(req: any): Promise<void> {
-        const expr = String(req.arguments?.expression ?? '').trim().toUpperCase();
+        const expression = String(req.arguments?.expression ?? '').trim();
+        const frameId = req.arguments?.frameId;
+        if (typeof frameId === 'number' && this.debugMetadata && this.stopContext) {
+            const frame = this.stackTraceService.frame(this.stoppedGeneration, frameId);
+            if (frame) {
+                try {
+                    const variables = this.scopeService.scopes(this.debugMetadata!, frame)
+                        .flatMap(scope => scope.variables);
+                    const result = await this.evaluateExpression(req.arguments?.context, expression, {
+                        resolve: async name => {
+                            const variable = variables.find(candidate => candidate.name === name);
+                        if (variable) {
+                            const evaluated = await this.variableService.evaluate(
+                                this.debugMetadata!, this.stopContext!, frame.physicalFrame, variable,
+                            );
+                            return { value: evaluated.value, name };
+                        }
+                        const register = selectedFrameRegister(name, frame.physicalFrame.registers);
+                        if (register !== undefined) { return register; }
+                        throw new Error(`Unknown identifier '${name}' in frame ${frame.name}`);
+                        },
+                        read: (type, address) => this.variableService.readAt(this.stopContext!, type, address),
+                        resolveType: expressionTypeResolver(variables.map(variable => variable.typeOffset === undefined ? undefined : this.debugMetadata!.typeOf(variable.typeOffset))),
+                    });
+                    const dapResult = this.withVariableHandle(dapVariableValue(result.value, expression), this.stopContext!, 0);
+                    this.sendResponseBody(req, { result: dapResult.value, type: dapResult.type, memoryReference: dapResult.memoryReference, variablesReference: dapResult.variablesReference, namedVariables: dapResult.namedVariables, indexedVariables: dapResult.indexedVariables });
+                } catch (error) {
+                    this.sendResponse(req, false, error instanceof Error ? error.message : String(error));
+                }
+                return;
+            }
+        }
+
+        const expr = expression.toUpperCase();
         const regs = await this.safeGetRegs();
 
         if (regs) {
@@ -1223,6 +1361,26 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         }
 
         this.sendResponse(req, false, `Cannot evaluate: ${req.arguments?.expression}`);
+    }
+
+    private async evaluateExpression(
+        context: unknown,
+        expression: string,
+        evaluationContext: import('./c-expression-service').CExpressionContext,
+    ): Promise<import('./c-expression-service').ExpressionValue> {
+        const evaluation = this.cExpressionService.evaluateValue(expression, evaluationContext);
+        if (context !== 'hover') { return evaluation; }
+        let timeout: NodeJS.Timeout | undefined;
+        try {
+            return await Promise.race([
+                evaluation,
+                new Promise<never>((_, reject) => {
+                    timeout = setTimeout(() => reject(new Error('Hover evaluation timed out')), HOVER_EVALUATION_TIMEOUT_MS);
+                }),
+            ]);
+        } finally {
+            if (timeout) { clearTimeout(timeout); }
+        }
     }
 
     private evalExpression(expr: string, regs: GetRegsResponse): number | undefined {
@@ -1669,12 +1827,16 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         this.stoppedGeneration++;
         this.stopContext = undefined;
         this.stackTraceService.clear();
+        this.scopeHandles.reset(this.stoppedGeneration);
+        this.variableHandles.reset(this.stoppedGeneration);
     }
 
     private captureStopContext(): void {
         if (!this.debugMetadata || !this.client || !this.cachedRegs) { return; }
         this.stoppedGeneration++;
         this.stopContext = DebugStopContext.from(this.debugMetadata, this.client, this.cachedRegs);
+        this.scopeHandles.reset(this.stoppedGeneration);
+        this.variableHandles.reset(this.stoppedGeneration);
     }
 
     private async cleanup(terminateDebuggee: boolean): Promise<void> {

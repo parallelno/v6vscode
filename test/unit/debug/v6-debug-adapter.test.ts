@@ -24,6 +24,57 @@ describe('V6DebugAdapter', () => {
         assert.strictEqual(responses[1].body.result, '0x0100');
     });
 
+    it('evaluates Watch and Debug Console expressions against the selected C frame', async () => {
+        const adapter = new V6DebugAdapter(
+            {} as any,
+            {} as any,
+            { debug() {}, error() {} } as any,
+            {} as any,
+            () => ({} as any),
+        );
+        (adapter as any).stoppedGeneration = 1;
+        (adapter as any).debugMetadata = {
+            variablesAt: () => [{ id: 1, name: 'count', kind: 'local', typeOffset: 1 }],
+            scopes: { variables: [] },
+            resolveAbstractOrigin: (variable: unknown) => variable,
+            typeOf: () => ({ name: 'int', byteSize: 2, signed: true }),
+            evaluateVariable: () => ({ kind: 'value', value: 3 }),
+        };
+        (adapter as any).stopContext = { evalContext: () => ({}) };
+        (adapter as any).stackTraceService.frame = () => ({
+            name: 'caller', instructionPc: 0x1000, physicalFrame: { pc: 0x1000, registers: { 0: 2 } },
+        });
+        const responses: any[] = [];
+        adapter.onDidSendMessage(message => responses.push(message));
+
+        await sendRequest(adapter, { seq: 1, command: 'evaluate', arguments: { expression: 'count + A', frameId: 100, context: 'watch' } });
+        await sendRequest(adapter, { seq: 2, command: 'evaluate', arguments: { expression: 'count + A', frameId: 100, context: 'repl' } });
+
+        assert.strictEqual(responses[0].body.result, '5');
+        assert.strictEqual(responses[1].body.result, '5');
+    });
+
+    it('bounds hover evaluation latency', async () => {
+        const adapter = new V6DebugAdapter(
+            {} as any,
+            {} as any,
+            { debug() {}, error() {} } as any,
+            {} as any,
+            () => ({} as any),
+        );
+        (adapter as any).cExpressionService = {
+            evaluateValue: () => new Promise(() => {}),
+        };
+        const started = Date.now();
+
+        await assert.rejects(
+            () => (adapter as any).evaluateExpression('hover', 'value', {}),
+            /Hover evaluation timed out/,
+        );
+
+        assert.ok(Date.now() - started < 250);
+    });
+
     it('keeps machine-state scopes without exposing a source for an unmapped CPU frame', async () => {
         const adapter = new V6DebugAdapter(
             {} as any,
@@ -48,6 +99,26 @@ describe('V6DebugAdapter', () => {
             responses[1].body.scopes.map((scope: any) => scope.name),
             ['Registers', 'Flags', 'Raw Stack'],
         );
+    });
+
+    it('rejects machine scope handles after the stopped generation changes', async () => {
+        const adapter = new V6DebugAdapter(
+            {} as any,
+            {} as any,
+            { debug() {}, error() {} } as any,
+            {} as any,
+            () => ({} as any),
+        );
+        (adapter as any).cachedRegs = { af: 0, bc: 0, de: 0, hl: 0, sp: 0, pc: 0, m: 0 };
+        const responses: any[] = [];
+        adapter.onDidSendMessage(message => responses.push(message));
+
+        await sendRequest(adapter, { seq: 1, command: 'scopes', arguments: { frameId: 1 } });
+        const registersReference = responses[0].body.scopes[0].variablesReference;
+        (adapter as any).invalidateStopContext();
+        await sendRequest(adapter, { seq: 2, command: 'variables', arguments: { variablesReference: registersReference } });
+
+        assert.deepStrictEqual(responses[1].body.variables, []);
     });
 
     it('keeps the last source location when debug metadata cannot resolve the current address', async () => {

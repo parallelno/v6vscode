@@ -103,9 +103,14 @@ export class DwarfScopes {
         const scope = this.scopeAt(pc);
         if (!scope) { return []; }
         const result: VariableNode[] = [];
+        const visibleNames = new Set<string>();
         let current: ScopeNode | undefined = scope;
         while (current) {
-            result.push(...current.variables);
+            for (const variable of current.variables) {
+                if (variable.name && visibleNames.has(variable.name)) { continue; }
+                result.push(variable);
+                if (variable.name) { visibleNames.add(variable.name); }
+            }
             current = current.parent;
         }
         return result;

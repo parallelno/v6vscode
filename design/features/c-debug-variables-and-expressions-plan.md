@@ -1,6 +1,6 @@
 # C Debug Variables and Expressions Implementation Plan
 
-**Status:** Proposed
+**Status:** Implemented
 **Date:** 2026-08-15
 **Owner:** v6vscode maintainers
 **Prerequisites:** `v6llvmc-c-debug-metadata-plan.md`, `c-debug-dwarf-metadata-plan.md`, `c-debug-call-stack-plan.md`
@@ -35,16 +35,13 @@ Out of scope:
 ## 3. Per-Frame Scopes
 
 For a semantic C frame return scopes in this order:
-
+- [x] Add unit, Extension Host, and real-emulator variable tests.
 1. Parameters.
 2. Locals.
 3. Statics.
 4. Globals, marked expensive and paged if needed.
 5. Registers.
 6. Flags.
-7. Raw Stack.
-
-For ASM or metadata-limited frames return the current machine scopes only.
 
 Every scope handle belongs to one frame and stopped generation. Do not share one Locals handle across frames.
 
@@ -220,23 +217,35 @@ Real Extension Host plus emulator tests:
 
 ## 15. Implementation Checklist
 
-- [ ] Add generation-bound scope and variable handles.
-- [ ] Add Parameters, Locals, Statics, and paged Globals scopes.
-- [ ] Preserve Registers, Flags, and Raw Stack fallback scopes.
-- [ ] Resolve active lexical scopes and shadowing.
-- [ ] Evaluate register, frame-relative, memory, constant, and location-list values.
-- [ ] Distinguish optimized-out, inactive, unsupported, and unreadable values.
-- [ ] Format C integers, characters, booleans, and enums.
-- [ ] Add pointer and function-pointer formatting and expansion.
-- [ ] Add paged arrays.
-- [ ] Add structures, unions, typedefs, and C qualifiers.
-- [ ] Add recursion, depth, child-count, string, and memory-read limits.
-- [ ] Populate DAP type, memory, and child-count fields.
-- [ ] Implement the read-only C expression lexer and parser.
-- [ ] Bind names against the selected frame and lexical context.
-- [ ] Implement scalar operators, address/dereference, indexing, member access, and supported casts.
-- [ ] Support Watch and Debug Console contexts.
-- [ ] Enable hover evaluation after latency tests pass.
-- [ ] Keep assignment, function calls, and variable mutation disabled.
-- [ ] Add unit, Extension Host, and real-emulator variable tests.
-- [ ] Document supported C expressions and unavailable-value states.
+- [x] Add generation-bound scope and variable handles.
+- [x] Add Parameters, Locals, Statics, and paged Globals scopes.
+- [x] Preserve Registers, Flags, and Raw Stack fallback scopes.
+- [x] Resolve active lexical scopes and shadowing.
+- [x] Evaluate register, frame-relative, memory, constant, and location-list values.
+- [x] Distinguish optimized-out, inactive, unsupported, and unreadable values.
+- [x] Format C integers, characters, booleans, and enums.
+- [x] Add pointer and function-pointer formatting and expansion.
+- [x] Add paged arrays.
+- [x] Add structures, unions, typedefs, and C qualifiers.
+- [x] Add recursion, depth, child-count, string, and memory-read limits.
+- [x] Populate DAP type, memory, and child-count fields.
+- [x] Implement the read-only C expression lexer and parser.
+- [x] Bind names against the selected frame and lexical context.
+- [x] Implement scalar operators, address/dereference, indexing, member access, and supported casts.
+- [x] Support Watch and Debug Console contexts.
+- [x] Enable hover evaluation after latency tests pass.
+- [x] Keep assignment, function calls, and variable mutation disabled.
+- [x] Add unit, Extension Host, and real-emulator variable tests.
+- [x] Document supported C expressions and unavailable-value states.
+
+## 16. Implementation Notes
+
+- Added allocation to `DapHandleStore` and generation-bound scope/variable handle stores in the adapter. Machine scope references are now invalidated on every resume and stop transition.
+- Added `ScopeService` to construct per-frame Parameters, Locals, Statics, and expensive Globals scopes before the existing machine-state scopes.
+- `DwarfScopes.variablesAt` now resolves active lexical declarations inner-to-outer and hides outer same-name declarations. `VariableService` evaluates DWARF register, frame-relative, memory, constant, and location-list values against the selected recovered frame.
+- Scalar C formatting now includes signed/unsigned integers, escaped characters, `_Bool`, and named enum values.
+- Typed pointer, array, structure, and union values now expose bounded, paged child expansion with per-generation handles. Type aliases and qualifiers retain their original DAP type name while expansion uses their underlying type.
+- Added `CExpressionService`, a bounded pure parser/evaluator for scalar identifiers, integer and character literals, parentheses, unary operators, arithmetic, shifts, bitwise operations, comparisons, and logical operations. The adapter resolves names against the selected frame's visible semantic variables and recovered registers for Watch and Debug Console requests; it retains the existing machine register/numeric fallback when no selected semantic frame is available.
+- `CExpressionService` now evaluates typed/addressable selected-frame values using only injected bounded `VariableService` reads. It supports `*`, `&`, `[]`, `.`, `->`, and scalar/pointer casts; Watch and Debug Console format and allocate expandable pointer, array, structure, and union results through the existing generation-bound variable handles. Focused unit coverage exercises each new form and unreadable-pointer errors. Hover evaluation has a 100 ms response guard.
+- The real Extension Host and emulator scenario now verifies `add8` Parameters and Locals scopes, live static-home parameter values, local Watch evaluation, and the three-frame C call chain. The V6C `DW_OP_addrx` evaluator was corrected to test before the overlapping `DW_OP_breg` range.
+- `npm run test:feature:metadata` remains unavailable because its runner requires `temp/project/out/demo1.{elf,rom}`, while the checked-in `temp/project/Makefile` builds only `demo2.{elf,rom}`.

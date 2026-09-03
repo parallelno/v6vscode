@@ -66,6 +66,19 @@ suite('C source breakpoint', () => {
             assert.deepStrictEqual(frames.slice(0, 3).map((frame: any) => frame.name), ['add8', 'accumulate', 'main']);
             assert.strictEqual(frames[0].line, targetLine);
             assert.match(frames[0].instructionPointerReference, /^0x[0-9A-F]{4}$/);
+
+            const session = vscode.debug.activeDebugSession;
+            assert.ok(session, 'Expected an active debug session at the C breakpoint.');
+            const scopes = await session.customRequest('scopes', { frameId: frames[0].id });
+            assert.deepStrictEqual(scopes.scopes.slice(0, 4).map((scope: any) => scope.name), ['Parameters', 'Locals', 'Statics', 'Globals']);
+            const parameters = await session.customRequest('variables', { variablesReference: scopes.scopes[0].variablesReference });
+            const locals = await session.customRequest('variables', { variablesReference: scopes.scopes[1].variablesReference });
+            assert.deepStrictEqual(parameters.variables.map((variable: any) => variable.name).sort(), ['a', 'b']);
+            assert.deepStrictEqual(parameters.variables.map((variable: any) => variable.value).sort(), ['0', '1']);
+            assert.ok(locals.variables.some((variable: any) => variable.name === 's'), 'Expected add8 local s.');
+
+            const watch = await session.customRequest('evaluate', { expression: 's', frameId: frames[0].id, context: 'watch' });
+            assert.strictEqual(watch.result, '0');
         } finally {
             await vscode.commands.executeCommand('workbench.action.debug.stop');
             vscode.debug.removeBreakpoints([breakpoint]);

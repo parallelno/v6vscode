@@ -41,6 +41,11 @@ export function evaluateDwarfExpression(expression: Buffer, context: DwarfEvalCo
         const op = expression[cursor++];
 
         if (op >= 0x50 && op <= 0x6F) { registerResult = op - 0x50; continue; } // DW_OP_reg0..31
+        if (op === 0xA1) { // DW_OP_addrx; check before the overlapping breg range
+            const [index, len] = readULEB128(expression, cursor); cursor += len;
+            if (!push(stack, context.resolveAddress(index))) { return { kind: 'unavailable', reason: 'stack overflow' }; }
+            continue;
+        }
         if (op >= 0x90 && op <= 0xAF) { // DW_OP_breg0..31
             const register = op - 0x90;
             const [offset, len] = readSLEB128(expression, cursor); cursor += len;
@@ -59,11 +64,6 @@ export function evaluateDwarfExpression(expression: Buffer, context: DwarfEvalCo
                 const value = context.addressSize === 2 ? expression.readUInt16LE(cursor) : expression.readUInt32LE(cursor);
                 cursor += context.addressSize;
                 if (!push(stack, value)) { return { kind: 'unavailable', reason: 'stack overflow' }; }
-                break;
-            }
-            case 0xA1: { // DW_OP_addrx
-                const [index, len] = readULEB128(expression, cursor); cursor += len;
-                if (!push(stack, context.resolveAddress(index))) { return { kind: 'unavailable', reason: 'stack overflow' }; }
                 break;
             }
             case 0x06: { // DW_OP_deref

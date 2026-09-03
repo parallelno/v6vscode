@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { parseElf32 } from '../../../src/debug/metadata/elf32-reader';
 import { DebugMetadataIndex } from '../../../src/debug/metadata/debug-metadata-index';
+import { DwarfScopes } from '../../../src/debug/metadata/dwarf-scopes';
 import { DwarfError } from '../../../src/debug/metadata/dwarf-sections';
 
 const FIXTURE_O0 = path.join(process.cwd(), 'temp', 'cdbg', 'probe-O0.elf');
@@ -12,6 +13,21 @@ const FIXTURES_EXIST = fs.existsSync(FIXTURE_O0) && fs.existsSync(FIXTURE_O2);
 function loadIndex(file: string): DebugMetadataIndex {
     return new DebugMetadataIndex(parseElf32(fs.readFileSync(file)));
 }
+
+describe('DwarfScopes lexical visibility', () => {
+    it('retains only the innermost declaration of a shadowed name', () => {
+        const scopes = new DwarfScopes([], Buffer.alloc(0), Buffer.alloc(0), () => 0);
+        const outer: any = { id: 1, kind: 'subprogram', ranges: [{ start: 0x1000, end: 0x1100 }], parent: undefined, children: [], variables: [{ id: 1, name: 'value', kind: 'local' }, { id: 2, name: 'outer', kind: 'local' }] };
+        const inner: any = { id: 2, kind: 'lexical_block', ranges: [{ start: 0x1020, end: 0x1040 }], parent: outer, children: [], variables: [{ id: 3, name: 'value', kind: 'local' }, { id: 4, name: 'inner', kind: 'local' }] };
+        outer.children.push(inner);
+        (scopes as any).scopeById.set(outer.id, outer);
+        (scopes as any).scopeById.set(inner.id, inner);
+
+        const visible = scopes.variablesAt(0x1020);
+
+        expect(visible.map(variable => variable.id)).to.deep.equal([3, 4, 2]);
+    });
+});
 
 (FIXTURES_EXIST ? describe : describe.skip)('DebugMetadataIndex against real V6C ELFs', () => {
     let o0: DebugMetadataIndex;
