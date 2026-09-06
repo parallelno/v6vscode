@@ -24,6 +24,17 @@ function findExecutableLine(index: ReturnType<typeof buildDebugIndex>, file: str
     return 0;
 }
 
+describe('DebugIndex shared-address rows', () => {
+    it('prefers an executable statement row over a preceding non-statement row', () => {
+        const index = buildDebugIndex([
+            { address: 0x100, file: 'main.c', line: 23, column: 0, isStmt: false },
+            { address: 0x100, file: 'main.c', line: 35, column: 5, isStmt: true },
+        ], [], '');
+
+        expect(index.resolveAddress(0x100)).to.deep.include({ file: 'main.c', line: 35, column: 5, isStmt: true });
+    });
+});
+
 // ---------------------------------------------------------------------------
 // LEB128 helpers
 // ---------------------------------------------------------------------------

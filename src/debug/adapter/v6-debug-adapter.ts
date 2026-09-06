@@ -321,6 +321,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             supportsConfigurationDoneRequest: true,
             supportsStepInTargetsRequest: false,
             supportsSteppingGranularity: true,
+            supportsStepOut: true,
             supportsSetVariable: false,
             supportsEvaluateForHovers: true,
             supportsInstructionBreakpoints: true,
@@ -513,8 +514,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             );
             const page = this.stackTraceService.page(req.arguments?.startFrame, req.arguments?.levels);
             this.sendResponseBody(req, {
-                stackFrames: page.frames.map(frame => this.makeStackFrame(
-                    frame.id, frame.name, frame.instructionPc, frame.displayPc, frame.source,
+                stackFrames: page.frames.map((frame, index) => this.makeStackFrame(
+                    frame.id, frame.name, frame.instructionPc, frame.displayPc, frame.source, index === 0,
                 )),
                 totalFrames: page.totalFrames,
             });
@@ -525,7 +526,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         const pc = regs?.pc ?? 0;
 
         this.sendResponseBody(req, {
-            stackFrames: [this.makeStackFrame(1, this.debugIndex?.symbolAtAddress(pc)?.name ?? hex4(pc), pc)],
+            stackFrames: [this.makeStackFrame(1, this.debugIndex?.symbolAtAddress(pc)?.name ?? hex4(pc), pc, pc, undefined, true)],
             totalFrames: 1,
         });
     }
@@ -545,6 +546,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         pc: number,
         displayPc = pc,
         sourceOverride?: { file: string; line: number; column: number },
+        isTopFrame = false,
     ): any {
         // Resolve PC to source location using debug index
         const srcLoc = sourceOverride
@@ -560,8 +562,10 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
         if (srcLoc) {
             const sourcePath = resolveDebugSourcePath(srcLoc.file, this.workspaceRoot);
-            this.lastResolvedSource = srcLoc;
-            this.clearUnavailableSourceIndicator();
+            if (isTopFrame) {
+                this.lastResolvedSource = srcLoc;
+                this.clearUnavailableSourceIndicator();
+            }
             frame.source = {
                 path: sourcePath,
                 name: path.basename(sourcePath),
@@ -569,7 +573,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             };
             frame.line = srcLoc.line;
             frame.column = srcLoc.column;
-        } else if (this.debugIndex && this.lastResolvedSource) {
+        } else if (isTopFrame && this.debugIndex && this.lastResolvedSource) {
             const sourcePath = resolveDebugSourcePath(this.lastResolvedSource.file, this.workspaceRoot);
             frame.source = {
                 path: sourcePath,
@@ -848,7 +852,10 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     }
 
     private async onStepOut(req: any): Promise<void> {
-        const frame = this.stackTraceService.frame(this.stoppedGeneration, req.arguments?.frameId);
+        // DAP StepOutArguments has no frameId. VS Code steps out from the stopped
+        // top frame; retain the optional ID for custom clients and focused tests.
+        const frame = this.stackTraceService.frame(this.stoppedGeneration, req.arguments?.frameId)
+            ?? this.stackTraceService.page(0, 1).frames[0];
         if (frame?.inlineDieIdentity !== undefined && await this.startInlineStepOut(frame, req)) {
             return;
         }

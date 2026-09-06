@@ -99,11 +99,12 @@ export function buildDebugIndex(
     const norm = (f: string) => normalizePath(f, compDir);
     const normalizedRows = rows.map(r => ({ ...r, file: norm(r.file) }));
 
-    // ---- Address → source (first is_stmt row wins for each address) ----
+    // ---- Address → source (prefer executable statement rows per address) ----
     const byAddress = new Map<number, SourceLocation>();
     const statementRows: StatementRow[] = [];
     for (const r of normalizedRows) {
-        if (!byAddress.has(r.address)) {
+        const existing = byAddress.get(r.address);
+        if (!existing || (!existing.isStmt && r.isStmt)) {
             byAddress.set(r.address, { file: r.file, line: r.line, column: r.column, isStmt: r.isStmt });
         }
     }

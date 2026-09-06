@@ -156,6 +156,26 @@ describe('V6DebugAdapter', () => {
         assert.strictEqual(frame.column, 3);
     });
 
+    it('does not decorate a non-top stack frame when the stopped frame has source', () => {
+        const adapter = new V6DebugAdapter(
+            {} as any,
+            {} as any,
+            { debug() {}, error() {} } as any,
+            {} as any,
+            () => ({} as any),
+        );
+        (adapter as any).workspaceRoot = 'C:\project';
+        (adapter as any).debugIndex = { resolveAddress: () => undefined };
+        (adapter as any).lastResolvedSource = { file: 'src\\main.c', line: 43, column: 1 };
+        let decorated = false;
+        (adapter as any).showUnavailableSourceIndicator = () => { decorated = true; };
+
+        const frame = (adapter as any).makeStackFrame(2, 'caller', 0x0200, 0x0200, undefined, false);
+
+        assert.strictEqual(frame.source, undefined);
+        assert.strictEqual(decorated, false);
+    });
+
     it('steps over by adding an auto-delete breakpoint at the backend address', async () => {
         const adapter = new V6DebugAdapter(
             { setExecutionRunning() {} } as any,
@@ -285,6 +305,23 @@ describe('V6DebugAdapter', () => {
         (adapter as any).startPoll = () => {};
 
         await (adapter as any).onStepOut({ seq: 1, command: 'stepOut', arguments: { frameId: 1 } });
+
+        assert.strictEqual(calls[0].command, IpcCommand.DEBUG_BREAKPOINT_ADD);
+        assert.strictEqual(calls[0].data.addr, 0x2222);
+    });
+
+    it('uses the captured top frame for standard DAP Step Out requests without a frame ID', async () => {
+        const adapter = makeSourceStepAdapter();
+        const calls: Array<{ command: IpcCommand; data: any }> = [];
+        (adapter as any).stackTraceService.frame = () => undefined;
+        (adapter as any).stackTraceService.page = () => ({ frames: [{ physicalFrame: { returnPc: 0x2222 } }] });
+        (adapter as any).client.send = async (command: IpcCommand, data: any) => {
+            calls.push({ command, data });
+            return command === IpcCommand.DEBUG_BREAKPOINT_GET_ALL ? { ok: true, data: [] } : { ok: true };
+        };
+        (adapter as any).startPoll = () => {};
+
+        await (adapter as any).onStepOut({ seq: 1, command: 'stepOut', arguments: { threadId: 1 } });
 
         assert.strictEqual(calls[0].command, IpcCommand.DEBUG_BREAKPOINT_ADD);
         assert.strictEqual(calls[0].data.addr, 0x2222);
