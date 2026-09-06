@@ -1,4 +1,4 @@
 status=passed
 scenarios=artifact-load,rom-elf-match,source-breakpoint,address-round-trip
-elf.sha256=3833da494b09c82a165ca09bbd77f066cce758081502bfb0cf1d26f7526ba5e0
-rom.sha256=8067c37a40c1b93ffa1f092837aec550d29e7ca3b60c73dcf428b79b193999c4
+elf.sha256=ce26295695151a0d7dc58cea7b428574efe7e09e2267c88e48a33f7da24dd03a
+rom.sha256=df44a529374aff9da0049f02fc3ad1d090546c09f28e64dbe41abf6c285a3638

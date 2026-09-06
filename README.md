@@ -75,13 +75,14 @@ Each project is defined by a `*.project.json` file at the workspace root:
   "name": "demo",
   "run": {
     "executable": "out/demo.rom",
+    "debugArtifact": "out/demo.elf",
     "speed": "100%",
     "viewMode": "borderless"
   }
 }
 ```
 
-See [docs/README.md](docs/README.md) for the full schema and architecture details.
+Generated C projects use `-O0 -g` and create this companion ELF for source-level C debugging. See [docs/README.md](docs/README.md) for the full schema, supported C metadata, and architecture details.
 
 ## Building from Source
 

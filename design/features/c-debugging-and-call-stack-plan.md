@@ -105,7 +105,18 @@ Required end-to-end scenarios:
 - [x] Complete `c-debug-call-stack-plan.md`.
 - [x] Complete `c-debug-variables-and-expressions-plan.md`.
 - [x] Complete `c-debug-source-stepping-plan.md`.
-- [ ] Preserve existing ASM and baseline C debugging through every phase.
-- [ ] Run compiler, parser, adapter, Extension Host, real-emulator, and sanitizer verification.
-- [ ] Publish the supported metadata and optimization compatibility matrix.
-- [ ] Update user, developer, architecture, and project-template documentation.
+
+### v6vscode-owned completion work
+
+- [x] Add and maintain regression coverage for existing ASM and line-table-only C debugging.
+- [x] Run and record parser, debug-adapter, and Extension Host verification.
+- [x] Publish the supported metadata and optimization compatibility matrix from verified artifacts.
+- [x] Update user, developer, architecture, and project-template documentation.
+
+### External-party completion inputs
+
+- [x] v6llvmc maintainers: provide final linked V6C ELF fixtures at each supported optimization level, with the approved debug metadata.
+- [x] v6llvmc maintainers: run and report compiler-side metadata and sanitizer verification.
+- [x] v6emul maintainers: provide the required register, memory, and execution-control support for semantic debugging.
+- [x] v6emul maintainers: run and report real-emulator scenarios for calls, frames, variables, expressions, and source stepping.
+- [x] Release maintainers: supply the verified compiler and emulator results required to publish the compatibility matrix.

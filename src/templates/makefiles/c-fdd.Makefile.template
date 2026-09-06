@@ -1,18 +1,16 @@
-ROM      = out/{{name}}.rom
-ASM      = out/{{name}}.asm
-FDD      = out/{{name}}.fdd
-SRC      = src/main.c
-CPU      = i8080
-TEMPLATE = res/fdd/rds308.fdd
+ROM      := out/{{name}}.rom
+ELF      := out/{{name}}.elf
+FDD      := out/{{name}}.fdd
+SRC      := src/main.c
+TARGET   := i8080-unknown-v6c
+TEMPLATE := res/fdd/rds308.fdd
 
-V6ASM ?= v6asm
+V6C   ?= v6c
 V6FDD ?= v6fdd
 
 $(FDD): $(ROM)
 	$(V6FDD) $(TEMPLATE) $(FDD) $(ROM)
-$(ROM): $(ASM)
-	$(V6ASM) $(ASM) -o $(ROM) -c $(CPU)
-$(ASM): $(SRC)
-	v6c $(SRC) -o $(ASM)
+$(ROM): $(SRC)
+	$(V6C) -target $(TARGET) -O0 -g $(SRC) -o $(ROM)
 clean:
-	rm -f $(ASM) $(ROM) $(FDD)
+	rm -f $(ROM) $(ELF) $(FDD)

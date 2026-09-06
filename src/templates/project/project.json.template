@@ -2,6 +2,7 @@
   "name": "{{name}}",
   "run": {
     "executable": "{{executable}}",
+    "debugArtifact": "out/{{name}}.elf",
     "speed": "100%",
     "viewMode": "borderless"
   }

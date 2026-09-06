@@ -142,7 +142,7 @@ describe('template-utils', () => {
             for (const variant of variants) {
                 const content = readTemplate(EXTENSION_ROOT, `makefiles/${variant}.Makefile.template`);
                 expect(content, variant).to.include('{{name}}');
-                expect(content, variant).to.include('v6asm');
+                expect(content, variant).to.include(variant.startsWith('asm') ? 'v6asm' : 'v6c');
             }
         });
 
@@ -166,6 +166,7 @@ describe('template-utils', () => {
             const parsed = JSON.parse(expanded);
             expect(parsed.name).to.equal('test');
             expect(parsed.run.executable).to.equal('out/test.rom');
+            expect(parsed.run.debugArtifact).to.equal('out/test.elf');
             expect(parsed.run.speed).to.equal('100%');
             expect(parsed.run.viewMode).to.equal('borderless');
         });
@@ -182,9 +183,9 @@ describe('template-utils', () => {
             const template = readTemplate(EXTENSION_ROOT, 'makefiles/c-fdd.Makefile.template');
             const expanded = expandTemplate(template, { name: 'game' });
             expect(expanded).to.include('out/game.rom');
+            expect(expanded).to.include('out/game.elf');
             expect(expanded).to.include('out/game.fdd');
             expect(expanded).to.include('v6c');
-            expect(expanded).to.include('v6asm');
             expect(expanded).to.include('v6fdd');
         });
     });

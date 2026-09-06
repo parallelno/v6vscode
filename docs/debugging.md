@@ -66,6 +66,19 @@ Statement-granularity C stepping follows emitted DWARF statement locations. Step
 
 Each source step is bounded by the configured candidate, instruction, and elapsed-time limits. A new execution-control request, user breakpoint, watchpoint, exception, script break, pause, reset, reload, disconnect, or emulator termination cancels it and releases its temporary breakpoints. Optimized code can skip removed statements, relocate a requested line to the next emitted statement, and expose discontinuous statement ranges or inline source locations.
 
+## C Debug Metadata Compatibility
+
+The supported C contract is an ELF32 little-endian V6C artifact with 16-bit CPU addresses, DWARF v5 debug metadata, and a ROM that byte-matches the ELF load image. DWARF v4 line tables remain supported for ASM and baseline source debugging.
+
+| Build mode | Verified behavior |
+|---|---|
+| `-O0 -g` | C source breakpoints, semantic Call Stack, frame scopes, Watch expressions, and source Step Into/Over/Out |
+| `-O1 -g` | Relocation from omitted lines to the next emitted statement; metadata-dependent values and frames reflect emitted ranges |
+| `-O2 -g` | The same relocation behavior plus nested inline Call Stack and source stepping |
+| ASM or line-table-only C | Source breakpoints, highlighting, and one honest machine frame; semantic values, caller frames, and source Step Out require their DWARF metadata |
+
+Generated C project Makefiles compile with `-O0 -g` and write the companion `out/<project>.elf`; the generated project configuration declares it as `run.debugArtifact`. For optimized builds, change the Makefile optimization flag while retaining `-g`.
+
 ## Breakpoint Conditions, Hit Counts, and Logpoints
 
 Source and instruction breakpoints support one register comparison condition:

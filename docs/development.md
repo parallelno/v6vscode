@@ -52,4 +52,4 @@ npm run test:all      # unit + regression
 npm run ci            # compile + lint + test:all
 ```
 
-See `test/features/README.md` for prerequisites and deterministic `result.txt` rules. The metadata runner is operational. The real-emulator DAP runner intentionally fails until its automated scenario is implemented and never writes a partial result.
+`test:feature:debug` requires both `V6EMUL` and `V6C`. It compiles the C probe at `-O0`, `-O1`, and `-O2`, then verifies Extension Host startup, source breakpoints and stepping, optimization-aware relocation, inline frames, semantic Call Stack, and C frame scopes/Watch expressions against a real emulator. See `test/features/README.md` for prerequisites and deterministic `result.txt` rules.
