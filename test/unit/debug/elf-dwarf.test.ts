@@ -9,9 +9,10 @@ import { buildDebugIndex } from '../../../src/debug/metadata/debug-index';
 import { loadDebugArtifact } from '../../../src/debug/metadata/debug-artifact-loader';
 
 // Path to the companion ELF built by `make` in the test project
-const ELF_PATH = path.join(process.cwd(), 'temp', 'project', 'out', 'demo1.elf');
+const REPOSITORY_ROOT = path.resolve(__dirname, '..', '..', '..');
+const ELF_PATH = path.join(REPOSITORY_ROOT, 'temp', 'project', 'out', 'demo1.elf');
 const ELF_EXISTS = fs.existsSync(ELF_PATH);
-const C_ELF_PATH = path.join(process.cwd(), 'temp', 'project', 'out', 'demo2.elf');
+const C_ELF_PATH = path.join(REPOSITORY_ROOT, 'temp', 'project', 'out', 'demo2.elf');
 const C_ELF_EXISTS = fs.existsSync(C_ELF_PATH);
 
 /** Find a line that maps to an exact (unrelocated) executable statement. */
@@ -208,8 +209,8 @@ describe('DebugIndex source paths', () => {
 
     it('includes source files from main and included assembly files', () => {
         const files = new Set(rows.map(row => row.file));
-        expect(files).to.include('src/main.asm');
-        expect(files).to.include('src/sub/rnd.asm');
+        expect(files).to.include('src1/main.asm');
+        expect(files).to.include('src1/sub/rnd.asm');
         const elf = parseElf32(fs.readFileSync(ELF_PATH));
         const debugLine = elf.sections.find(section => section.name === '.debug_line')!;
         expect(parseDwarf4LineFiles(debugLine.data)).to.include.members([...files]);
@@ -267,8 +268,8 @@ describe('DebugIndex source paths', () => {
     });
 
     it('resolves an absolute editor path against a DWARF-relative source path', () => {
-        const sourcePath = path.join(process.cwd(), 'temp', 'project', 'src', 'main.asm');
-        const firstMainRow = rows.find(row => row.isStmt && row.file === 'src/main.asm')!;
+        const sourcePath = path.join(REPOSITORY_ROOT, 'temp', 'project', 'src1', 'main.asm');
+        const firstMainRow = rows.find(row => row.isStmt && row.file === 'src1/main.asm')!;
         expect(index.resolveBreakpoint(sourcePath, firstMainRow.line)).to.deep.equal({
             address: firstMainRow.address,
             verifiedLine: firstMainRow.line,
@@ -331,12 +332,12 @@ describe('DebugIndex source paths', () => {
 (ELF_EXISTS ? describe : describe.skip)('Debug artifact loader against demo1.elf', () => {
     it('resolves source breakpoints without mistaking a source filename for comp_dir', async () => {
         const romPath = path.join(path.dirname(ELF_PATH), 'demo1.rom');
-        const sourcePath = path.join(path.dirname(path.dirname(ELF_PATH)), 'src', 'main.asm');
+        const sourcePath = path.join(path.dirname(path.dirname(ELF_PATH)), 'src1', 'main.asm');
         const result = await loadDebugArtifact(ELF_PATH, romPath);
         const elf = parseElf32(fs.readFileSync(ELF_PATH));
         const debugLine = elf.sections.find(section => section.name === '.debug_line')!;
         const expected = parseDwarf4LineSection(debugLine.data, elf.addressSize)
-            .find(row => row.isStmt && row.file === 'src/main.asm')!;
+            .find(row => row.isStmt && row.file === 'src1/main.asm')!;
 
         expect(result.compDir).to.equal('');
         expect(result.index.resolveBreakpoint(sourcePath, expected.line)).to.deep.equal({
@@ -349,12 +350,12 @@ describe('DebugIndex source paths', () => {
         const romPath = path.join(path.dirname(ELF_PATH), 'demo1.rom');
         const result = await loadDebugArtifact(ELF_PATH, romPath);
 
-        expect(result.index.sourceFiles).to.include(path.join('src', 'sub', 'rnd.asm'));
+        expect(result.index.sourceFiles).to.include(path.join('src1', 'sub', 'rnd.asm'));
         expect(result.index.symbol('DISPLAY_ADDR')?.declaration).to.deep.equal({
-            file: path.join('src', 'main.asm'), line: 12, column: 0, isStmt: false,
+            file: path.join('src1', 'main.asm'), line: 12, column: 0, isStmt: false,
         });
         expect(result.index.symbol('PALETTE_LEN')?.declaration).to.deep.equal({
-            file: path.join('src', 'sub', 'palette.asm'), line: 4, column: 0, isStmt: false,
+            file: path.join('src1', 'sub', 'palette.asm'), line: 4, column: 0, isStmt: false,
         });
     });
 

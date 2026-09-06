@@ -10,24 +10,31 @@ import { IpcClient } from '../../../src/emulator/client/ipc-client';
 import { IpcCommand } from '../../../src/emulator/protocol/ipc-commands';
 import { Logger } from '../../../src/platform/logging/logger';
 
-const PROBE_ELF = path.join(process.cwd(), 'temp', 'cdbg', 'probe-O0.elf');
-const PROBE_ROM = path.join(process.cwd(), 'temp', 'cdbg', 'probe-O0.rom');
+const REPOSITORY_ROOT = path.resolve(__dirname, '..', '..', '..');
+const PROBE_ELF = path.join(REPOSITORY_ROOT, 'test', 'fixtures', 'cdbg', 'probe-O0.elf');
+const PROBE_ROM = path.join(REPOSITORY_ROOT, 'test', 'fixtures', 'cdbg', 'probe-O0.rom');
 const EMULATOR = process.env.V6EMUL;
 const CAN_RUN = !!EMULATOR && fs.existsSync(EMULATOR) && fs.existsSync(PROBE_ELF) && fs.existsSync(PROBE_ROM);
 const PORT = 39777; // arbitrary high port, avoids common clashes
 
-(CAN_RUN ? describe : describe.skip)('DebugStopContext real-emulator verification', function () {
+(describe)('DebugStopContext real-emulator verification', function () {
     this.timeout(20_000);
 
     let emulator: ChildProcess;
     let client: IpcClient;
     let metadata: DebugMetadataIndex;
 
+    before(function () {
+        if (!EMULATOR || !fs.existsSync(EMULATOR) || !fs.existsSync(PROBE_ELF) || !fs.existsSync(PROBE_ROM)) {
+            this.skip();
+        }
+    });
+
     before(async () => {
         metadata = new DebugMetadataIndex(parseElf32(fs.readFileSync(PROBE_ELF)));
         emulator = spawn(EMULATOR!, [
             '--serve', '--tcp-port', String(PORT),
-            '--boot-rom', path.join(process.cwd(), 'res', 'boot', 'boots.bin'),
+            '--boot-rom', path.join(REPOSITORY_ROOT, 'res', 'boot', 'boots.bin'),
             '--speed', 'max',
         ], { stdio: ['ignore', 'pipe', 'pipe'] });
         emulator.stderr?.on('data', () => {});

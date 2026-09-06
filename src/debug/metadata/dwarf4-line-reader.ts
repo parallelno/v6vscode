@@ -28,6 +28,8 @@ export interface LineRow {
     column: number;
     /** True when this is a recommended breakpoint location (is_stmt). */
     isStmt: boolean;
+    /** Distinguishes compiler-emitted statements at the same source position. */
+    discriminator?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -223,20 +225,23 @@ function parseOneLineProgram(
     let prologueEnd = false;
     let epilogueBegin = false;
 
+    let discriminator = 0;
     const emitRow = () => {
         const firstFileIndex = version === 5 ? 0 : 1;
         if (file >= firstFileIndex && file < files.length) {
-            rows.push({ address, file: files[file], line, column, isStmt });
+            rows.push({ address, file: files[file], line, column, isStmt, ...(discriminator ? { discriminator } : {}) });
         }
         basicBlock = false;
         prologueEnd = false;
         epilogueBegin = false;
+        discriminator = 0;
     };
 
     const resetState = () => {
         address = 0; opIndex = 0; file = version === 5 ? 0 : 1; line = 1; column = 0;
         isStmt = defaultIsStmt; basicBlock = false;
         prologueEnd = false; epilogueBegin = false;
+        discriminator = 0;
     };
 
     p = programStart;
@@ -272,7 +277,7 @@ function parseOneLineProgram(
                     break;
                 }
                 case DW_LNE_set_discriminator: {
-                    readULEB128(data, p); // discard
+                    [discriminator] = readULEB128(data, p);
                     break;
                 }
                 default:

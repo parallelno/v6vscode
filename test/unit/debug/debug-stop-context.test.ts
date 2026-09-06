@@ -8,7 +8,7 @@ import { toDwarfRegisters, DWARF_REG } from '../../../src/debug/metadata/v6c-reg
 import { StopMemoryReader } from '../../../src/debug/metadata/stop-memory-reader';
 import { IpcCommand } from '../../../src/emulator/protocol/ipc-commands';
 
-const FIXTURE_O0 = path.join(process.cwd(), 'temp', 'cdbg', 'probe-O0.elf');
+const FIXTURE_O0 = path.resolve(__dirname, '..', '..', '..', 'test', 'fixtures', 'cdbg', 'probe-O0.elf');
 const FIXTURE_EXISTS = fs.existsSync(FIXTURE_O0);
 
 describe('v6c-register-map', () => {
@@ -136,8 +136,12 @@ describe('DebugStopContext unwind boundaries', () => {
     });
 });
 
-(FIXTURE_EXISTS ? describe : describe.skip)('DebugStopContext against real V6C ELF', () => {
+(describe)('DebugStopContext against real V6C ELF', () => {
     let metadata: DebugMetadataIndex;
+
+    before(function () {
+        if (!fs.existsSync(FIXTURE_O0)) { this.skip(); }
+    });
 
     before(() => {
         metadata = new DebugMetadataIndex(parseElf32(fs.readFileSync(FIXTURE_O0)));

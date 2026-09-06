@@ -5,10 +5,11 @@ import { parseElf32 } from '../../../src/debug/metadata/elf32-reader';
 import { DebugMetadataIndex } from '../../../src/debug/metadata/debug-metadata-index';
 import { DwarfScopes } from '../../../src/debug/metadata/dwarf-scopes';
 import { DwarfError } from '../../../src/debug/metadata/dwarf-sections';
+import { loadDebugArtifact } from '../../../src/debug/metadata/debug-artifact-loader';
 
-const FIXTURE_O0 = path.join(process.cwd(), 'temp', 'cdbg', 'probe-O0.elf');
-const FIXTURE_O2 = path.join(process.cwd(), 'temp', 'cdbg', 'probe-O2.elf');
-const FIXTURES_EXIST = fs.existsSync(FIXTURE_O0) && fs.existsSync(FIXTURE_O2);
+const FIXTURE_O0 = path.resolve(__dirname, '..', '..', '..', 'test', 'fixtures', 'cdbg', 'probe-O0.elf');
+const FIXTURE_O1 = path.resolve(__dirname, '..', '..', '..', 'test', 'fixtures', 'cdbg', 'probe-O1.elf');
+const FIXTURE_O2 = path.resolve(__dirname, '..', '..', '..', 'test', 'fixtures', 'cdbg', 'probe-O2.elf');
 
 function loadIndex(file: string): DebugMetadataIndex {
     return new DebugMetadataIndex(parseElf32(fs.readFileSync(file)));
@@ -29,12 +30,18 @@ describe('DwarfScopes lexical visibility', () => {
     });
 });
 
-(FIXTURES_EXIST ? describe : describe.skip)('DebugMetadataIndex against real V6C ELFs', () => {
+(describe)('DebugMetadataIndex against real V6C ELFs', () => {
     let o0: DebugMetadataIndex;
+    let o1: DebugMetadataIndex;
     let o2: DebugMetadataIndex;
+
+    before(function () {
+        if (!fs.existsSync(FIXTURE_O0) || !fs.existsSync(FIXTURE_O1) || !fs.existsSync(FIXTURE_O2)) { this.skip(); }
+    });
 
     before(() => {
         o0 = loadIndex(FIXTURE_O0);
+        o1 = loadIndex(FIXTURE_O1);
         o2 = loadIndex(FIXTURE_O2);
     });
 
@@ -92,6 +99,24 @@ describe('DwarfScopes lexical visibility', () => {
         const pc = inlineScopes[0].ranges[0].start;
         const chain = o2.scopes.inlineChainAt(pc);
         expect(chain.length).to.be.greaterThan(0);
+    });
+
+    it('retains inline scopes at -O1 and -O2', () => {
+        for (const metadata of [o1, o2]) {
+            const scopeById = (metadata.scopes as unknown as { scopeById: Map<number, { kind: string }> }).scopeById;
+            expect(Array.from(scopeById.values()).some(scope => scope.kind === 'inlined_subroutine')).to.equal(true);
+        }
+    });
+
+    it('retains discontinuous source statement ranges at -O1 and -O2', async () => {
+        for (const fixture of [FIXTURE_O1, FIXTURE_O2]) {
+            const artifact = await loadDebugArtifact(fixture, fixture.replace('.elf', '.rom'));
+            const addresses = artifact.index.statementRows
+                .filter(row => row.file.endsWith('probe.c') && row.line === 22)
+                .map(row => row.address);
+            expect(addresses).to.have.length.greaterThan(1);
+            expect(addresses.some((address, index) => index > 0 && address > addresses[index - 1] + 1)).to.equal(true);
+        }
     });
 
     it('parses location lists at -O2', () => {

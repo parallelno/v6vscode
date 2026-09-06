@@ -215,7 +215,7 @@ Wrap `GET_MEM` (command 93) and `GET_STACK_SAMPLE` (command 18) into a `readMemo
 
 ### 13.3 Real-stop verification
 
-Stop the real emulator inside a known function (the `temp/cdbg` probe), read live registers/memory, and:
+Stop the real emulator inside a known function (the `test/fixtures/cdbg` probe), read live registers/memory, and:
 
 1. Evaluate a known local variable and confirm the resolved address/value matches the program's expected state.
 2. Unwind a real nested call chain and confirm recovered caller CFA/SP/PC match the live stack.
@@ -226,7 +226,7 @@ Add a gated real-emulator scenario (Extension Host integration or `test/features
 
 ## 14. Supported DWARF Compatibility Table
 
-This is the exact subset the consumer implements and the v6llvmc producer emits. It is the versioned contract both repositories test against. Verified against `temp/cdbg/probe-O0.elf` and `probe-O2.elf` on 2026-08-16.
+This is the exact subset the consumer implements and the v6llvmc producer emits. It is the versioned contract both repositories test against. Verified against `test/fixtures/cdbg/probe-O0.elf` and `probe-O2.elf` on 2026-08-16.
 
 ### 14.1 Object and section format
 

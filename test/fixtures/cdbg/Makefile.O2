@@ -1,0 +1,16 @@
+CLANG  := $(V6C)
+TARGET := i8080-unknown-v6c
+OPT    := -O2
+
+SRC := probe.c
+ROM := probe-O2.rom
+ELF := probe-O2.elf
+
+.PHONY: all clean
+all: $(ROM)
+
+$(ROM): $(SRC)
+	$(CLANG) -target $(TARGET) $(OPT) -g $(SRC) -o $(ROM)
+
+clean:
+	-del /q $(ROM) $(ELF) 2>nul

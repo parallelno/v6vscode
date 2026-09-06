@@ -7,6 +7,10 @@
 | `v6.logLevel` | enum | `"info"` | Logging verbosity (error/warn/info/debug) |
 | `v6.scriptOverlays.hidden` | boolean | `false` | Hide all script overlays in the emulator Display |
 | `v6.scriptOverlays.fontSize` | integer | `12` | Script overlay text size in framebuffer pixels (`6..48`) |
+| `v6.debug.sourceStepFilters` | string array | `[]` | Source path globs skipped while selecting C Step Into/Over targets |
+| `v6.debug.sourceStepMaxInstructions` | integer | `10000` | Maximum internal instructions in one C source step (`1..1000000`) |
+| `v6.debug.sourceStepMaxElapsedMs` | integer | `5000` | Maximum elapsed milliseconds in one C source step (`1..60000`) |
+| `v6.debug.sourceStepMaxCandidates` | integer | `64` | Maximum temporary source-step breakpoints (`1..1024`) |
 
 Script overlay settings are global VS Code user preferences. They are not stored in project JSON and remain available when no V6 project is active.
 

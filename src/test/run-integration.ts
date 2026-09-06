@@ -58,7 +58,7 @@ async function main(): Promise<void> {
 }
 
 async function prepareIntegrationWorkspace(extensionRoot: string, workspace: string): Promise<void> {
-    const probeRoot = path.join(extensionRoot, 'temp', 'cdbg');
+    const probeRoot = path.join(extensionRoot, 'test', 'fixtures', 'cdbg');
     await fs.rm(workspace, { recursive: true, force: true });
     await fs.mkdir(workspace, { recursive: true });
     await fs.writeFile(path.join(workspace, 'cdbg.project.json'), JSON.stringify({

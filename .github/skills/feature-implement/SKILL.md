@@ -82,9 +82,9 @@ Statistics).
 **External tools** (not bundled; see `docs/development.md`):
 - `v6emul` — Vector-06c emulator. Resolved **only** from the `V6EMUL` env var (full path).
   The only tool the extension launches directly. Required for `test:feature:debug`.
-- `v6asm` — Intel 8080 assembler (via `PATH` or `V6ASM`). Used by generated Makefiles.
-- `v6fdd` — FDD image builder (via `PATH` or `V6FDD`).
-- `v6c` — C compiler (optional).
+- `v6asm` — Intel 8080 assembler path resolved from the `V6ASM` environment variable. Used by generated Makefiles.
+- `v6fdd` — FDD image builder path resolved from the `V6FDD` environment variable.
+- `v6c` — C compiler path resolved from the `V6C` environment variable.
 
 **Panel implementation shape** (most features follow this): a `*-service.ts`
 (EventEmitter, IPC + mutation orchestration, immutable snapshots, session generation),

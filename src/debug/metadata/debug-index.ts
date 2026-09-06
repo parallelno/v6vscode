@@ -38,9 +38,17 @@ export interface AddressRange {
     end: number;
 }
 
+export interface StatementRow extends SourceLocation {
+    address: number;
+    discriminator?: number;
+}
+
 export interface DebugIndex {
     /** All source file paths in the index. */
     readonly sourceFiles: ReadonlyArray<string>;
+
+    /** Immutable normalized statement rows, ordered by address. */
+    readonly statementRows: ReadonlyArray<StatementRow>;
 
     /**
      * Find the best breakpoint address for a given source location.
@@ -93,16 +101,27 @@ export function buildDebugIndex(
 
     // ---- Address → source (first is_stmt row wins for each address) ----
     const byAddress = new Map<number, SourceLocation>();
-    const statementAddresses: number[] = [];
+    const statementRows: StatementRow[] = [];
     for (const r of normalizedRows) {
         if (!byAddress.has(r.address)) {
             byAddress.set(r.address, { file: r.file, line: r.line, column: r.column, isStmt: r.isStmt });
         }
     }
     for (const row of normalizedRows) {
-        if (row.isStmt && !statementAddresses.includes(row.address)) { statementAddresses.push(row.address); }
+        if (row.isStmt) {
+            statementRows.push({
+                address: row.address,
+                file: row.file,
+                line: row.line,
+                column: row.column,
+                isStmt: true,
+                ...(row.discriminator === undefined ? {} : { discriminator: row.discriminator }),
+            });
+        }
     }
-    statementAddresses.sort((left, right) => left - right);
+    statementRows.sort((left, right) => left.address - right.address || left.file.localeCompare(right.file)
+        || left.line - right.line || left.column - right.column);
+    const statementAddresses = [...new Set(statementRows.map(row => row.address))];
 
     // ---- Source (file, line) → addresses (sorted) ----
     // Key: normalized file path + ':' + line number
@@ -163,6 +182,7 @@ export function buildDebugIndex(
     // ---- Return implementation ----
     return {
         sourceFiles,
+        statementRows,
 
         resolveBreakpoint(file, line) {
             const nf = resolveIndexedFile(norm(file), sourceFiles);

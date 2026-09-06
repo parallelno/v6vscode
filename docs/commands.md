@@ -27,6 +27,10 @@ Templates live in `src/templates/` and use `{{key}}` placeholder expansion.
 4. If no emulator is running — launches via `EmulatorLifecycle.start()`.
 5. Reveals or creates the emulator webview panel.
 
+## Debug Stepping
+
+Step Into and Step Over use metadata-backed statement candidates for C source sessions when statement granularity is requested. Instruction granularity retains the backend's existing single-instruction and `GET_STEP_OVER_ADDR` behavior. A selected semantic Call Stack frame can Step Out only when its caller continuation was verified by DWARF CFI; an outermost or unverifiable frame is rejected rather than guessing a return address.
+
 ## v6emul Panel Toggles
 
 The `v6emul` Activity Bar container, also available through **View > Open View... > v6emul**, contains launchers for Settings, Display, Hex Viewer, Memory Edits, Performance, Trace Log, Scripts, Symbols, Ports, and Watchpoints. Each launcher creates an editor panel when closed and disposes it when open. Open panels show a check icon and `Open` state; closing a panel tab clears that state. The same toggle commands remain available in the Command Palette under the `v6emul` category.

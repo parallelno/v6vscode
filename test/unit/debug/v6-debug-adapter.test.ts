@@ -1,4 +1,5 @@
 import * as assert from 'assert';
+import * as vscode from 'vscode';
 import { V6DebugAdapter } from '../../../src/debug/adapter/v6-debug-adapter';
 import { IpcCommand } from '../../../src/emulator/protocol/ipc-commands';
 
@@ -197,6 +198,126 @@ describe('V6DebugAdapter', () => {
         ]);
     });
 
+    it('uses bounded instruction progression for statement-granularity Step Into', async () => {
+        const adapter = makeSourceStepAdapter();
+        const calls: Array<{ command: IpcCommand; data: any }> = [];
+        (adapter as any).client.send = async (command: IpcCommand, data: any) => {
+            calls.push({ command, data });
+            return command === IpcCommand.DEBUG_BREAKPOINT_GET_ALL ? { ok: true, data: [] } : { ok: true };
+        };
+        (adapter as any).startPoll = () => {};
+
+        await (adapter as any).onStepIn({ seq: 1, command: 'stepIn', arguments: { granularity: 'statement' } });
+
+        assert.ok(calls.some(call => call.command === IpcCommand.EXECUTE_INSTR));
+        assert.strictEqual(calls.some(call => call.command === IpcCommand.DEBUG_BREAKPOINT_ADD), false);
+    });
+
+    it('keeps instruction-granularity Step Into as one backend instruction', async () => {
+        const adapter = makeSourceStepAdapter();
+        const calls: IpcCommand[] = [];
+        (adapter as any).client.send = async (command: IpcCommand) => {
+            calls.push(command);
+            return command === IpcCommand.EXECUTE_INSTR ? { ok: true } : { ok: true, data: [] };
+        };
+
+        await (adapter as any).onStepIn({ seq: 1, command: 'stepIn', arguments: { granularity: 'instruction' } });
+
+        assert.ok(calls.includes(IpcCommand.EXECUTE_INSTR));
+        assert.strictEqual(calls.includes(IpcCommand.DEBUG_BREAKPOINT_ADD), false);
+    });
+
+    it('uses a bounded instruction fallback when no source-step candidate exists', async () => {
+        const adapter = makeSourceStepAdapter();
+        const calls: IpcCommand[] = [];
+        (adapter as any).debugIndex = { statementRows: [
+            { address: 0x100, file: 'main.c', line: 10, column: 1, isStmt: true },
+        ] };
+        (adapter as any).client.send = async (command: IpcCommand) => {
+            calls.push(command);
+            return command === IpcCommand.GET_REGS
+                ? { ok: true, data: { pc: 0x101 } }
+                : { ok: true, data: [] };
+        };
+
+        await (adapter as any).onStepIn({ seq: 1, command: 'stepIn', arguments: { granularity: 'statement' } });
+
+        assert.ok(calls.includes(IpcCommand.EXECUTE_INSTR));
+        assert.strictEqual(calls.includes(IpcCommand.RUN), false);
+    });
+
+    it('filters matching source Step Over targets', async () => {
+        const adapter = makeSourceStepAdapter();
+        const calls: Array<{ command: IpcCommand; data: any }> = [];
+        const originalConfiguration = vscode.workspace.getConfiguration;
+        (adapter as any).debugIndex = { statementRows: [
+            { address: 0x100, file: 'main.c', line: 10, column: 1, isStmt: true },
+            { address: 0x101, file: 'runtime/support.c', line: 11, column: 1, isStmt: true },
+            { address: 0x102, file: 'main.c', line: 12, column: 1, isStmt: true },
+        ] };
+        (adapter as any).client.send = async (command: IpcCommand, data: any) => {
+            calls.push({ command, data });
+            return command === IpcCommand.DEBUG_BREAKPOINT_GET_ALL ? { ok: true, data: [] } : { ok: true };
+        };
+        (adapter as any).startPoll = () => {};
+        (vscode.workspace as any).getConfiguration = () => ({
+            get: (key: string, defaultValue: unknown) => key === 'sourceStepFilters' ? ['runtime/**'] : defaultValue,
+        });
+
+        try {
+            await (adapter as any).onNext({ seq: 1, command: 'next', arguments: { granularity: 'statement' } });
+        } finally {
+            (vscode.workspace as any).getConfiguration = originalConfiguration;
+        }
+
+        assert.strictEqual(calls[0].command, IpcCommand.DEBUG_BREAKPOINT_ADD);
+        assert.strictEqual(calls[0].data.addr, 0x102);
+    });
+
+    it('uses only a verified caller return PC for physical Step Out', async () => {
+        const adapter = makeSourceStepAdapter();
+        const calls: Array<{ command: IpcCommand; data: any }> = [];
+        (adapter as any).stackTraceService.frame = () => ({ physicalFrame: { returnPc: 0x2222 } });
+        (adapter as any).client.send = async (command: IpcCommand, data: any) => {
+            calls.push({ command, data });
+            return command === IpcCommand.DEBUG_BREAKPOINT_GET_ALL ? { ok: true, data: [] } : { ok: true };
+        };
+        (adapter as any).startPoll = () => {};
+
+        await (adapter as any).onStepOut({ seq: 1, command: 'stepOut', arguments: { frameId: 1 } });
+
+        assert.strictEqual(calls[0].command, IpcCommand.DEBUG_BREAKPOINT_ADD);
+        assert.strictEqual(calls[0].data.addr, 0x2222);
+    });
+
+    it('uses a containing-frame statement for inline Step Out', async () => {
+        const adapter = makeSourceStepAdapter();
+        const calls: Array<{ command: IpcCommand; data: any }> = [];
+        (adapter as any).debugIndex = { statementRows: [
+            { address: 0x100, file: 'main.c', line: 10, column: 1, isStmt: true },
+            { address: 0x101, file: 'main.c', line: 11, column: 1, isStmt: true },
+        ] };
+        (adapter as any).debugMetadata = {
+            subprogramAt: () => ({ ranges: [{ start: 0x100, end: 0x200 }] }),
+            inlineChainAt: (address: number) => address === 0x100 ? [{ id: 7 }] : [],
+        };
+        (adapter as any).stackTraceService.frame = () => ({
+            inlineDieIdentity: 7,
+            instructionPc: 0x100,
+            physicalFrame: { index: 0 },
+        });
+        (adapter as any).client.send = async (command: IpcCommand, data: any) => {
+            calls.push({ command, data });
+            return command === IpcCommand.DEBUG_BREAKPOINT_GET_ALL ? { ok: true, data: [] } : { ok: true };
+        };
+        (adapter as any).startPoll = () => {};
+
+        await (adapter as any).onStepOut({ seq: 1, command: 'stepOut', arguments: { frameId: 1 } });
+
+        assert.strictEqual(calls[0].command, IpcCommand.DEBUG_BREAKPOINT_ADD);
+        assert.strictEqual(calls[0].data.addr, 0x101);
+    });
+
     it('publishes server-only breakpoints when execution resumes', async () => {
         const adapter = new V6DebugAdapter(
             { setExecutionRunning() {} } as any,
@@ -310,6 +431,30 @@ describe('V6DebugAdapter', () => {
         assert.strictEqual(responses[0].message, 'Breakpoint rejected');
     });
 });
+
+function makeSourceStepAdapter(): V6DebugAdapter {
+    const adapter = new V6DebugAdapter(
+        { setExecutionRunning() {} } as any,
+        {} as any,
+        { debug() {}, error() {} } as any,
+        {} as any,
+        () => ({} as any),
+    );
+    (adapter as any).cachedRegs = { pc: 0x100 };
+    (adapter as any).debugIndex = {
+        statementRows: [
+            { address: 0x100, file: 'main.c', line: 1, column: 1, isStmt: true },
+            { address: 0x101, file: 'main.c', line: 2, column: 1, isStmt: true },
+        ],
+    };
+    (adapter as any).debugMetadata = {
+        subprogramAt: () => ({ ranges: [{ start: 0x100, end: 0x200 }] }),
+        inlineChainAt: () => [],
+    };
+    (adapter as any).client = { send: async () => ({ ok: true, data: [] }) };
+    (adapter as any).stopRecordsSupported = false;
+    return adapter;
+}
 
 async function sendRequest(adapter: V6DebugAdapter, request: any): Promise<void> {
     await new Promise<void>((resolve) => {

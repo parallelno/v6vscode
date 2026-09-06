@@ -38,7 +38,7 @@ Closing the display panel terminates the active debug launch and closes the Run 
 
 ## Supported Debug Surfaces
 
-- Continue, pause, Step Into, and basic Step Over.
+- Continue, pause, instruction Step Into/Step Over, and metadata-backed C source Step Into/Step Over. Source steps advance to a distinct DWARF statement and use temporary owned breakpoints without replacing a user breakpoint at the same address. Instruction granularity always remains available. Source Step Out is available only for a selected semantic Call Stack frame with a CFI-verified caller continuation; otherwise the adapter returns `Selected frame has no verified caller`.
 - ASM source breakpoints resolved through final ELF/DWARF metadata.
 - Instruction breakpoints using CPU addresses.
 - A verified semantic Call Stack from DWARF subprogram and call-frame metadata with readable stopped-state stack memory. Known C functions display their function name, with source and instruction pointer provided in the standard DAP fields. A physical caller preserves its verified return address for instruction navigation while its source display may use the preceding statement only within the same verified subprogram. Inline frames use DWARF call-file, line, and column metadata and appear before their physical frame. Frames stop at the first missing or unsupported unwind rule; raw stack values are never guessed as callers. Frame IDs are valid only until execution resumes, restarts, reloads ROM, disconnects, or reaches another stop.
@@ -59,6 +59,12 @@ Closing the display panel terminates the active debug launch and closes the Run 
 - DAP data breakpoints backed by structured v6emul watchpoints when both watchpoint schema 1 and stop-record schema 1 are available.
 
 Verified source breakpoints show their resolved CPU address in the breakpoint tooltip.
+
+## C Source Stepping
+
+Statement-granularity C stepping follows emitted DWARF statement locations. Step Into may enter a physical or inline callee; Step Over remains in the selected semantic frame and skips a deeper inline frame; Step Out uses only a CFI-verified caller continuation. Source paths matching `v6.debug.sourceStepFilters` are skipped as automatic Step Into and Step Over targets, but remain visible in Call Stack and user breakpoints there continue to stop.
+
+Each source step is bounded by the configured candidate, instruction, and elapsed-time limits. A new execution-control request, user breakpoint, watchpoint, exception, script break, pause, reset, reload, disconnect, or emulator termination cancels it and releases its temporary breakpoints. Optimized code can skip removed statements, relocate a requested line to the next emitted statement, and expose discontinuous statement ranges or inline source locations.
 
 ## Breakpoint Conditions, Hit Counts, and Logpoints
 
@@ -107,7 +113,7 @@ Older backends without stop-record schema 1 use running-state detection. Consequ
 - DAP data breakpoints and exception details are not enabled.
 - Logpoints are not enabled because their address attribution requires stop records.
 - The Hex Viewer reports an unsupported backend instead of falling back to repeated per-byte requests when `GET_MEM` is unavailable.
-- Source-level Step Out remains unavailable pending its dedicated stepping support.
+- Source Step Out requires a selected semantic frame with a CFI-verified caller continuation. Without stop-record schema 1, its eventual stop reason is inferred rather than authoritatively attributed.
 - Debug attach does not yet share an externally owned emulator session with the display panel.
 
 ## Verification

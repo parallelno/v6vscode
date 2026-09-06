@@ -26,6 +26,10 @@ export const CONTEXT_WATCHPOINTS_OPEN = 'v6emul.watchpointsOpen';
 export const SETTING_LOG_LEVEL = 'v6.logLevel';
 export const SETTING_SCRIPT_OVERLAYS_HIDDEN = 'v6.scriptOverlays.hidden';
 export const SETTING_SCRIPT_OVERLAYS_FONT_SIZE = 'v6.scriptOverlays.fontSize';
+export const SETTING_SOURCE_STEP_FILTERS = 'v6.debug.sourceStepFilters';
+export const SETTING_SOURCE_STEP_MAX_INSTRUCTIONS = 'v6.debug.sourceStepMaxInstructions';
+export const SETTING_SOURCE_STEP_MAX_ELAPSED_MS = 'v6.debug.sourceStepMaxElapsedMs';
+export const SETTING_SOURCE_STEP_MAX_CANDIDATES = 'v6.debug.sourceStepMaxCandidates';
 
 // Debug
 export const DEBUG_TYPE = 'v6';

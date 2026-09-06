@@ -35,11 +35,14 @@ import { evaluateSymbolExpression, validateSymbolExpression } from '../utilities
 import { WatchpointsProvider } from '../views/watchpoints-provider';
 import { DapHandleStore } from './dap-handle-store';
 import { ScopeService, SemanticScope, SemanticScopeKind } from './scope-service';
-import { StackTraceService } from './stack-trace-service';
+import { DapFrameContext, StackTraceService } from './stack-trace-service';
 import { dapVariableValue, TypedValue, VariableService } from './variable-service';
 import { CExpressionService } from './c-expression-service';
 import { TypeInfo } from '../metadata/dwarf-types';
 import { DWARF_REG } from '../metadata/v6c-register-map';
+import { StepBreakpointStore } from './step-breakpoint-store';
+import { LogicalLocationIndex } from './logical-location-index';
+import { SourceStepService, SourceStepState } from './source-step-service';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -49,6 +52,7 @@ const THREAD_ID = 1;
 const THREAD_NAME = 'V6 CPU';
 const POLL_INTERVAL_MS = 20;
 const HOVER_EVALUATION_TIMEOUT_MS = 100;
+const SOURCE_STEP_LIMITS = { maxInstructions: 10000, maxElapsedMs: 5000, maxCandidates: 64 };
 
 type MachineScopeKind = 'registers' | 'flags' | 'stack';
 
@@ -190,6 +194,28 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private pendingPause = false;
     private pendingStep = false;
     private pendingStepOverAddr: number | undefined;
+    private stepBreakpointError: string | undefined;
+    private sourceStep = this.createSourceStepService(SOURCE_STEP_LIMITS);
+    private createSourceStepService(limits: typeof SOURCE_STEP_LIMITS): SourceStepService {
+        return new SourceStepService(limits, Date.now, async () => {
+            await this.releaseSourceStepBreakpoints();
+        });
+    }
+    private sourceStepAddresses: number[] = [];
+    private sourceStepFilters: readonly string[] = [];
+    private readonly stepBreakpoints = new StepBreakpointStore({
+        add: async address => {
+            const response = await this.client?.send(
+                IpcCommand.DEBUG_BREAKPOINT_ADD,
+                makeBreakpointAdd(address, '__dap_next', { autoDelete: true }),
+            );
+            this.stepBreakpointError = response?.error;
+            return response?.ok === true;
+        },
+        remove: async address => {
+            await this.client?.send(IpcCommand.DEBUG_BREAKPOINT_DEL, { addr: address }).catch(() => {});
+        },
+    });
     private terminationEmitted = false;
     private terminationRequested = false;
     private launchRequest: DebugLaunchRequest | null = null;
@@ -270,6 +296,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             case 'pause':                await this.onPause(req); break;
             case 'next':                 await this.onNext(req); break;
             case 'stepIn':               await this.onStepIn(req); break;
+            case 'stepOut':              await this.onStepOut(req); break;
             case 'setBreakpoints':       await this.onSetBreakpoints(req); break;
             case 'setInstructionBreakpoints': await this.onSetInstructionBreakpoints(req); break;
             case 'dataBreakpointInfo':  await this.onDataBreakpointInfo(req); break;
@@ -293,6 +320,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         this.sendResponseBody(req, {
             supportsConfigurationDoneRequest: true,
             supportsStepInTargetsRequest: false,
+            supportsSteppingGranularity: true,
             supportsSetVariable: false,
             supportsEvaluateForHovers: true,
             supportsInstructionBreakpoints: true,
@@ -471,14 +499,12 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                         const name = scope.abstractOrigin === undefined
                             ? undefined
                             : this.debugMetadata?.subprogram(scope.abstractOrigin)?.name;
-                        const file = scope.callFile === undefined
-                            ? undefined
-                            : this.debugIndex?.sourceFile(scope.callFile);
+                        const source = this.debugIndex?.resolveAddress(pc);
                         return name ? {
                             id: scope.id,
                             name,
-                            source: file && scope.callLine !== undefined
-                                ? { file, line: scope.callLine, column: scope.callColumn ?? 0 }
+                            source: source
+                                ? { file: source.file, line: source.line, column: source.column }
                                 : undefined,
                         } : undefined;
                     })
@@ -735,6 +761,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // -----------------------------------------------------------------------
 
     private async onContinue(req: any): Promise<void> {
+        await this.cancelSourceStep();
         this.sendResponseBody(req, { allThreadsContinued: true });
         await this.run();
     }
@@ -761,6 +788,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // -----------------------------------------------------------------------
 
     private async onPause(req: any): Promise<void> {
+        await this.cancelSourceStep();
         this.pendingPause = true;
         await this.client?.send(IpcCommand.STOP, undefined, 5000, 'critical');
         this.lifecycle.setExecutionRunning(false);
@@ -774,6 +802,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
     private async onNext(req: any): Promise<void> {
         if (!this.client) { this.sendResponseBody(req, {}); return; }
+        if (await this.startSourceStep('over', req)) { return; }
 
         this.pendingStep = true;
         this.cachedRegs = null;
@@ -786,13 +815,9 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
             if (soAddr > 0 && soAddr !== 0xFFFF) {
                 // Set a temporary auto-delete breakpoint at the step-over address
-                const addResp = await this.client.send(
-                    IpcCommand.DEBUG_BREAKPOINT_ADD,
-                    makeBreakpointAdd(soAddr, '__dap_next', { autoDelete: true }),
-                );
-                if (!addResp.ok) {
+                if (!await this.stepBreakpoints.acquire(soAddr)) {
                     this.pendingStep = false;
-                    this.sendResponse(req, false, addResp.error ?? 'Unable to set the temporary step-over breakpoint');
+                    this.sendResponse(req, false, this.stepBreakpointError ?? 'Unable to set the temporary step-over breakpoint');
                     return;
                 }
                 this.pendingStepOverAddr = soAddr;
@@ -814,11 +839,133 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // -----------------------------------------------------------------------
 
     private async onStepIn(req: any): Promise<void> {
+        if (await this.startSourceStep('into', req)) { return; }
         this.sendResponseBody(req, {});
         this.pendingStep = true;
         this.cachedRegs = null;
         this.invalidateStopContext();
         await this.singleStep();
+    }
+
+    private async onStepOut(req: any): Promise<void> {
+        const frame = this.stackTraceService.frame(this.stoppedGeneration, req.arguments?.frameId);
+        if (frame?.inlineDieIdentity !== undefined && await this.startInlineStepOut(frame, req)) {
+            return;
+        }
+        if (!frame?.physicalFrame.returnPc) {
+            this.sendResponse(req, false, 'Selected frame has no verified caller');
+            return;
+        }
+        await this.cancelSourceStep();
+        if (!await this.stepBreakpoints.acquire(frame.physicalFrame.returnPc)) {
+            this.sendResponse(req, false, this.stepBreakpointError ?? 'Unable to set the temporary step-out breakpoint');
+            return;
+        }
+        this.sourceStepAddresses = [frame.physicalFrame.returnPc];
+        this.pendingStep = true;
+        this.sendResponseBody(req, {});
+        await this.run();
+    }
+
+    private async startInlineStepOut(frame: DapFrameContext, req: any): Promise<boolean> {
+        if (!this.debugIndex || !this.debugMetadata || !this.cachedRegs || frame.physicalFrame.index !== 0) {
+            return false;
+        }
+        const subprogram = this.debugMetadata.subprogramAt(frame.instructionPc);
+        const locations = new LogicalLocationIndex(this.debugIndex, this.debugMetadata);
+        const statement = subprogram && locations.at(frame.instructionPc, 'top');
+        if (!statement) { return false; }
+        const candidates = locations.next(statement, subprogram.ranges)
+            .filter(candidate => !candidate.location.inlineChain.includes(frame.inlineDieIdentity!))
+            .flatMap(candidate => candidate.ranges.map(range => range.start));
+        this.sourceStepFilters = [];
+        const configuration = vscode.workspace.getConfiguration('v6.debug');
+        this.sourceStep = this.createSourceStepService({
+            maxInstructions: configuration.get<number>('sourceStepMaxInstructions', SOURCE_STEP_LIMITS.maxInstructions),
+            maxElapsedMs: configuration.get<number>('sourceStepMaxElapsedMs', SOURCE_STEP_LIMITS.maxElapsedMs),
+            maxCandidates: configuration.get<number>('sourceStepMaxCandidates', SOURCE_STEP_LIMITS.maxCandidates),
+        });
+        const start: SourceStepState = {
+            location: statement.location,
+            physicalDepth: frame.physicalFrame.index,
+            inlineDepth: this.debugMetadata.inlineChainAt(frame.instructionPc).length,
+        };
+        if (this.sourceStep.begin('out', start, candidates.length) !== 'continue') {
+            this.sendResponse(req, false, 'Source step exceeded the instruction budget');
+            return true;
+        }
+        for (const address of candidates) {
+            if (!await this.stepBreakpoints.acquire(address)) {
+                await this.cancelSourceStep();
+                this.sendResponse(req, false, this.stepBreakpointError ?? 'Unable to set an inline step-out breakpoint');
+                return true;
+            }
+        }
+        this.sourceStepAddresses = candidates;
+        this.pendingStep = true;
+        this.sendResponseBody(req, {});
+        if (candidates.length === 0) {
+            await this.singleStep();
+        } else {
+            await this.run();
+        }
+        return true;
+    }
+
+    private async startSourceStep(kind: 'into' | 'over', req: any): Promise<boolean> {
+        if (req.arguments?.granularity === 'instruction' || !this.debugIndex || !this.debugMetadata || !this.cachedRegs) {
+            return false;
+        }
+        const pc = this.cachedRegs.pc;
+        const subprogram = this.debugMetadata.subprogramAt(pc);
+        if (!subprogram) { return false; }
+        const locations = new LogicalLocationIndex(this.debugIndex, this.debugMetadata);
+        const statement = locations.at(pc, 'top');
+        if (!statement) { return false; }
+        const inlineDepth = this.debugMetadata.inlineChainAt(pc).length;
+        const start: SourceStepState = { location: statement.location, physicalDepth: 0, inlineDepth };
+        const configuration = vscode.workspace.getConfiguration('v6.debug');
+        const filters = configuration.get<string[]>('sourceStepFilters', []);
+        this.sourceStepFilters = filters;
+        const candidates = kind === 'into' ? [] : locations.next(statement, subprogram.ranges)
+            .filter(candidate => !filters.some(filter => matchesSourceFilter(candidate.location.file, filter)))
+            .flatMap(candidate => candidate.ranges.map(range => range.start));
+        this.sourceStep = this.createSourceStepService({
+            maxInstructions: configuration.get<number>('sourceStepMaxInstructions', SOURCE_STEP_LIMITS.maxInstructions),
+            maxElapsedMs: configuration.get<number>('sourceStepMaxElapsedMs', SOURCE_STEP_LIMITS.maxElapsedMs),
+            maxCandidates: configuration.get<number>('sourceStepMaxCandidates', SOURCE_STEP_LIMITS.maxCandidates),
+        });
+        if (this.sourceStep.begin(kind, start, candidates.length) !== 'continue') {
+            this.sendResponse(req, false, 'Source step exceeded the instruction budget');
+            return true;
+        }
+        for (const address of candidates) {
+            if (!await this.stepBreakpoints.acquire(address)) {
+                await this.cancelSourceStep();
+                this.sendResponse(req, false, this.stepBreakpointError ?? 'Unable to set a source step breakpoint');
+                return true;
+            }
+        }
+        this.sourceStepAddresses = candidates;
+        this.pendingStep = true;
+        this.sendResponseBody(req, {});
+        if (candidates.length === 0) {
+            await this.singleStep();
+            return true;
+        }
+        await this.run();
+        return true;
+    }
+
+    private async cancelSourceStep(): Promise<void> {
+        await this.sourceStep.cancel();
+        this.sourceStepFilters = [];
+    }
+
+    private async releaseSourceStepBreakpoints(): Promise<void> {
+        const addresses = this.sourceStepAddresses;
+        this.sourceStepAddresses = [];
+        await Promise.all(addresses.map(address => this.stepBreakpoints.release(address)));
     }
 
     private async singleStep(): Promise<void> {
@@ -1086,6 +1233,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                     continue;
                 }
                 this.breakpointsByAddress.set(resolved.address, breakpoint);
+                this.stepBreakpoints.setUserOwned(resolved.address, true);
                 this.bpAddrToId.set(resolved.address, breakpoint.id);
                 this.bpIdToAddr.set(breakpoint.id, resolved.address);
             } else if (existing) {
@@ -1177,6 +1325,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
                 if (addResp.ok) {
                     this.breakpointsByAddress.set(addr, breakpoint);
+                    this.stepBreakpoints.setUserOwned(addr, true);
                     this.bpAddrToId.set(addr, breakpoint.id);
                     this.bpIdToAddr.set(breakpoint.id, addr);
                     result.push({
@@ -1218,6 +1367,10 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         this.bpAddrToId.delete(addr);
         if (id !== undefined) { this.bpIdToAddr.delete(id); }
         this.breakpointsByAddress.delete(addr);
+        this.stepBreakpoints.setUserOwned(addr, false);
+        if (!await this.stepBreakpoints.restoreTemporary(addr)) {
+            this.logger.warn(`v6-debug: unable to restore temporary breakpoint at ${hex4(addr)}`);
+        }
     }
 
     private async onDataBreakpointInfo(req: any): Promise<void> {
@@ -1418,6 +1571,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         }
 
         const resume = this.sessionState === 'running';
+        await this.cancelSourceStep();
+        await this.releaseSourceStepBreakpoints();
         this.stopPoll();
         this.pendingPause = false;
         this.pendingStep = false;
@@ -1445,7 +1600,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         if (!this.client) { throw new Error('No active emulator session'); }
 
         const resume = this.sessionState === 'running';
-        this.prepareForRestart();
+        await this.prepareForRestart();
         await this.sendControl(IpcCommand.STOP, 'Emulator stop failed');
         await this.sendControl(IpcCommand.RESET, 'Emulator reset failed');
         this.sessionState = 'paused';
@@ -1463,7 +1618,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             throw new Error('Reload ROM is only available for ROM debug sessions');
         }
 
-        this.prepareForRestart();
+        await this.prepareForRestart();
         await this.sendControl(IpcCommand.STOP, 'Emulator stop failed');
         await this.sendControl(IpcCommand.RESET, 'Emulator reset failed');
         await this.sendControl(IpcCommand.RESTART, 'Emulator restart failed');
@@ -1479,7 +1634,9 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         await this.run();
     }
 
-    private prepareForRestart(): void {
+    private async prepareForRestart(): Promise<void> {
+        await this.cancelSourceStep();
+        await this.releaseSourceStepBreakpoints();
         this.stopPoll();
         this.pendingPause = false;
         this.pendingStep = false;
@@ -1572,21 +1729,53 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private async onStop(record?: StopRecord): Promise<void> {
         await this.refreshRegs();
         this.captureStopContext();
+        if (!this.sourceStep.active && this.sourceStepAddresses.length > 0) {
+            await this.releaseSourceStepBreakpoints();
+        }
 
         const stoppedAtStepOver = this.pendingStepOverAddr !== undefined
             && ((record?.reason === 'breakpoint' && record.breakpointAddress === this.pendingStepOverAddr)
                 || (record === undefined && this.cachedRegs?.pc === this.pendingStepOverAddr));
         if (stoppedAtStepOver && this.pendingStepOverAddr !== undefined) {
-            await this.client?.send(IpcCommand.DEBUG_BREAKPOINT_DEL, {
-                addr: this.pendingStepOverAddr,
-            }).catch(() => {});
+            await this.stepBreakpoints.release(this.pendingStepOverAddr);
             this.pendingStepOverAddr = undefined;
         }
         await this.syncServerBreakpoints();
+        const higherPriorityStop = this.pendingPause
+            || record?.reason === 'breakpoint' && record.breakpointAddress !== undefined
+                && this.breakpointsByAddress.has(record.breakpointAddress)
+            || record?.reason === 'watchpoint' || record?.reason === 'exception'
+            || record?.reason === 'script' || record?.reason === 'pause';
+        if (!higherPriorityStop && this.sourceStep.active && this.cachedRegs) {
+            const pc = this.cachedRegs.pc;
+            const location = this.debugIndex && this.debugMetadata
+                ? new LogicalLocationIndex(this.debugIndex, this.debugMetadata).at(pc, 'top')
+                : undefined;
+            const outcome = location && !this.sourceStepFilters.some(filter => matchesSourceFilter(location.location.file, filter))
+                ? await this.sourceStep.observe({
+                    location: location.location,
+                    physicalDepth: 0,
+                    inlineDepth: this.debugMetadata?.inlineChainAt(pc).length ?? 0,
+                }, this.sourceStepAddresses.length === 0 ? 1 : 0)
+                : await this.sourceStep.tick();
+            if (outcome === 'continue') {
+                if (this.sourceStepAddresses.length === 0) {
+                    await this.singleStep();
+                } else {
+                    await this.run();
+                }
+                return;
+            }
+            if (outcome !== 'complete') {
+                this.pendingStep = false;
+                this.sendEvent('output', { category: 'stderr', output: `V6: Source step ${outcome.replace(/-/g, ' ')}.\n` });
+            }
+        }
         if (record) {
             if (record.reason === 'breakpoint' && record.breakpointAddress !== undefined) {
                 const breakpoint = this.breakpointsByAddress.get(record.breakpointAddress);
                 if (breakpoint?.logMessage) {
+                    await this.cancelSourceStep();
                     try {
                         this.sendEvent('output', { category: 'console', output: this.formatLogMessage(breakpoint.logMessage) });
                     } catch (error) {
@@ -1595,6 +1784,13 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                     await this.resumeLogpoint();
                     return;
                 }
+            }
+            if (record.reason === 'breakpoint' && record.breakpointAddress !== undefined
+                && this.breakpointsByAddress.has(record.breakpointAddress)) {
+                await this.cancelSourceStep();
+            } else if (record.reason === 'watchpoint' || record.reason === 'exception'
+                || record.reason === 'script' || record.reason === 'pause') {
+                await this.cancelSourceStep();
             }
             this.pendingStep = false;
             this.pendingPause = false;
@@ -1841,6 +2037,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
     private async cleanup(terminateDebuggee: boolean): Promise<void> {
         this.stopPoll();
+        await this.cancelSourceStep();
+        await this.releaseSourceStepBreakpoints();
         this.sessionState = 'disconnected';
         this.clearUnavailableSourceIndicator();
         this.unavailableSourceDecoration?.dispose();
@@ -1954,4 +2152,16 @@ function mapStopReason(reason: StopRecord['reason']): StopReason {
         case 'unknown': return 'unknown';
         default: return 'pause';
     }
+}
+
+function matchesSourceFilter(sourcePath: string, glob: string): boolean {
+    const escape = (value: string) => value.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
+    const globStarToken = '__V6_GLOBSTAR__';
+    const pattern = escape(path.normalize(glob).replace(/\\/g, '/'))
+        .replace(/\*\*/g, globStarToken)
+        .replace(/\*/g, '[^/]*')
+        .replace(new RegExp(globStarToken, 'g'), '.*');
+    return new RegExp(`^${pattern}$`, process.platform === 'win32' ? 'i' : '').test(
+        path.normalize(sourcePath).replace(/\\/g, '/'),
+    );
 }

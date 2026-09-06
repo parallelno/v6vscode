@@ -490,6 +490,33 @@
           "minimum": 6,
           "maximum": 48,
           "description": "Script overlay text size in framebuffer pixels."
+        },
+        "v6.debug.sourceStepFilters": {
+          "type": "array",
+          "default": [],
+          "items": { "type": "string" },
+          "description": "Source path globs skipped by C source Step Into and Step Over targets."
+        },
+        "v6.debug.sourceStepMaxInstructions": {
+          "type": "integer",
+          "default": 10000,
+          "minimum": 1,
+          "maximum": 1000000,
+          "description": "Maximum internal instructions allowed for one C source step."
+        },
+        "v6.debug.sourceStepMaxElapsedMs": {
+          "type": "integer",
+          "default": 5000,
+          "minimum": 1,
+          "maximum": 60000,
+          "description": "Maximum elapsed milliseconds allowed for one C source step."
+        },
+        "v6.debug.sourceStepMaxCandidates": {
+          "type": "integer",
+          "default": 64,
+          "minimum": 1,
+          "maximum": 1024,
+          "description": "Maximum temporary breakpoint candidates allowed for one C source step."
         }
       }
     },

@@ -29,14 +29,15 @@ frames_out/
 
 # Temporary
 .tmp/
+temp/
 test/core/
 
 # VSCode package vsix
 *.vsix
 .vscode-test/
 
-temp/
 test/**/*.rom
+test/fixtures/cdbg/*.elf
 
 # Ignore build and cache artifacts
 .venv/

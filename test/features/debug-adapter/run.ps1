@@ -20,11 +20,34 @@ if ([string]::IsNullOrWhiteSpace($env:V6EMUL) -or -not (Test-Path -LiteralPath $
 $v6emulPath = (Resolve-Path -LiteralPath $env:V6EMUL).Path
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..\..\..')
-$elfPath = Join-Path $repoRoot 'temp\cdbg\probe-O0.elf'
-$romPath = Join-Path $repoRoot 'temp\cdbg\probe-O0.rom'
-if (-not (Test-Path -LiteralPath $elfPath) -or -not (Test-Path -LiteralPath $romPath)) {
-    throw 'C debug probe artifacts are missing. Build temp/cdbg before running the real-emulator feature test.'
+$fixtureRoot = Join-Path $repoRoot 'test\fixtures\cdbg'
+@('O0', 'O1', 'O2') | ForEach-Object {
+    $makefile = Join-Path $fixtureRoot "Makefile.$_"
+    if (-not (Test-Path -LiteralPath $makefile -PathType Leaf)) {
+        throw "Required C debug probe recipe is missing: $makefile"
+    }
+
+    Push-Location $fixtureRoot
+    try {
+        & make -B -f "Makefile.$_"
+        if ($LASTEXITCODE -ne 0) { throw "C debug probe build failed: Makefile.$_" }
+    } finally {
+        Pop-Location
+    }
 }
+
+$artifacts = @('O0', 'O1', 'O2') | ForEach-Object {
+    [PSCustomObject]@{
+        Optimization = $_
+        Elf = Join-Path $repoRoot "test\fixtures\cdbg\probe-$_.elf"
+        Rom = Join-Path $repoRoot "test\fixtures\cdbg\probe-$_.rom"
+    }
+}
+if ($artifacts | Where-Object { -not (Test-Path -LiteralPath $_.Elf) -or -not (Test-Path -LiteralPath $_.Rom) }) {
+    throw 'C debug probe build completed without all expected artifacts.'
+}
+$elfPath = $artifacts[0].Elf
+$romPath = $artifacts[0].Rom
 
 Push-Location $repoRoot
 try {
@@ -36,10 +59,14 @@ try {
     $romHash = Get-Sha256 $romPath
     $result = @(
         'status=passed',
-        'scenarios=extension-host-startup,c-source-breakpoint,three-function-call-stack,c-frame-scopes-and-watch',
+        'scenarios=extension-host-startup,c-source-breakpoint,c-source-step-into-over-and-out,o1-o2-omitted-line-relocation,o2-nested-inline-step-into-and-out,three-function-call-stack,c-frame-scopes-and-watch',
         "v6emul.version=$version",
         "elf.sha256=$elfHash",
         "rom.sha256=$romHash",
+        "probe-O1.elf.sha256=$(Get-Sha256 $artifacts[1].Elf)",
+        "probe-O1.rom.sha256=$(Get-Sha256 $artifacts[1].Rom)",
+        "probe-O2.elf.sha256=$(Get-Sha256 $artifacts[2].Elf)",
+        "probe-O2.rom.sha256=$(Get-Sha256 $artifacts[2].Rom)",
         ''
     ) -join [Environment]::NewLine
     Set-Content -LiteralPath $resultPath -Value $result -Encoding ascii

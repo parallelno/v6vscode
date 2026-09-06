@@ -1,6 +1,10 @@
 status=passed
-scenarios=extension-host-startup,c-source-breakpoint,three-function-call-stack,c-frame-scopes-and-watch
+scenarios=extension-host-startup,c-source-breakpoint,c-source-step-into-over-and-out,o1-o2-omitted-line-relocation,o2-nested-inline-step-into-and-out,three-function-call-stack,c-frame-scopes-and-watch
 v6emul.version=2026.08.08-9fdd139
-elf.sha256=d6255ae29cd1a8a6b84a7b8796127cc5054299ba7bee3187311e6a80a3cf0027
-rom.sha256=5cd194769daea1339a146c86d23f202bc5bfc790a22bd5c842dd51148f27cd7d
+elf.sha256=70dc577be3f4e9b4a7c368b0d1751b3a2dbf236251bbc0d5b3f7eb78e08778a3
+rom.sha256=613ba0c3107eb5399a87050cb948f91d75a6b04bb7270795b58aee603ce052b0
+probe-O1.elf.sha256=044f488075ee99783695dca888dd0098c5f019fc3a58f9828ba690b26b53f5f4
+probe-O1.rom.sha256=40b11fa035884593fdd30d7b63fd4a8d5973e8085f9fcf9b0fc03446d8fba8a0
+probe-O2.elf.sha256=044f488075ee99783695dca888dd0098c5f019fc3a58f9828ba690b26b53f5f4
+probe-O2.rom.sha256=40b11fa035884593fdd30d7b63fd4a8d5973e8085f9fcf9b0fc03446d8fba8a0
 
