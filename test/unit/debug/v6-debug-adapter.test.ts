@@ -294,6 +294,27 @@ describe('V6DebugAdapter', () => {
         assert.strictEqual(calls[0].data.addr, 0x102);
     });
 
+    it('adds temporary Step Over breakpoints only for the nearest logical statement', async () => {
+        const adapter = makeSourceStepAdapter();
+        const calls: Array<{ command: IpcCommand; data: any }> = [];
+        (adapter as any).debugIndex = { statementRows: [
+            { address: 0x100, file: 'main.c', line: 10, column: 1, isStmt: true },
+            { address: 0x101, file: 'main.c', line: 11, column: 1, isStmt: true },
+            { address: 0x102, file: 'main.c', line: 12, column: 1, isStmt: true },
+            { address: 0x103, file: 'main.c', line: 13, column: 1, isStmt: true },
+        ] };
+        (adapter as any).client.send = async (command: IpcCommand, data: any) => {
+            calls.push({ command, data });
+            return command === IpcCommand.DEBUG_BREAKPOINT_GET_ALL ? { ok: true, data: [] } : { ok: true };
+        };
+        (adapter as any).startPoll = () => {};
+
+        await (adapter as any).onNext({ seq: 1, command: 'next', arguments: { granularity: 'statement' } });
+
+        const targets = calls.filter(call => call.command === IpcCommand.DEBUG_BREAKPOINT_ADD).map(call => call.data.addr);
+        assert.deepStrictEqual(targets, [0x101]);
+    });
+
     it('uses only a verified caller return PC for physical Step Out', async () => {
         const adapter = makeSourceStepAdapter();
         const calls: Array<{ command: IpcCommand; data: any }> = [];

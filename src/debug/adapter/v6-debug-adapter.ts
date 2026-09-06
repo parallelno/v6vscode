@@ -934,9 +934,9 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         const configuration = vscode.workspace.getConfiguration('v6.debug');
         const filters = configuration.get<string[]>('sourceStepFilters', []);
         this.sourceStepFilters = filters;
-        const candidates = kind === 'into' ? [] : locations.next(statement, subprogram.ranges)
-            .filter(candidate => !filters.some(filter => matchesSourceFilter(candidate.location.file, filter)))
-            .flatMap(candidate => candidate.ranges.map(range => range.start));
+        const nextStatement = kind === 'into' ? undefined : locations.next(statement, subprogram.ranges)
+            .find(candidate => !filters.some(filter => matchesSourceFilter(candidate.location.file, filter)));
+        const candidates = nextStatement?.ranges.map(range => range.start) ?? [];
         this.sourceStep = this.createSourceStepService({
             maxInstructions: configuration.get<number>('sourceStepMaxInstructions', SOURCE_STEP_LIMITS.maxInstructions),
             maxElapsedMs: configuration.get<number>('sourceStepMaxElapsedMs', SOURCE_STEP_LIMITS.maxElapsedMs),
