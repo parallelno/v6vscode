@@ -51,6 +51,28 @@ describe('EmulatorLifecycle session ownership', () => {
         expect(states).to.deep.equal(['running', 'connected']);
     });
 
+    it('does not emit MaxListenersExceededWarning with all subsystems subscribed', () => {
+        const lifecycle = makeLifecycle();
+        const originalEmitWarning = process.emitWarning;
+        let warned = false;
+        (process as any).emitWarning = (...args: unknown[]) => {
+            const text = `${String(args[0] ?? '')} ${String(args[1] ?? '')}`;
+            if (text.includes('MaxListenersExceededWarning')) { warned = true; }
+        };
+        try {
+            // The activation path registers 15 fixed subscribers plus one while
+            // the emulator display panel is open — exercise that count.
+            for (let i = 0; i < 16; i++) {
+                lifecycle.on('stateChange', () => undefined);
+            }
+        } finally {
+            process.emitWarning = originalEmitWarning;
+        }
+
+        expect(lifecycle.listenerCount('stateChange')).to.equal(16);
+        expect(warned).to.equal(false);
+    });
+
     it('disconnects a debug-owned session without terminating the emulator process', () => {
         let disconnected = false;
         let killed = false;

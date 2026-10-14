@@ -35,6 +35,9 @@ const mockVscode = {
     },
     TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
     ConfigurationTarget: { Global: 1 },
+    DebugAdapterInlineImplementation: class DebugAdapterInlineImplementation {
+        constructor(adapter) { this.adapter = adapter; }
+    },
     RelativePattern: class RelativePattern {
         constructor(base, pattern) {
             this.base = base;
@@ -78,6 +81,7 @@ const mockVscode = {
         activeDebugSession: undefined,
         breakpoints: [],
         _breakpointListeners: [],
+        _terminateListeners: [],
         onDidChangeBreakpoints: (listener) => {
             mockVscode.debug._breakpointListeners.push(listener);
             return { dispose: () => {
@@ -85,6 +89,15 @@ const mockVscode = {
                     .filter(item => item !== listener);
             } };
         },
+        onDidTerminateDebugSession: (listener) => {
+            mockVscode.debug._terminateListeners.push(listener);
+            return { dispose: () => {
+                mockVscode.debug._terminateListeners = mockVscode.debug._terminateListeners
+                    .filter(item => item !== listener);
+            } };
+        },
+        registerDebugAdapterDescriptorFactory: (_type, _factory) => ({ dispose: () => {} }),
+        registerDebugConfigurationProvider: (_type, _provider) => ({ dispose: () => {} }),
         addBreakpoints: async (breakpoints) => {
             mockVscode.debug.breakpoints.push(...breakpoints);
             mockVscode.debug._breakpointListeners.forEach(listener => listener({ added: breakpoints, removed: [], changed: [] }));

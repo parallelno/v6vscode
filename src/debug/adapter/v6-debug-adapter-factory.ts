@@ -12,9 +12,12 @@ export const CMD_DEBUG_RESET = 'v6.debug.reset';
 export const CMD_DEBUG_RELOAD_ROM = 'v6.debug.reloadRom';
 
 /**
- * Creates a new in-process V6DebugAdapter for each debug session.
+ * Creates a new in-process V6DebugAdapter for each debug session. Adapters are
+ * tracked per session id and disposed when their session terminates so they
+ * cannot accumulate across repeated debug launches.
  */
 export class V6DebugAdapterFactory implements vscode.DebugAdapterDescriptorFactory {
+    private readonly adaptersBySession = new Map<string, V6DebugAdapter>();
     private activeAdapter: V6DebugAdapter | undefined;
 
     constructor(
@@ -28,7 +31,7 @@ export class V6DebugAdapterFactory implements vscode.DebugAdapterDescriptorFacto
     ) {}
 
     createDebugAdapterDescriptor(
-        _session: vscode.DebugSession,
+        session: vscode.DebugSession,
     ): vscode.ProviderResult<vscode.DebugAdapterDescriptor> {
         const adapter = new V6DebugAdapter(
             this.lifecycle,
@@ -39,8 +42,26 @@ export class V6DebugAdapterFactory implements vscode.DebugAdapterDescriptorFacto
             this.watchpointService,
             this.watchpointsProvider,
         );
+        this.adaptersBySession.set(session.id, adapter);
         this.activeAdapter = adapter;
         return new vscode.DebugAdapterInlineImplementation(adapter);
+    }
+
+    /** Disposes the adapter owned by a terminated debug session. */
+    handleSessionTerminated(session: vscode.DebugSession): void {
+        const adapter = this.adaptersBySession.get(session.id);
+        if (!adapter) { return; }
+        this.adaptersBySession.delete(session.id);
+        if (this.activeAdapter === adapter) { this.activeAdapter = undefined; }
+        adapter.dispose();
+    }
+
+    dispose(): void {
+        for (const adapter of this.adaptersBySession.values()) {
+            adapter.dispose();
+        }
+        this.adaptersBySession.clear();
+        this.activeAdapter = undefined;
     }
 
     reset(): Promise<void> {
@@ -79,7 +100,9 @@ export function registerDebugAdapter(
     context.subscriptions.push(
         vscode.debug.registerDebugAdapterDescriptorFactory(V6_DEBUG_TYPE, factory),
         vscode.debug.registerDebugConfigurationProvider(V6_DEBUG_TYPE, configProvider),
+        vscode.debug.onDidTerminateDebugSession(session => factory.handleSessionTerminated(session)),
         vscode.commands.registerCommand(CMD_DEBUG_RESET, () => factory.reset()),
         vscode.commands.registerCommand(CMD_DEBUG_RELOAD_ROM, () => factory.reloadRom()),
+        factory,
     );
 }

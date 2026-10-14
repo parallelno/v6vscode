@@ -313,12 +313,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             );
         }
     };
-    lifecycle.on('stateChange', (state: string) => {
-        // Trigger FDD persistence when transitioning away from running
-        if (state === 'stopped') {
-            // Already stopped — persistence should happen before stop()
-        }
-    });
 
     // Commands
     const runProjectCmd = new RunProjectCommand(

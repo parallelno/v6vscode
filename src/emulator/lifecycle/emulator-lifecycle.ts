@@ -22,6 +22,16 @@ const DEFAULT_TCP_PORT = 9876;
 const CONNECT_RETRY_DELAY_MS = 300;
 const CONNECT_MAX_RETRIES = 10;
 
+// EmulatorLifecycle is intentionally observed by many subsystems: the debug
+// services (scripts, ports, watchpoints, memory edits, performance, trace log,
+// hardware statistics) each register a state listener, as do the panels and
+// providers (emulator display, hex viewer, memory edits, performance, trace
+// log, scripts, symbols, watchpoints). Node.js emits a
+// MaxListenersExceededWarning once more than 10 listeners attach to a single
+// event name, so raise the cap to the number of known subscribers plus
+// headroom for transient panel listeners.
+const MAX_LISTENERS_PER_EVENT = 24;
+
 export type EmulatorState = 'stopped' | 'launching' | 'connected' | 'running';
 export type EmulatorFrameMode = 'full' | 'border' | 'borderless';
 export type EmulatorSessionOwner = 'run' | 'debug' | null;
@@ -54,6 +64,7 @@ export class EmulatorLifecycle extends EventEmitter {
         pathService: PathService,
     ) {
         super();
+        this.setMaxListeners(MAX_LISTENERS_PER_EVENT);
         this.locator = locator;
         this.launcher = launcher;
         this.client = client;

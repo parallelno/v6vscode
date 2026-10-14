@@ -403,7 +403,13 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
             // Keep paused until configurationDone
             this.sessionState = 'paused';
-            this.emulatorPanel.reveal();
+            try {
+                this.emulatorPanel.reveal();
+            } catch (panelError: any) {
+                this.logger.error(`v6-debug: emulator display panel failed to open: ${panelError?.stack ?? panelError}`);
+                throw panelError;
+            }
+            this.logger.info('v6-debug: emulator display panel opened');
             this.sendEvent('output', { category: 'console', output: `V6: Emulator ready on port ${port}; display panel connected to debug session.\n` });
 
             this.sendResponseBody(req, {});
@@ -411,6 +417,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             // Must come AFTER the ELF is loaded so debugIndex is ready for setBreakpoints.
             this.sendEvent('initialized');
         } catch (err: any) {
+            this.logger.error(`v6-debug: launch failed: ${err?.stack ?? err}`);
             this.sendResponse(req, false, `Launch failed: ${err.message}`);
             this.cleanup(true);
         }
