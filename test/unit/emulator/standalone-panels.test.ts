@@ -66,6 +66,21 @@ describe('Standalone emulator panels', () => {
         }
     });
 
+    it('recovers the Display webview when it never signals ready', () => {
+        const source = read('src/emulator/panel/emulator-panel.ts');
+        // The webview can fail to load inside VS Code with a service-worker
+        // registration error; the panel must watch for the 'ready' message and
+        // recreate itself when the webview never loads.
+        expect(source).to.include('scheduleReadyWatch');
+        expect(source).to.include('recreatePanel');
+        expect(source).to.include('clearReadyWatch');
+        expect(source).to.include('readyReceived = true');
+        expect(source).to.include('this.panelRecreations = 0;');
+        expect(source).to.include('recreating the panel');
+        expect(source).to.include('stale?.dispose();');
+        expect(source).to.include('this.reveal();');
+    });
+
     it('opens standalone panels for Add and Find in Hex Viewer handoffs', () => {
         const source = read('src/debug/views/watchpoints-provider.ts');
         expect(source).to.include('this.open();');

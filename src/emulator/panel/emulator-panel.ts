@@ -14,6 +14,10 @@ import { ScriptOverlayService } from '../../debug/scripts/script-overlay-service
 
 const FPS_UPDATE_INTERVAL_MS = 1000;
 const OVERLAY_POLL_INTERVAL_MS = 250;
+// Grace period for the webview to report 'ready'; on timeout the panel is recreated
+// to work around VS Code webview service-worker load failures.
+const READY_TIMEOUT_MS = 10_000;
+const MAX_PANEL_RECREATIONS = 2;
 
 export class EmulatorPanel implements vscode.Disposable {
     private panel: vscode.WebviewPanel | null = null;
@@ -30,6 +34,9 @@ export class EmulatorPanel implements vscode.Disposable {
     private fpsTimer: ReturnType<typeof setInterval> | null = null;
     private overlayPollTimer: ReturnType<typeof setInterval> | null = null;
     private readonly fpsStatusBarItem: vscode.StatusBarItem;
+    private readyReceived = false;
+    private readyTimer: ReturnType<typeof setTimeout> | null = null;
+    private panelRecreations = 0;
 
     constructor(
         extensionUri: vscode.Uri,
@@ -172,6 +179,69 @@ export class EmulatorPanel implements vscode.Disposable {
         panelStore.add(this.settings.onDidChange(() => this.postOverlayMessage()));
 
         this.logger.debug('emulator-panel: panel created');
+        this.logger.info('emulator-panel: webview panel created; waiting for webview ready message');
+        this.readyReceived = false;
+        panelStore.add(this.panel.webview.onDidReceiveMessage((msg: WebviewMessage) => {
+            if (msg.type === 'ready' && !this.readyReceived) {
+                this.readyReceived = true;
+                this.panelRecreations = 0;
+                this.clearReadyWatch();
+                this.logger.info('emulator-panel: webview content loaded (ready message received)');
+            }
+        }));
+        panelStore.add(this.panel.onDidChangeViewState(e => {
+            this.logger.info(`emulator-panel: view state changed visible=${e.webviewPanel.visible} active=${e.webviewPanel.active}`);
+        }));
+        panelStore.add(toDisposable(() => this.clearReadyWatch()));
+        this.scheduleReadyWatch();
+    }
+
+    /**
+     * Watches for the webview 'ready' message. VS Code webviews can fail to load
+     * with "Could not register service worker: InvalidStateError" (a Chromium
+     * service-worker registration race inside VS Code; see microsoft/vscode
+     * issues on webview service worker failures). The extension cannot intercept
+     * that failure, but a fresh webview re-attempts the registration, so if the
+     * webview does not become ready in time we recreate the panel once or twice.
+     */
+    private scheduleReadyWatch(): void {
+        this.clearReadyWatch();
+        this.readyTimer = setTimeout(() => {
+            this.readyTimer = null;
+            if (!this.panel || this.readyReceived) { return; }
+            if (this.panelRecreations >= MAX_PANEL_RECREATIONS) {
+                this.logger.error(
+                    'emulator-panel: webview still not ready after recreations — the Display panel ' +
+                    'likely failed with a webview service-worker error. Run "Developer: Reload Window" to recover.',
+                );
+                return;
+            }
+            this.panelRecreations += 1;
+            this.logger.warn(
+                `emulator-panel: webview did not signal ready within ${READY_TIMEOUT_MS}ms ` +
+                `— recreating the panel (attempt ${this.panelRecreations}/${MAX_PANEL_RECREATIONS}, ` +
+                'likely webview service-worker load failure)',
+            );
+            this.recreatePanel();
+        }, READY_TIMEOUT_MS);
+    }
+
+    private clearReadyWatch(): void {
+        if (this.readyTimer) {
+            clearTimeout(this.readyTimer);
+            this.readyTimer = null;
+        }
+    }
+
+    private recreatePanel(): void {
+        const stale = this.panel;
+        this.panel = null;
+        stale?.dispose();
+        try {
+            this.reveal();
+        } catch (err) {
+            this.logger.error(`emulator-panel: panel recreation failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
     }
 
     private async handleWebviewMessage(msg: WebviewMessage): Promise<void> {
