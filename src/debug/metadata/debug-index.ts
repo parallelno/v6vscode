@@ -287,5 +287,47 @@ function resolveIndexedFile(file: string, sourceFiles: ReadonlyArray<string>): s
         comparable(candidate).endsWith(suffix)
         || comparableFile.endsWith(`${path.sep}${comparable(candidate)}`),
     );
-    return matches.length === 1 ? matches[0] : undefined;
+    if (matches.length === 1) { return matches[0]; }
+    if (matches.length > 1) { return undefined; }
+
+    // The breakpoint path and the indexed path can be rooted at different
+    // locations: the debug metadata records the machine layout where the ROM
+    // was built, while the breakpoint comes from the workspace copy of the
+    // same sources. Match by the longest common run of trailing path
+    // segments and require the best match to be unique.
+    return matchByTrailingSegments(comparableFile, sourceFiles, comparable);
+}
+
+function splitPathSegments(value: string): string[] {
+    return value.split(/[\\/]+/)
+        .filter(segment => segment.length > 0 && !/^[A-Za-z]:$/.test(segment));
+}
+
+function matchByTrailingSegments(
+    file: string,
+    candidates: ReadonlyArray<string>,
+    comparable: (value: string) => string,
+): string | undefined {
+    const fileSegments = splitPathSegments(file);
+    if (fileSegments.length === 0) { return undefined; }
+    let best: string | undefined;
+    let bestLength = 0;
+    let ties = 0;
+    for (const candidate of candidates) {
+        const candidateSegments = splitPathSegments(comparable(candidate));
+        const limit = Math.min(fileSegments.length, candidateSegments.length);
+        let length = 0;
+        while (length < limit
+            && fileSegments[fileSegments.length - 1 - length] === candidateSegments[candidateSegments.length - 1 - length]) {
+            length++;
+        }
+        if (length > bestLength) {
+            best = candidate;
+            bestLength = length;
+            ties = 1;
+        } else if (length === bestLength && length > 0) {
+            ties++;
+        }
+    }
+    return ties === 1 ? best : undefined;
 }
