@@ -136,7 +136,31 @@ export function parseDwarf4LineFiles(
     lineStrings: Buffer<ArrayBufferLike> = Buffer.alloc(0),
     compDirs?: DwarfLineCompDirs,
 ): string[] {
-    const files: string[] = [];
+    return [...new Set(parseDwarf4LineFileTables(data, compDir, debugStrings, lineStrings, compDirs)
+        .flatMap(table => table.files))];
+}
+
+export interface DwarfLineFileTable {
+    /** Offset of the line program within the section (its CU's stmt_list value). */
+    offset: number;
+    /** Resolved source file paths declared by this program's file table. */
+    files: string[];
+}
+
+/**
+ * Parse every line program's file table separately. Declaration file indices
+ * (DW_AT_decl_file) are relative to the owning compilation unit's table, so
+ * consumers must resolve them against the table of the matching CU instead of
+ * a merged list.
+ */
+export function parseDwarf4LineFileTables(
+    data: Buffer,
+    compDir = '',
+    debugStrings: Buffer<ArrayBufferLike> = Buffer.alloc(0),
+    lineStrings: Buffer<ArrayBufferLike> = Buffer.alloc(0),
+    compDirs?: DwarfLineCompDirs,
+): DwarfLineFileTable[] {
+    const tables: DwarfLineFileTable[] = [];
     let base = 0;
     let programIndex = 0;
     while (base + 10 <= data.length) {
@@ -144,38 +168,39 @@ export function parseDwarf4LineFiles(
         if (unitLength === 0 || base + 4 + unitLength > data.length) { break; }
         const version = data.readUInt16LE(base + 4);
         const programDir = programCompDir(compDirs, programIndex, base, compDir);
+        const files: string[] = [];
         if (version === 5) {
             const addressSize = data[base + 6];
             files.push(...parseOneLineProgram(data, base, addressSize, programDir, debugStrings, lineStrings).map(row => row.file));
-            base += 4 + unitLength;
-            programIndex++;
-            continue;
+        } else if (version === 4) {
+            let offset = base + 10;
+            offset += 6 + data[offset + 5] - 1; // fixed header fields and standard-opcode lengths
+            const dirs: string[] = [''];
+            while (data[offset] !== 0) {
+                const directory = readCString(data, offset);
+                offset += Buffer.byteLength(directory) + 1;
+                dirs.push(directory);
+            }
+            offset++;
+            while (data[offset] !== 0) {
+                const file = readCString(data, offset);
+                offset += Buffer.byteLength(file) + 1;
+                const [dirIndex, dirLength] = readULEB128(data, offset);
+                offset += dirLength;
+                const [, timeLength] = readULEB128(data, offset);
+                offset += timeLength;
+                const [, sizeLength] = readULEB128(data, offset);
+                offset += sizeLength;
+                files.push(resolveFilePath(file, dirIndex, dirs, programDir));
+            }
+        } else {
+            throw new Error(`Unsupported DWARF line version: ${version}`);
         }
-        if (version !== 4) { throw new Error(`Unsupported DWARF line version: ${version}`); }
-        let offset = base + 10;
-        offset += 6 + data[offset + 5] - 1; // fixed header fields and standard-opcode lengths
-        const dirs: string[] = [''];
-        while (data[offset] !== 0) {
-            const directory = readCString(data, offset);
-            offset += Buffer.byteLength(directory) + 1;
-            dirs.push(directory);
-        }
-        offset++;
-        while (data[offset] !== 0) {
-            const file = readCString(data, offset);
-            offset += Buffer.byteLength(file) + 1;
-            const [dirIndex, dirLength] = readULEB128(data, offset);
-            offset += dirLength;
-            const [, timeLength] = readULEB128(data, offset);
-            offset += timeLength;
-            const [, sizeLength] = readULEB128(data, offset);
-            offset += sizeLength;
-            files.push(resolveFilePath(file, dirIndex, dirs, programDir));
-        }
+        tables.push({ offset: base, files });
         base += 4 + unitLength;
         programIndex++;
     }
-    return [...new Set(files)];
+    return tables;
 }
 
 function parseOneLineProgram(

@@ -1,4 +1,5 @@
 import { expect } from 'chai';
+import { SHN_ABS } from '../../../src/debug/metadata/elf32-reader';
 import { buildDebugIndex } from '../../../src/debug/metadata/debug-index';
 
 function buildIndexWithFiles(files: string[]) {
@@ -68,5 +69,51 @@ describe('DebugIndex breakpoint file resolution', () => {
         const index = buildDebugIndex(rows, [], '', [], []);
         const resolved = index.resolveBreakpoint('C:\\repos\\mirror\\samples\\09_x\\main.asm', 15);
         expect(resolved).to.deep.equal({ address: 0x140, verifiedLine: 20 });
+    });
+});
+
+describe('DebugIndex data labels and scan pool', () => {
+    it('includes untyped labels from real sections as navigable symbols', () => {
+        const index = buildDebugIndex([], [
+            { name: 'lv_ram_disk_s_gfx', value: 0x667e, size: 0, type: 0, binding: 1, section: 3 },
+        ], '', [], []);
+        expect(index.symbol('lv_ram_disk_s_gfx')).to.include({ name: 'lv_ram_disk_s_gfx', address: 0x667e });
+    });
+
+    it('keeps absolute constants in the symbol index', () => {
+        const index = buildDebugIndex([], [
+            { name: 'SCR_BUFF0_ADDR', value: 0x8000, size: 0, type: 0, binding: 1, section: SHN_ABS },
+        ], '', [], []);
+        expect(index.symbol('SCR_BUFF0_ADDR')).to.include({ name: 'SCR_BUFF0_ADDR', address: 0x8000 });
+    });
+
+    it('merges absolute constants duplicated across objects instead of making them ambiguous', () => {
+        const index = buildDebugIndex([], [
+            { name: 'SCR_BUFF0_ADDR', value: 0x8000, size: 0, type: 0, binding: 1, section: SHN_ABS },
+            { name: 'SCR_BUFF0_ADDR', value: 0x8000, size: 0, type: 0, binding: 1, section: SHN_ABS },
+        ], '', [], []);
+        expect(index.symbol('SCR_BUFF0_ADDR')).to.include({ name: 'SCR_BUFF0_ADDR', address: 0x8000 });
+        expect(index.symbols('SCR_BUFF0_ADDR')).to.have.length(1);
+    });
+
+    it('keeps same-name constants with different values ambiguous', () => {
+        const index = buildDebugIndex([], [
+            { name: 'BANK', value: 0x0001, size: 0, type: 0, binding: 1, section: SHN_ABS },
+            { name: 'BANK', value: 0x0002, size: 0, type: 0, binding: 1, section: SHN_ABS },
+        ], '', [], []);
+        expect(index.symbol('BANK')).to.equal(undefined);
+        expect(index.symbols('BANK')).to.have.length(2);
+    });
+
+    it('adds line-table files without code rows to the source file pool', () => {
+        const dataFile = 'C:\\work\\v6gel\\engine\\v6_runtime_data.asm';
+        const index = buildDebugIndex(
+            [{ address: 0x100, file: 'C:\\work\\v6gel\\engine\\v6.asm', line: 1, column: 1, isStmt: true }],
+            [],
+            '',
+            [],
+            [dataFile],
+        );
+        expect(index.sourceFiles).to.include(dataFile);
     });
 });

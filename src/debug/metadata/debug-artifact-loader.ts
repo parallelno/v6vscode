@@ -10,8 +10,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseElf32, SHF_ALLOC, SHT_PROGBITS } from './elf32-reader';
-import { parseDwarf4LineFiles, parseDwarf4LineSection, DwarfLineCompDirs } from './dwarf4-line-reader';
-import { parseDwarf4CompilationUnits, parseDwarf4VariableDeclarations, DwarfCompilationUnitInfo } from './dwarf4-info-reader';
+import { parseDwarf4LineFileTables, parseDwarf4LineSection, DwarfLineCompDirs } from './dwarf4-line-reader';
+import { parseDwarf4CompilationUnits, parseDwarf4VariableDeclarations, DwarfCompilationUnitInfo, DwarfVariableDeclaration } from './dwarf4-info-reader';
 import { buildDebugIndex, DebugIndex } from './debug-index';
 import { DebugMetadataIndex } from './debug-metadata-index';
 
@@ -52,6 +52,23 @@ function buildLineCompDirs(compUnits: DwarfCompilationUnitInfo[], fallback: stri
         return new Map(compUnits.map(unit => [unit.stmtList as number, resolveForUnit(unit)]));
     }
     return compUnits.map(resolveForUnit);
+}
+
+/**
+ * File table of the compilation unit owning a variable declaration. Matched by
+ * the unit's DW_AT_stmt_list when available, otherwise by declaration order.
+ */
+function filesForUnit(
+    unitIndex: number,
+    stmtList: number | undefined,
+    lineTables: Array<{ offset: number; files: string[] }>,
+    mergedFiles: string[],
+): readonly string[] {
+    if (stmtList !== undefined) {
+        const table = lineTables.find(candidate => candidate.offset === stmtList);
+        if (table) { return table.files; }
+    }
+    return lineTables[unitIndex]?.files ?? mergedFiles;
 }
 
 // ---------------------------------------------------------------------------
@@ -128,15 +145,23 @@ export async function loadDebugArtifact(elfPath: string, romPath = ''): Promise<
     // Parse line rows
     const debugLine = elf.sections.find(s => s.name === '.debug_line');
     const lineStrings = elf.sections.find(section => section.name === '.debug_line_str')?.data;
+    const lineTables = debugLine
+        ? parseDwarf4LineFileTables(debugLine.data, compDir, debugStrings?.data, lineStrings, lineCompDirs)
+        : [];
+    const files = [...new Set(lineTables.flatMap(table => table.files))];
     const rows = debugLine
         ? parseDwarf4LineSection(debugLine.data, elf.addressSize, compDir, debugStrings?.data, lineStrings, lineCompDirs)
         : [];
-    const files = debugLine ? parseDwarf4LineFiles(debugLine.data, compDir, debugStrings?.data, lineStrings, lineCompDirs) : [];
-    let declarations: ReturnType<typeof parseDwarf4VariableDeclarations> = [];
+    let declarations: DwarfVariableDeclaration[] = [];
     const debugInfoVersion = debugInfo && debugInfo.data.length >= 6 ? debugInfo.data.readUInt16LE(4) : 0;
     if (debugInfoVersion === 4 && debugInfo && debugAbbrev && debugStrings) {
         try {
-            declarations = parseDwarf4VariableDeclarations(debugInfo.data, debugAbbrev.data, debugStrings.data, files);
+            declarations = parseDwarf4VariableDeclarations(
+                debugInfo.data,
+                debugAbbrev.data,
+                debugStrings.data,
+                (unitIndex, stmtList) => filesForUnit(unitIndex, stmtList, lineTables, files),
+            );
         } catch (error: any) {
             if (!String(error?.message ?? error).startsWith('Unsupported DWARF attribute form')) { throw error; }
         }

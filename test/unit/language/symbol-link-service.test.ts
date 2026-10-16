@@ -49,6 +49,42 @@ describe('Source symbol link service', () => {
         expect(await ambiguous.links('target', context)).to.deep.equal([]);
     });
 
+    it('resolves a macro definition when no ELF symbol exists', async () => {
+        const macroService = new DebugSourceSymbolLinkService(
+            symbols({ kind: 'missing' }, ['engine/common/v6_macros.asm']),
+            async sourcePath => sourcePath.endsWith('v6_macros.asm')
+                ? '.macro RAM_DISK_ON_BANK(ram_disk_port = RAM_DISK_PORT)\n\tret\n.endmacro\n'
+                : undefined,
+        );
+
+        expect(await macroService.resolve('RAM_DISK_ON_BANK', { start: 0, length: 16 }, context))
+            .to.deep.equal({ file: 'engine/common/v6_macros.asm', line: 1, column: 8, isStmt: false });
+    });
+
+    it('resolves a constant definition when no DWARF declaration exists', async () => {
+        const constantService = new DebugSourceSymbolLinkService(
+            symbols({ kind: 'missing' }, ['engine/common/v6_consts.asm']),
+            async sourcePath => sourcePath.endsWith('v6_consts.asm')
+                ? 'SCR_BUFF0_ADDR\t\t\t= 0x8000\n'
+                : undefined,
+        );
+
+        expect(await constantService.resolve('SCR_BUFF0_ADDR', { start: 0, length: 14 }, context))
+            .to.deep.equal({ file: 'engine/common/v6_consts.asm', line: 1, column: 1, isStmt: false });
+    });
+
+    it('prefers a label definition over a later macro match', async () => {
+        const service = new DebugSourceSymbolLinkService(
+            symbols({ kind: 'found', symbol }, ['a.asm', 'b.asm']),
+            async sourcePath => sourcePath.endsWith('a.asm')
+                ? '.macro target(x)\n\tret\n'
+                : 'target:\n\tret\n',
+        );
+
+        const links = await service.links('jmp target', context);
+        expect(links[0].target).to.deep.equal({ file: 'b.asm', line: 1, column: 1, isStmt: false });
+    });
+
     it('rejects altered and partial symbol ranges', async () => {
         const service = new DebugSourceSymbolLinkService(
             symbols({ kind: 'found', symbol }),

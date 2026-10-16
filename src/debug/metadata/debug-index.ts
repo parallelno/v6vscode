@@ -156,6 +156,9 @@ export function buildDebugIndex(
     const sourceFiles = [...new Set([
         ...normalizedRows.map(row => row.file),
         ...normalizedDeclarations.map(declaration => declaration.file),
+        // Line-table files without code rows (data-only sources) are still
+        // navigation targets for the labels and constants they define.
+        ...lineFiles.map(file => norm(file)),
     ])].sort();
 
     // ---- Symbol indexes ----
@@ -165,7 +168,18 @@ export function buildDebugIndex(
         if (!s.name || s.section === 0) { continue; }
         const isCodeOrObject = s.type === STT_FUNC || s.type === STT_OBJECT;
         const isAbsoluteConstant = s.type === STT_NOTYPE && s.section === SHN_ABS;
-        if (!isCodeOrObject && !isAbsoluteConstant) { continue; }
+        // Untyped labels in real sections are RAM variables and sub-labels
+        // (e.g. engine runtime data) — valid navigation targets.
+        const isDataLabel = s.type === STT_NOTYPE && s.section !== SHN_ABS;
+        if (!isCodeOrObject && !isAbsoluteConstant && !isDataLabel) { continue; }
+        if (isAbsoluteConstant) {
+            // Constants included by several objects appear once per object in
+            // the symbol table with identical name and value — they are the
+            // same constant and must not make navigation ambiguous.
+            const duplicate = (symbolsByName.get(s.name) ?? [])
+                .find(candidate => candidate.address === s.value);
+            if (duplicate) { continue; }
+        }
         const declaration = isAbsoluteConstant
             ? normalizedDeclarations.find(item => item.name === s.name && item.value === s.value)
             : undefined;

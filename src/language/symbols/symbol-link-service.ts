@@ -57,6 +57,22 @@ export function findSymbolTokens(text: string): SymbolToken[] {
 /** Find an exact global-label definition in an assembler source file. */
 export function findLabelDefinition(text: string, name: string): SourceLocation | undefined {
     const definition = new RegExp(`^\\s*${escapeRegExp(name)}\\s*:`, 'm');
+    return findDefinitionMatch(text, definition, name);
+}
+
+/** Find a macro definition (`.macro NAME`) in an assembler source file. */
+export function findMacroDefinition(text: string, name: string): SourceLocation | undefined {
+    const definition = new RegExp(`^\\s*\\.macro\\s+${escapeRegExp(name)}\\b`, 'm');
+    return findDefinitionMatch(text, definition, name);
+}
+
+/** Find a constant definition (`NAME = value`) in an assembler source file. */
+export function findConstantDefinition(text: string, name: string): SourceLocation | undefined {
+    const definition = new RegExp(`^\\s*${escapeRegExp(name)}\\s*=(?!=)`, 'm');
+    return findDefinitionMatch(text, definition, name);
+}
+
+function findDefinitionMatch(text: string, definition: RegExp, name: string): SourceLocation | undefined {
     const lines = text.split(/\r?\n/);
     for (let line = 0; line < lines.length; line++) {
         const match = definition.exec(codeBeforeComment(lines[line]));
@@ -68,6 +84,8 @@ export function findLabelDefinition(text: string, name: string): SourceLocation 
 }
 
 export class DebugSourceSymbolLinkService implements SourceSymbolLinkService {
+    private definitionScanCache = new Map<string, SourceLocation | undefined>();
+
     constructor(
         private readonly symbols: DebugSymbolService,
         private readonly readSourceText: SourceTextReader,
@@ -113,12 +131,21 @@ export class DebugSourceSymbolLinkService implements SourceSymbolLinkService {
 
     private async load(context: SourceDocumentContext): Promise<void> {
         await this.symbols.load(context.debugArtifact, context.executable);
+        this.definitionScanCache.clear();
     }
 
     private async resolveToken(name: string, projectRoot: string): Promise<SourceLocation | undefined> {
         const resolution = this.symbols.resolveSymbol(name);
-        if (resolution.kind !== 'found') { return undefined; }
-        return this.sourceForSymbol(resolution.symbol, projectRoot);
+        if (resolution.kind === 'found') {
+            return await this.sourceForSymbol(resolution.symbol, projectRoot)
+                ?? this.scanDefinitionInSources(name, projectRoot);
+        }
+        if (resolution.kind === 'missing') {
+            // Macros and constants without DWARF declarations produce no ELF
+            // symbol — locate their definition by scanning the sources.
+            return this.scanDefinitionInSources(name, projectRoot);
+        }
+        return undefined;
     }
 
     private async sourceForSymbol(
@@ -126,14 +153,45 @@ export class DebugSourceSymbolLinkService implements SourceSymbolLinkService {
         projectRoot: string,
     ): Promise<SourceLocation | undefined> {
         if (symbol.declaration) { return symbol.declaration; }
+        let nonLabelMatch: SourceLocation | undefined;
         for (const file of this.symbols.sourceFiles()) {
             const sourcePath = resolveDebugSourcePath(file, projectRoot);
             const text = await this.readSourceText(sourcePath);
             if (text === undefined) { continue; }
-            const definition = findLabelDefinition(text, symbol.name);
-            if (definition) { return { ...definition, file }; }
+            const label = findLabelDefinition(text, symbol.name);
+            if (label) { return { ...label, file }; }
+            // A label definition is preferred; remember macro/constant matches
+            // in case no label definition exists anywhere.
+            if (nonLabelMatch === undefined) {
+                const match = findMacroDefinition(text, symbol.name)
+                    ?? findConstantDefinition(text, symbol.name);
+                if (match) { nonLabelMatch = { ...match, file }; }
+            }
         }
-        return this.symbols.sourceAtExactAddress(symbol.address);
+        return nonLabelMatch ?? this.symbols.sourceAtExactAddress(symbol.address);
+    }
+
+    private async scanDefinitionInSources(name: string, projectRoot: string): Promise<SourceLocation | undefined> {
+        const cacheKey = `${projectRoot}|${name}`;
+        if (this.definitionScanCache.has(cacheKey)) { return this.definitionScanCache.get(cacheKey); }
+        const result = await this.scanSources(name, projectRoot);
+        this.definitionScanCache.set(cacheKey, result);
+        return result;
+    }
+
+    private async scanSources(name: string, projectRoot: string): Promise<SourceLocation | undefined> {
+        for (const file of this.symbols.sourceFiles()) {
+            const sourcePath = resolveDebugSourcePath(file, projectRoot);
+            const text = await this.readSourceText(sourcePath);
+            if (text === undefined) { continue; }
+            const macro = findMacroDefinition(text, name);
+            if (macro) { return { ...macro, file }; }
+            const constant = findConstantDefinition(text, name);
+            if (constant) { return { ...constant, file }; }
+            const label = findLabelDefinition(text, name);
+            if (label) { return { ...label, file }; }
+        }
+        return undefined;
     }
 }
 

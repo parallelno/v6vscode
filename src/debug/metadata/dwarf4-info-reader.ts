@@ -86,15 +86,23 @@ export function parseDwarf4CompilationDirectories(
         .filter(compDir => compDir !== '');
 }
 
+/**
+ * Resolves the line-program file table of a compilation unit. `unitIndex` is
+ * the declaration order of the compilation unit (matching
+ * `parseDwarf4CompilationUnits`), `stmtList` its DW_AT_stmt_list value.
+ */
+export type DeclarationFileResolver = (unitIndex: number, stmtList: number | undefined) => readonly string[];
+
 /** Read v6asm's DWARF v4 variable declarations for absolute constants. */
 export function parseDwarf4VariableDeclarations(
     info: Buffer,
     abbrev: Buffer,
     strings: Buffer,
-    files: readonly string[],
+    resolveFiles: DeclarationFileResolver,
 ): DwarfVariableDeclaration[] {
     const declarations: DwarfVariableDeclaration[] = [];
     let unitOffset = 0;
+    let unitIndex = 0;
     while (unitOffset + 11 <= info.length) {
         const unitLength = info.readUInt32LE(unitOffset);
         if (unitLength === 0 || unitOffset + 4 + unitLength > info.length) { break; }
@@ -102,27 +110,44 @@ export function parseDwarf4VariableDeclarations(
         const abbreviations = readAbbreviations(abbrev, abbrevOffset);
         let offset = unitOffset + 11;
         const unitEnd = unitOffset + 4 + unitLength;
-        while (offset < unitEnd) {
-            const [code, codeLength] = readULEB128(info, offset);
-            offset += codeLength;
-            if (code === 0) { continue; }
-            const abbreviation = abbreviations.get(code);
-            if (!abbreviation) { throw new Error(`Unknown DWARF abbreviation ${code}`); }
-            const attributes = new Map<number, unknown>();
-            for (const attribute of abbreviation.attributes) {
+
+        const [code, codeLength] = readULEB128(info, offset);
+        offset += codeLength;
+        const rootAbbreviation = abbreviations.get(code);
+        let files: readonly string[] = [];
+        if (code !== 0 && rootAbbreviation?.tag === DW_TAG_COMPILE_UNIT) {
+            let stmtList: number | undefined;
+            for (const attribute of rootAbbreviation.attributes) {
                 const decoded = readForm(info, offset, attribute.form, strings);
                 offset = decoded.offset;
-                attributes.set(attribute.name, decoded.value);
+                if (attribute.name === DW_AT_STMT_LIST && typeof decoded.value === 'number') {
+                    stmtList = decoded.value;
+                }
             }
-            if (abbreviation.tag !== DW_TAG_VARIABLE) { continue; }
-            const name = attributes.get(DW_AT_NAME);
-            const fileIndex = attributes.get(DW_AT_DECL_FILE);
-            const line = attributes.get(DW_AT_DECL_LINE);
-            const value = attributes.get(DW_AT_CONST_VALUE);
-            if (typeof name === 'string' && typeof fileIndex === 'number'
-                && typeof line === 'number' && typeof value === 'number' && files[fileIndex - 1]) {
-                declarations.push({ name, file: files[fileIndex - 1], line, value });
+            files = resolveFiles(unitIndex, stmtList);
+            while (offset < unitEnd) {
+                const [dieCode, dieCodeLength] = readULEB128(info, offset);
+                offset += dieCodeLength;
+                if (dieCode === 0) { continue; }
+                const abbreviation = abbreviations.get(dieCode);
+                if (!abbreviation) { throw new Error(`Unknown DWARF abbreviation ${dieCode}`); }
+                const attributes = new Map<number, unknown>();
+                for (const attribute of abbreviation.attributes) {
+                    const decoded = readForm(info, offset, attribute.form, strings);
+                    offset = decoded.offset;
+                    attributes.set(attribute.name, decoded.value);
+                }
+                if (abbreviation.tag !== DW_TAG_VARIABLE) { continue; }
+                const name = attributes.get(DW_AT_NAME);
+                const fileIndex = attributes.get(DW_AT_DECL_FILE);
+                const line = attributes.get(DW_AT_DECL_LINE);
+                const value = attributes.get(DW_AT_CONST_VALUE);
+                if (typeof name === 'string' && typeof fileIndex === 'number'
+                    && typeof line === 'number' && typeof value === 'number' && files[fileIndex - 1]) {
+                    declarations.push({ name, file: files[fileIndex - 1], line, value });
+                }
             }
+            unitIndex++;
         }
         unitOffset = unitEnd;
     }
