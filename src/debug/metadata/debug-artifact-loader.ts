@@ -10,8 +10,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseElf32, SHF_ALLOC, SHT_PROGBITS } from './elf32-reader';
-import { parseDwarf4LineFiles, parseDwarf4LineSection } from './dwarf4-line-reader';
-import { parseDwarf4CompilationDirectories, parseDwarf4VariableDeclarations } from './dwarf4-info-reader';
+import { parseDwarf4LineFiles, parseDwarf4LineSection, DwarfLineCompDirs } from './dwarf4-line-reader';
+import { parseDwarf4CompilationUnits, parseDwarf4VariableDeclarations, DwarfCompilationUnitInfo } from './dwarf4-info-reader';
 import { buildDebugIndex, DebugIndex } from './debug-index';
 import { DebugMetadataIndex } from './debug-metadata-index';
 
@@ -24,19 +24,34 @@ import { DebugMetadataIndex } from './debug-metadata-index';
  * .debug_info attribute forms. Guessing from .debug_str is unsafe because
  * source filenames and include directories use the same string table.
  */
-function extractCompDir(
+function parseCompilationUnits(
     debugInfo: Buffer | undefined,
     debugAbbrev: Buffer | undefined,
     debugStrings: Buffer | undefined,
-): string {
-    if (!debugInfo || !debugAbbrev || !debugStrings) { return ''; }
+): DwarfCompilationUnitInfo[] {
+    if (!debugInfo || !debugAbbrev || !debugStrings) { return []; }
     try {
-        return parseDwarf4CompilationDirectories(debugInfo, debugAbbrev, debugStrings)
-            .find(directory => path.isAbsolute(directory)) ?? '';
+        return parseDwarf4CompilationUnits(debugInfo, debugAbbrev, debugStrings);
     } catch (error: any) {
         if (!String(error?.message ?? error).startsWith('Unsupported DWARF attribute form')) { throw error; }
-        return '';
+        return [];
     }
+}
+
+/**
+ * Per-line-program compilation directories. Each line program resolves its
+ * files against its own compilation unit's comp_dir — matched by
+ * DW_AT_stmt_list when every unit declares one, otherwise by program order.
+ * Units without an absolute comp_dir fall back to the first absolute one.
+ */
+function buildLineCompDirs(compUnits: DwarfCompilationUnitInfo[], fallback: string): DwarfLineCompDirs | undefined {
+    if (compUnits.length === 0) { return undefined; }
+    const resolveForUnit = (unit: DwarfCompilationUnitInfo): string =>
+        path.isAbsolute(unit.compDir) ? unit.compDir : (fallback || unit.compDir);
+    if (compUnits.every(unit => unit.stmtList !== undefined)) {
+        return new Map(compUnits.map(unit => [unit.stmtList as number, resolveForUnit(unit)]));
+    }
+    return compUnits.map(resolveForUnit);
 }
 
 // ---------------------------------------------------------------------------
@@ -105,15 +120,18 @@ export async function loadDebugArtifact(elfPath: string, romPath = ''): Promise<
     const debugAbbrev = elf.sections.find(section => section.name === '.debug_abbrev');
     const debugStrings = elf.sections.find(section => section.name === '.debug_str');
 
-    // Extract compilation directory before resolving relative line-table paths.
-    const compDir = extractCompDir(debugInfo?.data, debugAbbrev?.data, debugStrings?.data);
+    // Extract compilation directories before resolving relative line-table paths.
+    const compUnits = parseCompilationUnits(debugInfo?.data, debugAbbrev?.data, debugStrings?.data);
+    const compDir = compUnits.map(unit => unit.compDir).find(directory => path.isAbsolute(directory)) ?? '';
+    const lineCompDirs = buildLineCompDirs(compUnits, compDir);
 
     // Parse line rows
     const debugLine = elf.sections.find(s => s.name === '.debug_line');
+    const lineStrings = elf.sections.find(section => section.name === '.debug_line_str')?.data;
     const rows = debugLine
-        ? parseDwarf4LineSection(debugLine.data, elf.addressSize, compDir, debugStrings?.data, elf.sections.find(section => section.name === '.debug_line_str')?.data)
+        ? parseDwarf4LineSection(debugLine.data, elf.addressSize, compDir, debugStrings?.data, lineStrings, lineCompDirs)
         : [];
-    const files = debugLine ? parseDwarf4LineFiles(debugLine.data, compDir, debugStrings?.data, elf.sections.find(section => section.name === '.debug_line_str')?.data) : [];
+    const files = debugLine ? parseDwarf4LineFiles(debugLine.data, compDir, debugStrings?.data, lineStrings, lineCompDirs) : [];
     let declarations: ReturnType<typeof parseDwarf4VariableDeclarations> = [];
     const debugInfoVersion = debugInfo && debugInfo.data.length >= 6 ? debugInfo.data.readUInt16LE(4) : 0;
     if (debugInfoVersion === 4 && debugInfo && debugAbbrev && debugStrings) {

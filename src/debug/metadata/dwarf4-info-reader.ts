@@ -7,6 +7,7 @@ const DW_AT_NAME = 0x03;
 const DW_AT_CONST_VALUE = 0x1C;
 const DW_AT_DECL_FILE = 0x3A;
 const DW_AT_DECL_LINE = 0x3B;
+const DW_AT_STMT_LIST = 0x10;
 
 const DW_FORM_DATA1 = 0x0B;
 const DW_FORM_DATA2 = 0x05;
@@ -29,13 +30,20 @@ export interface DwarfVariableDeclaration {
     value: number;
 }
 
-/** Return the compilation directories declared by DWARF compilation units. */
-export function parseDwarf4CompilationDirectories(
+export interface DwarfCompilationUnitInfo {
+    /** DW_AT_comp_dir value, or '' when the attribute is absent. */
+    compDir: string;
+    /** DW_AT_stmt_list section offset, or undefined when the attribute is absent. */
+    stmtList?: number;
+}
+
+/** Parse the root DIE of every DWARF v4 compilation unit in declaration order. */
+export function parseDwarf4CompilationUnits(
     info: Buffer,
     abbrev: Buffer,
     strings: Buffer,
-): string[] {
-    const directories: string[] = [];
+): DwarfCompilationUnitInfo[] {
+    const units: DwarfCompilationUnitInfo[] = [];
     let unitOffset = 0;
     while (unitOffset + 11 <= info.length) {
         const unitLength = info.readUInt32LE(unitOffset);
@@ -49,18 +57,33 @@ export function parseDwarf4CompilationDirectories(
         offset += codeLength;
         const abbreviation = abbreviations.get(code);
         if (code !== 0 && abbreviation?.tag === DW_TAG_COMPILE_UNIT) {
+            const attributes = new Map<number, unknown>();
             for (const attribute of abbreviation.attributes) {
                 const decoded = readForm(info, offset, attribute.form, strings);
                 offset = decoded.offset;
-                if (attribute.name === DW_AT_COMP_DIR && typeof decoded.value === 'string') {
-                    directories.push(decoded.value);
-                    break;
-                }
+                attributes.set(attribute.name, decoded.value);
             }
+            const compDir = attributes.get(DW_AT_COMP_DIR);
+            const stmtList = attributes.get(DW_AT_STMT_LIST);
+            units.push({
+                compDir: typeof compDir === 'string' ? compDir : '',
+                stmtList: typeof stmtList === 'number' ? stmtList : undefined,
+            });
         }
         unitOffset = unitEnd;
     }
-    return directories;
+    return units;
+}
+
+/** Return the compilation directories declared by DWARF compilation units. */
+export function parseDwarf4CompilationDirectories(
+    info: Buffer,
+    abbrev: Buffer,
+    strings: Buffer,
+): string[] {
+    return parseDwarf4CompilationUnits(info, abbrev, strings)
+        .map(unit => unit.compDir)
+        .filter(compDir => compDir !== '');
 }
 
 /** Read v6asm's DWARF v4 variable declarations for absolute constants. */

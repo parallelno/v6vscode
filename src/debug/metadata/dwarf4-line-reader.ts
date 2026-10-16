@@ -77,22 +77,52 @@ const DW_FORM_DATA16 = 0x1E;
  * @param addressSize Bytes per address (from .debug_info CU header; typically 2 for V6C).
  * @param compDir     Compilation directory from .debug_info DW_AT_comp_dir (may be '').
  */
+/**
+ * Per-line-program compilation directories. Either an array aligned with the
+ * order of the line programs in the section, or a map keyed by the program's
+ * offset within the section (its CU's DW_AT_stmt_list value). A missing entry
+ * falls back to the single compilation directory passed alongside.
+ */
+export type DwarfLineCompDirs = readonly (string | undefined)[] | ReadonlyMap<number, string>;
+
+function programCompDir(
+    compDirs: DwarfLineCompDirs | undefined,
+    programIndex: number,
+    programOffset: number,
+    fallback: string,
+): string {
+    if (!compDirs) { return fallback; }
+    if (compDirs instanceof Map) { return compDirs.get(programOffset) ?? fallback; }
+    const byOrder = compDirs as readonly (string | undefined)[];
+    return byOrder[programIndex] ?? fallback;
+}
+
 export function parseDwarf4LineSection(
     data: Buffer,
     addressSize: number,
     compDir = '',
     debugStrings: Buffer<ArrayBufferLike> = Buffer.alloc(0),
     lineStrings: Buffer<ArrayBufferLike> = Buffer.alloc(0),
+    compDirs?: DwarfLineCompDirs,
 ): LineRow[] {
     const rows: LineRow[] = [];
     let pos = 0;
+    let programIndex = 0;
 
     while (pos < data.length) {
-        rows.push(...parseOneLineProgram(data, pos, addressSize, compDir, debugStrings, lineStrings));
+        rows.push(...parseOneLineProgram(
+            data,
+            pos,
+            addressSize,
+            programCompDir(compDirs, programIndex, pos, compDir),
+            debugStrings,
+            lineStrings,
+        ));
         // Advance past this compilation unit
         const unitLen = data.readUInt32LE(pos);
         if (unitLen === 0) { break; }
         pos += 4 + unitLen;
+        programIndex++;
     }
 
     return rows;
@@ -104,17 +134,21 @@ export function parseDwarf4LineFiles(
     compDir = '',
     debugStrings: Buffer<ArrayBufferLike> = Buffer.alloc(0),
     lineStrings: Buffer<ArrayBufferLike> = Buffer.alloc(0),
+    compDirs?: DwarfLineCompDirs,
 ): string[] {
     const files: string[] = [];
     let base = 0;
+    let programIndex = 0;
     while (base + 10 <= data.length) {
         const unitLength = data.readUInt32LE(base);
         if (unitLength === 0 || base + 4 + unitLength > data.length) { break; }
         const version = data.readUInt16LE(base + 4);
+        const programDir = programCompDir(compDirs, programIndex, base, compDir);
         if (version === 5) {
             const addressSize = data[base + 6];
-            files.push(...parseOneLineProgram(data, base, addressSize, compDir, debugStrings, lineStrings).map(row => row.file));
+            files.push(...parseOneLineProgram(data, base, addressSize, programDir, debugStrings, lineStrings).map(row => row.file));
             base += 4 + unitLength;
+            programIndex++;
             continue;
         }
         if (version !== 4) { throw new Error(`Unsupported DWARF line version: ${version}`); }
@@ -136,9 +170,10 @@ export function parseDwarf4LineFiles(
             offset += timeLength;
             const [, sizeLength] = readULEB128(data, offset);
             offset += sizeLength;
-            files.push(resolveFilePath(file, dirIndex, dirs, compDir));
+            files.push(resolveFilePath(file, dirIndex, dirs, programDir));
         }
         base += 4 + unitLength;
+        programIndex++;
     }
     return [...new Set(files)];
 }
@@ -432,7 +467,12 @@ function resolveFilePath(
     const dir = dirIdx > 0 && dirIdx < dirs.length ? dirs[dirIdx] : '';
     const joined = dir ? `${dir}/${fname}` : fname;
 
-    // If still relative, keep as-is; SourceMapService resolves against compDir
+    // DWARF v4 directory entry 0 (and relative directories) resolve against
+    // this line program's own compilation directory, so each compilation
+    // unit's files resolve against their own comp_dir rather than a shared one.
+    if (!path.isAbsolute(joined) && compDir) {
+        return path.normalize(path.join(compDir, joined));
+    }
     return joined;
 }
 
