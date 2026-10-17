@@ -71,6 +71,21 @@ export class DwarfScopes {
         for (const sub of this.subprograms) {
             if (inRanges(sub.ranges, pc)) { return sub; }
         }
+        // Producers may emit inline DIEs whose enclosing abstract subprogram
+        // carries no address ranges (e.g. assembler macro expansions). In that
+        // case the inline region itself is the enclosing scope: synthesize a
+        // subprogram from the innermost inline DIE, resolving its name through
+        // the abstract origin reference.
+        const inline = this.inlineChainAt(pc)[0];
+        if (inline) {
+            const abstract = inline.abstractOrigin !== undefined ? this.subprogramById.get(inline.abstractOrigin) : undefined;
+            return {
+                id: inline.id,
+                name: abstract?.name ?? '',
+                ranges: inline.ranges,
+                scope: inline,
+            };
+        }
         return undefined;
     }
 
