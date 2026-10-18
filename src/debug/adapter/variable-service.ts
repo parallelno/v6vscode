@@ -172,13 +172,16 @@ function format(value: TypedValue): string {
         const address = `0x${numeric.toString(16).padStart(4, '0').toUpperCase()}`;
         return type.of?.kind === 'subroutine' ? `${address} <function>` : address;
     }
-    // Aggregates are not numbers: show the base address instead of the raw
-    // contents decoded as an integer (identical for C and assembler structs).
+    // Aggregates are not numbers: show the base address with a GDB-style
+    // one-line content summary instead of the raw contents decoded as an
+    // integer (identical for C and assembler structs).
     if (type?.kind === 'array') {
         return value.address !== undefined ? hexAddress(value.address) : '<array>';
     }
     if (type?.kind === 'structure' || type?.kind === 'union') {
-        return value.address !== undefined ? hexAddress(value.address) : '<struct>';
+        if (value.address === undefined) { return '<struct>'; }
+        const summary = aggregateSummary(value, type);
+        return summary ? `${hexAddress(value.address)} ${summary}` : hexAddress(value.address);
     }
     if (type?.kind === 'base' && (type.name === '_Bool' || type.name === 'bool')) {
         return numeric === 0 ? 'false' : 'true';
@@ -202,6 +205,32 @@ function decode(bytes: Uint8Array): number {
 
 function hexAddress(address: number): string {
     return `0x${address.toString(16).padStart(4, '0').toUpperCase()}`;
+}
+
+/**
+ * GDB-style one-line content summary for structure and union rows,
+ * e.g. `{health = 100, ptr = 255}`. Bounded to the first four scalar
+ * members; nested aggregates collapse to `{...}`. Returns '' when the
+ * aggregate contents were not read.
+ */
+function aggregateSummary(value: TypedValue, type: TypeInfo): string {
+    if (!value.bytes || value.bytes.length === 0) { return ''; }
+    const members = type.members ?? [];
+    if (members.length === 0) { return '{...}'; }
+    const parts: string[] = [];
+    const shown = Math.min(members.length, 4);
+    for (let index = 0; index < shown; index++) {
+        const member = members[index];
+        const memberType = member.type ? unwrap(member.type) : undefined;
+        const end = member.offset + (memberType?.byteSize ?? 0);
+        const bytes = value.bytes.slice(member.offset, end);
+        const memberValue: TypedValue = { type: memberType, bytes, availability: bytes.length ? 'available' : 'unreadable' };
+        const nested = memberType !== undefined
+            && (memberType.kind === 'array' || memberType.kind === 'structure' || memberType.kind === 'union');
+        parts.push(`${member.name} = ${nested ? '{...}' : format(memberValue)}`);
+    }
+    if (members.length > shown) { parts.push('...'); }
+    return `{${parts.join(', ')}}`;
 }
 
 function signed(value: number, byteSize: number): number {

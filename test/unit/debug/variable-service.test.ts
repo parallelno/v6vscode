@@ -157,10 +157,44 @@ describe('VariableService', () => {
             { id: 2, name: 'pool', kind: 'global', typeOffset: 1 },
         ]);
 
-        assert.deepStrictEqual(result.map(variable => variable.value), ['0x1234', '0x1234']);
+        // Content bytes decode to 0x3264; the row shows the address plus a
+        // GDB-style summary of the scalar members.
+        assert.deepStrictEqual(result.map(variable => variable.value),
+            ['0x1234 {first = 100, second = 50}', '0x1234']);
         assert.strictEqual(result[0].namedVariables, 2);
         assert.strictEqual(result[1].indexedVariables, 2);
         assert.strictEqual(result[1].memoryReference, '0x1234');
+    });
+
+    it('bounds the struct summary to four members and collapses nested aggregates', async () => {
+        const service = new VariableService();
+        const byte = { kind: 'base', name: 'unsigned char', byteSize: 1, signed: false } as any;
+        const struct = {
+            kind: 'structure', name: 'Wide', byteSize: 6, signed: false,
+            members: [
+                { name: 'a', offset: 0, type: byte },
+                { name: 'b', offset: 1, type: byte },
+                { name: 'c', offset: 2, type: byte },
+                { name: 'd', offset: 3, type: byte },
+                { name: 'e', offset: 4, type: byte },
+            ],
+        } as any;
+        const nested = { kind: 'structure', name: 'Outer', byteSize: 3, signed: false, members: [{ name: 'inner', offset: 0, type: struct }] } as any;
+        const metadata = {
+            resolveAbstractOrigin: (variable: unknown) => variable,
+            typeOf: (offset: number) => [struct, nested][offset],
+            evaluateVariable: () => ({ kind: 'memory', address: 0x1234 }),
+        } as any;
+        const context = { evalContext: () => ({}), memory: { readBytes: async () => new Uint8Array([1, 2, 3, 4, 5, 6]) } } as any;
+        const frame = { pc: 0x1000, registers: {} } as any;
+
+        const result = await service.dapVariables(metadata, context, frame, [
+            { id: 1, name: 'wide', kind: 'global', typeOffset: 0 },
+            { id: 2, name: 'outer', kind: 'global', typeOffset: 1 },
+        ]);
+
+        assert.strictEqual(result[0].value, '0x1234 {a = 1, b = 2, c = 3, d = 4, ...}');
+        assert.strictEqual(result[1].value, '0x1234 {inner = {...}}');
     });
 
     it('shows a placeholder for aggregates without an address', async () => {
