@@ -74,9 +74,13 @@ function completes(kind: SourceStepKind, start: SourceStepState, current: Source
             || current.inlineDepth !== start.inlineDepth;
     }
     if (kind === 'over') {
-        return current.physicalDepth === start.physicalDepth
-            && current.inlineDepth === start.inlineDepth
-            && !sameLocation(start.location, current.location);
+        // Exiting the starting inline region (e.g. a single-instruction macro
+        // body) also completes the step: no further statement exists at the
+        // start depth, and the caller's next statement is the intended stop.
+        return current.inlineDepth < start.inlineDepth
+            || (current.physicalDepth === start.physicalDepth
+                && current.inlineDepth === start.inlineDepth
+                && !sameLocation(start.location, current.location));
     }
     return current.physicalDepth < start.physicalDepth
         || (current.physicalDepth === start.physicalDepth && current.inlineDepth < start.inlineDepth);

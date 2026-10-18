@@ -67,10 +67,19 @@ export class DwarfScopes {
         }
     }
 
-    subprogramAt(pc: number): SubprogramNode | undefined {
+    /** Ranged subprogram containing the PC, without inline-region synthesis.
+     *  Used for physical frame presentation, where an inline region must not
+     *  shadow the enclosing function symbol. */
+    physicalSubprogramAt(pc: number): SubprogramNode | undefined {
         for (const sub of this.subprograms) {
             if (inRanges(sub.ranges, pc)) { return sub; }
         }
+        return undefined;
+    }
+
+    subprogramAt(pc: number): SubprogramNode | undefined {
+        const ranged = this.physicalSubprogramAt(pc);
+        if (ranged) { return ranged; }
         // Producers may emit inline DIEs whose enclosing abstract subprogram
         // carries no address ranges (e.g. assembler macro expansions). In that
         // case the inline region itself is the enclosing scope: synthesize a

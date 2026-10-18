@@ -65,6 +65,11 @@ export class DebugMetadataIndex {
         return this.scopes.subprogramAt(pc);
     }
 
+    /** Ranged subprogram at the PC, ignoring inline-region synthesis. */
+    physicalSubprogramAt(pc: number): SubprogramNode | undefined {
+        return this.scopes.physicalSubprogramAt(pc);
+    }
+
     subprogram(id: number): SubprogramNode | undefined {
         return this.scopes.subprogram(id);
     }

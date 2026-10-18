@@ -501,22 +501,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             await this.stackTraceService.capture(
                 this.stoppedGeneration,
                 this.stopContext,
-                pc => this.debugMetadata?.subprogramAt(pc)?.name ?? this.debugIndex?.symbolAtAddress(pc)?.name,
-                pc => this.debugMetadata?.inlineChainAt(pc)
-                    .map(scope => {
-                        const name = scope.abstractOrigin === undefined
-                            ? undefined
-                            : this.debugMetadata?.subprogram(scope.abstractOrigin)?.name;
-                        const source = this.debugIndex?.resolveAddress(pc);
-                        return name ? {
-                            id: scope.id,
-                            name,
-                            source: source
-                                ? { file: source.file, line: source.line, column: source.column }
-                                : undefined,
-                        } : undefined;
-                    })
-                    .filter((frame): frame is InlineFrameName => frame !== undefined) ?? [],
+                pc => this.debugMetadata?.physicalSubprogramAt(pc)?.name ?? this.debugIndex?.symbolAtAddress(pc)?.name,
+                pc => this.resolveInlineFrameNames(pc),
                 frame => this.resolveFrameDisplayPc(frame),
             );
             const page = this.stackTraceService.page(req.arguments?.startFrame, req.arguments?.levels);
@@ -536,6 +522,39 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             stackFrames: [this.makeStackFrame(1, this.debugIndex?.symbolAtAddress(pc)?.name ?? hex4(pc), pc, pc, undefined, true)],
             totalFrames: 1,
         });
+    }
+
+    /**
+     * Inline Call Stack frames at a PC. Frame sources align with the expansion
+     * nesting: the innermost frame shows the deepest macro body row, and each
+     * outer frame shows the row of its own body statement that invoked the
+     * inner expansion. Those rows stack at the same address in line-program
+     * order (invocation rows first, deepest body row last), so the chain —
+     * ordered innermost first — walks the row list from its end. The
+     * address-level `resolveAddress` row, the outermost invocation, remains
+     * the caller frame's source.
+     */
+    private resolveInlineFrameNames(pc: number): InlineFrameName[] {
+        if (!this.debugMetadata) { return []; }
+        const rows = this.debugIndex?.resolveAddressRows(pc) ?? [];
+        return this.debugMetadata.inlineChainAt(pc)
+            .map((scope, index) => {
+                const name = scope.abstractOrigin === undefined
+                    ? undefined
+                    : this.debugMetadata?.subprogram(scope.abstractOrigin)?.name;
+                if (!name) { return undefined; }
+                const rowIndex = rows.length - 1 - index;
+                const source = (rowIndex >= 0 ? rows[rowIndex] : undefined)
+                    ?? this.debugIndex?.resolveAddress(pc);
+                return {
+                    id: scope.id,
+                    name,
+                    source: source
+                        ? { file: source.file, line: source.line, column: source.column }
+                        : undefined,
+                };
+            })
+            .filter((frame): frame is InlineFrameName => frame !== undefined);
     }
 
     private resolveFrameDisplayPc(frame: import('../metadata/debug-stop-context').PhysicalFrame): number {

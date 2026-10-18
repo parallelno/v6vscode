@@ -1,7 +1,9 @@
 import * as assert from 'assert';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { V6DebugAdapter } from '../../../src/debug/adapter/v6-debug-adapter';
 import { IpcCommand } from '../../../src/emulator/protocol/ipc-commands';
+import { loadDebugArtifact } from '../../../src/debug/metadata/debug-artifact-loader';
 
 describe('V6DebugAdapter', () => {
     it('formats byte and word register evaluations at their native widths', async () => {
@@ -525,3 +527,86 @@ async function sendRequest(adapter: V6DebugAdapter, request: any): Promise<void>
         adapter.handleMessage({ type: 'request', ...request } as any);
     });
 }
+
+describe('assembler macro source stepping', () => {
+    let debugIndex: any;
+    let debugMetadata: any;
+
+    before(async function () {
+        const artifact = await loadDebugArtifact(
+            path.join(__dirname, '..', '..', 'fixtures', 'asmdbg', 'main.elf'),
+            path.join(__dirname, '..', '..', 'fixtures', 'asmdbg', 'main.rom'),
+        );
+        debugIndex = artifact.index;
+        debugMetadata = artifact.metadata;
+        assert.ok(debugMetadata, 'Expected semantic metadata from the macro fixture.');
+    });
+
+    function makeMacroAdapter(pc: number): V6DebugAdapter {
+        const adapter = makeSourceStepAdapter();
+        (adapter as any).cachedRegs = { pc };
+        (adapter as any).debugIndex = debugIndex;
+        (adapter as any).debugMetadata = debugMetadata;
+        return adapter;
+    }
+
+    function collectCalls(adapter: V6DebugAdapter): Array<{ command: IpcCommand; data: any }> {
+        const calls: Array<{ command: IpcCommand; data: any }> = [];
+        (adapter as any).client.send = async (command: IpcCommand, data: any) => {
+            calls.push({ command, data });
+            return command === IpcCommand.DEBUG_BREAKPOINT_GET_ALL ? { ok: true, data: [] } : { ok: true };
+        };
+        (adapter as any).startPoll = () => {};
+        return calls;
+    }
+
+    it('engages source stepping at a single-instruction macro expansion', async () => {
+        const adapter = makeMacroAdapter(0x0);
+        const calls = collectCalls(adapter);
+
+        await (adapter as any).onStepIn({ seq: 1, command: 'stepIn', arguments: { granularity: 'statement' } });
+
+        assert.ok((adapter as any).sourceStep, 'Expected source stepping to engage at the macro PC.');
+        assert.ok(calls.some(call => call.command === IpcCommand.EXECUTE_INSTR));
+        assert.strictEqual(calls.some(call => call.command === IpcCommand.DEBUG_BREAKPOINT_ADD), false);
+    });
+
+    it('single-steps Step Over across a single-instruction macro body', async () => {
+        const adapter = makeMacroAdapter(0x0);
+        const calls = collectCalls(adapter);
+
+        await (adapter as any).onNext({ seq: 1, command: 'next', arguments: { granularity: 'statement' } });
+
+        assert.ok((adapter as any).sourceStep, 'Expected source stepping to engage at the macro PC.');
+        assert.ok(calls.some(call => call.command === IpcCommand.EXECUTE_INSTR));
+        assert.strictEqual(calls.some(call => call.command === IpcCommand.DEBUG_BREAKPOINT_ADD), false);
+    });
+
+    it('places a temporary Step Over breakpoint at the macro body continuation', async () => {
+        const adapter = makeMacroAdapter(0x1);
+        const calls = collectCalls(adapter);
+
+        await (adapter as any).onNext({ seq: 1, command: 'next', arguments: { granularity: 'statement' } });
+
+        assert.ok((adapter as any).sourceStep, 'Expected source stepping to engage at the macro PC.');
+        const add = calls.find(call => call.command === IpcCommand.DEBUG_BREAKPOINT_ADD);
+        assert.ok(add, 'Expected a temporary step-over breakpoint.');
+        assert.strictEqual(add.data.addr, 0x3);
+    });
+
+    it('shows the macro body row for a single-expansion frame and keeps the call site for the caller', () => {
+        const adapter = makeMacroAdapter(0x0);
+        const frames = (adapter as any).resolveInlineFrameNames(0x0);
+        assert.deepStrictEqual(frames.map((frame: any) => frame.name), ['SET_A_ZERO']);
+        assert.strictEqual(frames[0].source?.line, 7);
+        assert.strictEqual(debugIndex.resolveAddress(0x0).line, 26);
+    });
+
+    it('aligns nested inline frame sources with the expansion nesting', () => {
+        const adapter = makeMacroAdapter(0x5);
+        const frames = (adapter as any).resolveInlineFrameNames(0x5);
+        assert.deepStrictEqual(frames.map((frame: any) => frame.name), ['SET_A_ZERO', 'OUTER']);
+        assert.deepStrictEqual(frames.map((frame: any) => frame.source?.line), [7, 21]);
+        assert.strictEqual(debugIndex.resolveAddress(0x5).line, 21);
+    });
+});

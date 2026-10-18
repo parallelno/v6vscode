@@ -48,4 +48,52 @@ describe('SourceStepService', () => {
         assert.strictEqual(await service.tick(), 'continue');
         assert.strictEqual(await service.tick(), 'instruction-budget-exceeded');
     });
+
+    it('completes Step Over when the start inline region is exited', async () => {
+        const macroStart: SourceStepState = {
+            location: { physicalFrameId: 'frame-0', inlineChain: [42], file: 'v6_macros.asm', line: 304, column: 4, isStmt: true },
+            physicalDepth: 0,
+            inlineDepth: 1,
+        };
+        const service = new SourceStepService({ maxInstructions: 8, maxElapsedMs: 50, maxCandidates: 4 });
+        assert.strictEqual(service.begin('over', macroStart, 0), 'continue');
+        const exited: SourceStepState = {
+            location: { physicalFrameId: 'frame-0', inlineChain: [], file: 'main.asm', line: 278, column: 13, isStmt: true },
+            physicalDepth: 0,
+            inlineDepth: 0,
+        };
+        assert.strictEqual(await service.observe(exited, 1), 'complete');
+    });
+
+    it('keeps Step Over running while the inline depth is deeper than the start', async () => {
+        const macroStart: SourceStepState = {
+            location: { physicalFrameId: 'frame-0', inlineChain: [42], file: 'v6_macros.asm', line: 304, column: 4, isStmt: true },
+            physicalDepth: 0,
+            inlineDepth: 1,
+        };
+        const service = new SourceStepService({ maxInstructions: 8, maxElapsedMs: 50, maxCandidates: 4 });
+        service.begin('over', macroStart, 0);
+        const deeper: SourceStepState = {
+            location: { physicalFrameId: 'frame-0', inlineChain: [42, 43], file: 'v6_macros.asm', line: 300, column: 4, isStmt: true },
+            physicalDepth: 0,
+            inlineDepth: 2,
+        };
+        assert.strictEqual(await service.observe(deeper, 1), 'continue');
+    });
+
+    it('completes Step Over at the first distinct statement of the start depth', async () => {
+        const macroStart: SourceStepState = {
+            location: { physicalFrameId: 'frame-0', inlineChain: [42], file: 'v6_macros.asm', line: 304, column: 4, isStmt: true },
+            physicalDepth: 0,
+            inlineDepth: 1,
+        };
+        const service = new SourceStepService({ maxInstructions: 8, maxElapsedMs: 50, maxCandidates: 4 });
+        service.begin('over', macroStart, 0);
+        const nextInMacro: SourceStepState = {
+            location: { physicalFrameId: 'frame-0', inlineChain: [42], file: 'v6_macros.asm', line: 305, column: 4, isStmt: true },
+            physicalDepth: 0,
+            inlineDepth: 1,
+        };
+        assert.strictEqual(await service.observe(nextInMacro, 1), 'complete');
+    });
 });

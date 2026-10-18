@@ -62,6 +62,14 @@ export interface DebugIndex {
     /** Reverse: CPU address → source location. */
     resolveAddress(address: number): SourceLocation | undefined;
 
+    /**
+     * All statement rows at an address in line-program emission order.
+     * Macro expansion entries stack an invocation row per nesting level at the
+     * same address as the deepest body row; inline frame presentation walks
+     * this list from the end.
+     */
+    resolveAddressRows(address: number): ReadonlyArray<SourceLocation>;
+
     /** Nearest preceding statement address within a verified function range. */
     resolvePrecedingStatement(address: number, ranges: readonly AddressRange[]): number | undefined;
 
@@ -123,6 +131,18 @@ export function buildDebugIndex(
     statementRows.sort((left, right) => left.address - right.address || left.file.localeCompare(right.file)
         || left.line - right.line || left.column - right.column);
     const statementAddresses = [...new Set(statementRows.map(row => row.address))];
+
+    // ---- Address → all statement rows in line-program emission order ----
+    // Nested macro expansions stack an invocation row per level at the same
+    // address as the deepest body row; presentation walks this list from the
+    // end so each inline frame shows its own body statement.
+    const rowsByAddress = new Map<number, SourceLocation[]>();
+    for (const r of normalizedRows) {
+        if (!r.isStmt) { continue; }
+        const list = rowsByAddress.get(r.address) ?? [];
+        list.push({ file: r.file, line: r.line, column: r.column, isStmt: r.isStmt });
+        rowsByAddress.set(r.address, list);
+    }
 
     // ---- Source (file, line) → addresses (sorted) ----
     // Key: normalized file path + ':' + line number
@@ -225,6 +245,10 @@ export function buildDebugIndex(
 
         resolveAddress(address) {
             return byAddress.get(address);
+        },
+
+        resolveAddressRows(address) {
+            return rowsByAddress.get(address) ?? [];
         },
 
         resolvePrecedingStatement(address, ranges) {
