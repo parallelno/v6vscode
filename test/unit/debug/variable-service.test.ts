@@ -136,4 +136,50 @@ describe('VariableService', () => {
         assert.strictEqual(result[0].name, 'argument');
         assert.strictEqual(result[0].value, '7');
     });
+
+    it('shows aggregate rows as their address, not decoded content', async () => {
+        const service = new VariableService();
+        const byte = { kind: 'base', name: 'unsigned char', byteSize: 1, signed: false } as any;
+        const struct = { kind: 'structure', name: 'Pair', byteSize: 2, signed: false, members: [{ name: 'first', offset: 0, type: byte }, { name: 'second', offset: 1, type: byte }] } as any;
+        const array = { kind: 'array', name: 'Pair[2]', byteSize: 4, signed: false, of: struct, count: 2 } as any;
+        const metadata = {
+            resolveAbstractOrigin: (variable: unknown) => variable,
+            typeOf: (offset: number) => [struct, array][offset],
+            evaluateVariable: (variable: any) => ({ kind: 'memory', address: 0x1234 }),
+        } as any;
+        // Instance content is 0x3264 little-endian (health=100, ptr=50); the
+        // row must show the address, never these bytes as a number.
+        const context = { evalContext: () => ({}), memory: { readBytes: async () => new Uint8Array([0x64, 0x32, 0x64, 0x32]) } } as any;
+        const frame = { pc: 0x1000, registers: {} } as any;
+
+        const result = await service.dapVariables(metadata, context, frame, [
+            { id: 1, name: 'instance', kind: 'global', typeOffset: 0 },
+            { id: 2, name: 'pool', kind: 'global', typeOffset: 1 },
+        ]);
+
+        assert.deepStrictEqual(result.map(variable => variable.value), ['0x1234', '0x1234']);
+        assert.strictEqual(result[0].namedVariables, 2);
+        assert.strictEqual(result[1].indexedVariables, 2);
+        assert.strictEqual(result[1].memoryReference, '0x1234');
+    });
+
+    it('shows a placeholder for aggregates without an address', async () => {
+        const service = new VariableService();
+        const struct = { kind: 'structure', name: 'Pair', byteSize: 2, signed: false, members: [] } as any;
+        const array = { kind: 'array', name: 'Pair[1]', byteSize: 2, signed: false, of: struct, count: 1 } as any;
+        const metadata = {
+            resolveAbstractOrigin: (variable: unknown) => variable,
+            typeOf: (offset: number) => [struct, array][offset],
+            evaluateVariable: () => ({ kind: 'value', value: 5 }),
+        } as any;
+        const context = { evalContext: () => ({}) } as any;
+        const frame = { pc: 0x1000, registers: {} } as any;
+
+        const result = await service.dapVariables(metadata, context, frame, [
+            { id: 1, name: 'instance', kind: 'global', typeOffset: 0 },
+            { id: 2, name: 'pool', kind: 'global', typeOffset: 1 },
+        ]);
+
+        assert.deepStrictEqual(result.map(variable => variable.value), ['<struct>', '<array>']);
+    });
 });

@@ -172,6 +172,14 @@ function format(value: TypedValue): string {
         const address = `0x${numeric.toString(16).padStart(4, '0').toUpperCase()}`;
         return type.of?.kind === 'subroutine' ? `${address} <function>` : address;
     }
+    // Aggregates are not numbers: show the base address instead of the raw
+    // contents decoded as an integer (identical for C and assembler structs).
+    if (type?.kind === 'array') {
+        return value.address !== undefined ? hexAddress(value.address) : '<array>';
+    }
+    if (type?.kind === 'structure' || type?.kind === 'union') {
+        return value.address !== undefined ? hexAddress(value.address) : '<struct>';
+    }
     if (type?.kind === 'base' && (type.name === '_Bool' || type.name === 'bool')) {
         return numeric === 0 ? 'false' : 'true';
     }
@@ -190,6 +198,10 @@ function decode(bytes: Uint8Array): number {
     let value = 0;
     for (let index = 0; index < Math.min(bytes.length, 4); index++) { value |= bytes[index] << (index * 8); }
     return value >>> 0;
+}
+
+function hexAddress(address: number): string {
+    return `0x${address.toString(16).padStart(4, '0').toUpperCase()}`;
 }
 
 function signed(value: number, byteSize: number): number {
