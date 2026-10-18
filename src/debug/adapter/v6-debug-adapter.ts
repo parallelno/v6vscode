@@ -35,6 +35,10 @@ import { evaluateSymbolExpression, validateSymbolExpression } from '../utilities
 import { WatchpointsProvider } from '../views/watchpoints-provider';
 import { DapHandleStore } from './dap-handle-store';
 import { ScopeService, SemanticScope, SemanticScopeKind } from './scope-service';
+import {
+    builtinTypeInfo, labelTypeInfo, substituteKnownSymbols, SYMBOL_NAME_PATTERN,
+    uniqueSymbolValue, SymbolValue,
+} from './symbol-fallback';
 import { DapFrameContext, StackTraceService } from './stack-trace-service';
 import { dapVariableValue, TypedValue, VariableService } from './variable-service';
 import { CExpressionService } from './c-expression-service';
@@ -148,7 +152,7 @@ function expressionTypeResolver(types: readonly (TypeInfo | undefined)[]): (name
         for (const member of type.members ?? []) { visit(member.type); }
     };
     types.forEach(visit);
-    return name => byName.get(name) ?? (name === 'int' ? { id: -1, kind: 'base', name, byteSize: 2, signed: true } : undefined);
+    return name => byName.get(name) ?? builtinTypeInfo(name);
 }
 
 // ---------------------------------------------------------------------------
@@ -1505,7 +1509,13 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                 try {
                     const variables = this.scopeService.scopes(this.debugMetadata!, frame)
                         .flatMap(scope => scope.variables);
-                    const result = await this.evaluateExpression(req.arguments?.context, expression, {
+                    // Dotted assembler constants (`char.health`) are ELF symbols,
+                    // not member paths; substitute their values before parsing.
+                    const substituted = substituteKnownSymbols(expression, name => {
+                        const entry = uniqueSymbolValue(this.debugIndex?.symbols(name) ?? []);
+                        return entry?.kind === 'constant' ? entry.value : undefined;
+                    });
+                    const result = await this.evaluateExpression(req.arguments?.context, substituted, {
                         resolve: async name => {
                             const variable = variables.find(candidate => candidate.name === name);
                         if (variable) {
@@ -1516,6 +1526,10 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                         }
                         const register = selectedFrameRegister(name, frame.physicalFrame.registers);
                         if (register !== undefined) { return register; }
+                        // Assembler symbols: labels and constants, including
+                        // generated `.struct` offset constants (see below).
+                        const symbolValue = await this.symbolFallbackValue(name);
+                        if (symbolValue !== undefined) { return symbolValue; }
                         throw new Error(`Unknown identifier '${name}' in frame ${frame.name}`);
                         },
                         read: (type, address) => this.variableService.readAt(this.stopContext!, type, address),
@@ -1546,7 +1560,45 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             }
         }
 
+        // Without a semantic frame, assembler symbols still evaluate: absolute
+        // constants to their value, RAM labels to live memory at the address.
+        if (this.debugIndex && SYMBOL_NAME_PATTERN.test(expression)) {
+            const entry = uniqueSymbolValue(this.debugIndex.symbols(expression));
+            if (entry) {
+                const value = entry.kind === 'constant'
+                    ? entry.value
+                    : await this.readSymbolMemory(entry) ?? entry.address;
+                this.sendResponseBody(req, { result: hex4(value), variablesReference: 0 });
+                return;
+            }
+        }
+
         this.sendResponse(req, false, `Cannot evaluate: ${req.arguments?.expression}`);
+    }
+
+    /**
+     * Resolve an assembler symbol for expression evaluation: an absolute
+     * constant evaluates as its numeric value; a symbol in a real section is
+     * an addressable object and evaluates as live memory at its address.
+     */
+    private async symbolFallbackValue(name: string): Promise<number | import('./c-expression-service').ExpressionValue | undefined> {
+        const entry = uniqueSymbolValue(this.debugIndex?.symbols(name) ?? []);
+        if (!entry) { return undefined; }
+        if (entry.kind === 'constant') { return entry.value; }
+        const type = labelTypeInfo(entry.byteSize);
+        const value = await this.variableService.readAt(this.stopContext!, type, entry.address);
+        return { value: { ...value, address: entry.address }, name };
+    }
+
+    /** Read live bytes for a memory symbol; undefined when unreadable. */
+    private async readSymbolMemory(entry: Extract<SymbolValue, { kind: 'memory' }>): Promise<number | undefined> {
+        if (!this.stopContext) { return undefined; }
+        const value = await this.variableService.readAt(
+            this.stopContext, labelTypeInfo(entry.byteSize), entry.address);
+        if (value.availability !== 'available' || !value.bytes) { return undefined; }
+        let result = 0;
+        for (let index = 0; index < value.bytes.length; index++) { result |= value.bytes[index] << (index * 8); }
+        return result >>> 0;
     }
 
     private async evaluateExpression(

@@ -30,6 +30,8 @@ export interface SymbolInfo {
     size: number;
     type: number;   // STT_FUNC or STT_OBJECT
     binding: number;
+    /** SHN_ABS symbol: an immutable absolute constant whose value is the answer. */
+    absolute?: boolean;
     declaration?: SourceLocation;
 }
 
@@ -205,6 +207,7 @@ export function buildDebugIndex(
             : undefined;
         const info: SymbolInfo = {
             name: s.name, address: s.value, size: s.size, type: s.type, binding: s.binding,
+            absolute: s.section === SHN_ABS,
             declaration: declaration && { file: declaration.file, line: declaration.line, column: 0, isStmt: false },
         };
         const named = symbolsByName.get(s.name) ?? [];

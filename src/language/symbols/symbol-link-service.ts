@@ -66,6 +66,49 @@ export function findMacroDefinition(text: string, name: string): SourceLocation 
     return findDefinitionMatch(text, definition, name);
 }
 
+/** Find a struct definition (`.struct NAME`) in an assembler source file. */
+export function findStructDefinition(text: string, name: string): SourceLocation | undefined {
+    const definition = new RegExp(`^\\s*\\.struct\\s+${escapeRegExp(name)}\\b`, 'im');
+    return findDefinitionMatch(text, definition, name);
+}
+
+/**
+ * Find a field line inside a `.struct` block, following `extends` parents for
+ * inherited fields (inherited fields keep their names, so `char.pos_x` lives
+ * in the `actor` block).
+ */
+export function findStructFieldDefinition(
+    text: string,
+    structName: string,
+    field: string,
+    visited: Set<string> = new Set(),
+): SourceLocation | undefined {
+    const key = structName.toLowerCase();
+    if (visited.has(key)) { return undefined; }
+    visited.add(key);
+    const fieldPattern = new RegExp(`^\\s*${escapeRegExp(field)}\\s*:`, 'i');
+    const lines = text.split(/\r?\n/);
+    for (let line = 0; line < lines.length; line++) {
+        const header = /^\s*\.struct\s+([^\s;]+)(?:\s+extends\s+([^\s;]+))?/i.exec(codeBeforeComment(lines[line]));
+        if (!header || header[1].toLowerCase() !== structName.toLowerCase()) { continue; }
+        for (let bodyLine = line + 1; bodyLine < lines.length; bodyLine++) {
+            const body = codeBeforeComment(lines[bodyLine]);
+            if (/^\s*\.(?:ends|endstruct)\b/i.test(body)) { break; }
+            if (/^\s*\.struct\b/i.test(body)) { break; }
+            const fieldMatch = fieldPattern.exec(body);
+            if (fieldMatch) {
+                return { file: '', line: bodyLine + 1, column: fieldMatch[0].indexOf(field) + 1, isStmt: false };
+            }
+        }
+        if (header[2]) {
+            const parent = findStructFieldDefinition(text, header[2], field, visited);
+            if (parent) { return parent; }
+        }
+        return undefined;
+    }
+    return undefined;
+}
+
 /** Find a constant definition (`NAME = value`) in an assembler source file. */
 export function findConstantDefinition(text: string, name: string): SourceLocation | undefined {
     const definition = new RegExp(`^\\s*${escapeRegExp(name)}\\s*=(?!=)`, 'm');
@@ -180,16 +223,29 @@ export class DebugSourceSymbolLinkService implements SourceSymbolLinkService {
     }
 
     private async scanSources(name: string, projectRoot: string): Promise<SourceLocation | undefined> {
+        const dotIndex = name.indexOf('.');
         for (const file of this.symbols.sourceFiles()) {
             const sourcePath = resolveDebugSourcePath(file, projectRoot);
             const text = await this.readSourceText(sourcePath);
             if (text === undefined) { continue; }
+            if (dotIndex > 0) {
+                // `struct.field` resolves to the field line (following extends);
+                // otherwise the base may be an instance label (`hero.pos_x`).
+                const base = name.slice(0, dotIndex);
+                const field = name.slice(dotIndex + 1);
+                const structField = findStructFieldDefinition(text, base, field);
+                if (structField) { return { ...structField, file }; }
+                const labelBase = findLabelDefinition(text, base);
+                if (labelBase) { return { ...labelBase, file }; }
+            }
             const macro = findMacroDefinition(text, name);
             if (macro) { return { ...macro, file }; }
             const constant = findConstantDefinition(text, name);
             if (constant) { return { ...constant, file }; }
             const label = findLabelDefinition(text, name);
             if (label) { return { ...label, file }; }
+            const struct = findStructDefinition(text, name);
+            if (struct) { return { ...struct, file }; }
         }
         return undefined;
     }

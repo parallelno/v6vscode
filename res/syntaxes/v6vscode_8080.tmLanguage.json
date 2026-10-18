@@ -20,6 +20,9 @@
             "include": "#constantlabels"
         },
         {
+            "include": "#structbodies"
+        },
+        {
             "include": "#directives"
         },
         {
@@ -80,6 +83,44 @@
                 }
             ]
         },
+        "structbodies": {
+            "begin": "(?i)^\\s*(\\.struct)\\b\\s*([a-z_][a-z0-9_]*)?(\\s+(extends)\\s+([a-z_][a-z0-9_]*))?",
+            "beginCaptures": {
+                "1": { "name": "keyword.directive.v6vscode_8080" },
+                "2": { "name": "entity.name.type.v6vscode_8080" },
+                "4": { "name": "keyword.keyword.v6vscode_8080" },
+                "5": { "name": "entity.name.type.v6vscode_8080" }
+            },
+            "end": "(?i)^\\s*(\\.(?:ends|endstruct))\\b",
+            "endCaptures": {
+                "1": { "name": "keyword.directive.v6vscode_8080" }
+            },
+            "patterns": [
+                {
+                    "include": "#structfields"
+                },
+                {
+                    "include": "#comments"
+                },
+                {
+                    "include": "#strings"
+                },
+                {
+                    "include": "#directives"
+                },
+                {
+                    "include": "#constants"
+                }
+            ]
+        },
+        "structfields": {
+            "match": "(?i)^\\s*([a-z_][a-z0-9_]*)\\s*(:)\\s*(byte|db|word|dw|dword|dd)\\b",
+            "captures": {
+                "1": { "name": "keyword.globallabel.v6vscode_8080" },
+                "2": { "name": "keyword.operator.v6vscode_8080" },
+                "3": { "name": "keyword.directive.v6vscode_8080" }
+            }
+        },
         "globallabels": {
             "patterns": [
                 {
@@ -100,7 +141,7 @@
             "patterns": [
                 {
                     "name": "keyword.directive.v6vscode_8080",
-                    "match": "(?i)(?:^|\\s)(\\.(org|pc|equ|var|random|rnd|storage|ds|fill|align|target|format|cpu|closelabels|breakpoint|print|debug|error|end|region|endregion|function|endfunction|endf|segment|code|lib|data|bss|bank|namespace|include|incbin|macro|endmacro|endm|if|endif|loop|endloop|endl|while|endwhile|endw|break|byte|b|word|w|dword|dw|lobyte|hibyte|loword|hiword|encoding|text|t|textz|stext|ascii|asciiz|generate|memory|memorydump|setting))\\b"
+                    "match": "(?i)(?:^|\\s)(\\.(org|pc|equ|var|random|rnd|storage|ds|fill|align|target|format|cpu|closelabels|breakpoint|print|debug|error|end|region|endregion|function|endfunction|endf|segment|code|lib|data|bss|bank|namespace|include|incbin|macro|endmacro|endm|if|endif|loop|endloop|endl|while|endwhile|endw|break|byte|b|word|w|dword|dw|lobyte|hibyte|loword|hiword|encoding|text|t|textz|stext|ascii|asciiz|generate|memory|memorydump|setting|struct|ends|endstruct|pragma))\\b"
                 }
             ]
         },

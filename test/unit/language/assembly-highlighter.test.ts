@@ -103,4 +103,23 @@ describe('Assembly highlighter', () => {
 
         expect(tokenClasses).to.deep.equal(['line-comment', 'line-comment', 'comment']);
     });
+
+    it('highlights struct definitions, field lines, and instances', async () => {
+        const highlighter = await createAssemblyHighlighter(process.cwd());
+        const lines = [
+            '.struct actor',
+            'update_ptr: word',
+            'status: byte',
+            '.ends',
+            'hero: actor',
+        ];
+        const document = highlighter.tokenizeDocument(lines.join('\n'));
+        const classes = (index: number) => document[index].map(span => span.tokenClass);
+
+        expect(classes(0)).to.include('directive');
+        expect(classes(1)).to.include.members(['global-label', 'directive']);
+        expect(classes(2)).to.include.members(['global-label', 'directive']);
+        expect(classes(3)).to.include('directive');
+        expect(classes(4)).to.include('global-label');
+    });
 });

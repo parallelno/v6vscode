@@ -95,4 +95,61 @@ describe('Source symbol link service', () => {
         expect(await service.resolve('changed', { start: 0, length: 6 }, context)).to.equal(undefined);
         expect(await service.resolve('target', { start: -1, length: 6 }, context)).to.equal(undefined);
     });
+
+    describe('struct definitions', () => {
+        const structSource = [
+            '.struct actor',
+            'update_ptr: word',
+            'status: byte',
+            'pos_x: word',
+            '.ends',
+            '.struct char extends actor',
+            'data_next_ptr: word',
+            'health: byte',
+            '.ends',
+            'hero: char',
+        ].join('\n');
+
+        function missingSymbols(sourceFiles: string[]) {
+            return {
+                load: async () => {},
+                resolveSymbol: () => ({ kind: 'missing' }),
+                sourceFiles: () => sourceFiles,
+                sourceAtExactAddress: () => undefined,
+            } as any;
+        }
+
+        function structService() {
+            return new DebugSourceSymbolLinkService(
+                missingSymbols(['defs.asm']),
+                async sourcePath => sourcePath.endsWith('defs.asm') ? structSource : undefined,
+            );
+        }
+
+        it('resolves a struct definition when no ELF symbol exists', async () => {
+            const links = await structService().links('lxi h, actor', context);
+            expect(links[0].target).to.deep.equal({ file: 'defs.asm', line: 1, column: 9, isStmt: false });
+        });
+
+        it('resolves a generated field constant to its field line', async () => {
+            const links = await structService().links('lxi h, actor.update_ptr', context);
+            expect(links[0].target).to.deep.equal({ file: 'defs.asm', line: 2, column: 1, isStmt: false });
+        });
+
+        it('resolves inherited fields through the extends parent', async () => {
+            const links = await structService().links('lxi h, char.pos_x', context);
+            expect(links[0].target).to.deep.equal({ file: 'defs.asm', line: 4, column: 1, isStmt: false });
+        });
+
+        it('resolves label.field references to the instance label', async () => {
+            const links = await structService().links('lxi h, hero.pos_x', context);
+            expect(links[0].target).to.deep.equal({ file: 'defs.asm', line: 10, column: 1, isStmt: false });
+        });
+
+        it('does not resolve unknown fields or struct names', async () => {
+            const service = structService();
+            expect(await service.links('lxi h, char.unknown', context)).to.deep.equal([]);
+            expect(await service.links('lxi h, char.pos_y', context)).to.deep.equal([]);
+        });
+    });
 });

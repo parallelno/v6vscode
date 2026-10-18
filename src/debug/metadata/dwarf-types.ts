@@ -7,6 +7,8 @@
 
 import { attribute, blockAttribute, Die, numberAttribute, stringAttribute, DW_AT, DW_TAG } from './dwarf-reader';
 
+import { readULEB128 } from './elf32-reader';
+
 export type TypeKind =
     | 'base' | 'pointer' | 'reference' | 'array' | 'structure' | 'union'
     | 'enum' | 'typedef' | 'qualified' | 'subroutine' | 'unspecified';
@@ -165,7 +167,7 @@ export class DwarfTypes {
         // data_member_location may be a constant or a small block; handle constant first.
         const value = numberAttribute(die, DW_AT.data_member_location);
         if (value !== undefined) { return value; }
-        return 0;
+        return decodeDataMemberLocationBlock(blockAttribute(die, DW_AT.data_member_location));
     }
 
     private encodingName(die: Die): string | undefined {
@@ -183,4 +185,16 @@ export class DwarfTypes {
         if (name.startsWith('unsigned')) { return false; }
         return name === 'char' || name.includes('int') || name.includes('long') || name.includes('short');
     }
+}
+
+/**
+ * Decode a data_member_location exprloc block. The constant form is handled by
+ * the caller; only the classic GNU encoding `DW_OP_plus_uconst <offset>` over
+ * an implicit zero base is recognized here. Anything else decodes as 0 so a
+ * member never silently reports offset 0 for a supported form.
+ */
+export function decodeDataMemberLocationBlock(block: Buffer | undefined): number {
+    if (!block || block.length < 2 || block[0] !== 0x23) { return 0; } // DW_OP_plus_uconst
+    const [operand] = readULEB128(block, 1);
+    return operand;
 }
