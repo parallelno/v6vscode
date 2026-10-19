@@ -1,5 +1,5 @@
 import { TypeInfo } from '../metadata/dwarf-types';
-import { TypedValue } from './variable-service';
+import { TypedValue, decode, scalarValue, unwrap } from './value-format';
 
 export type CExpressionResolver = (name: string) => number | undefined | Promise<number | undefined>;
 
@@ -56,7 +56,7 @@ export class CExpressionService {
     async evaluateValue(input: string, context: CExpressionContext): Promise<ExpressionValue> {
         if (input.length > MAX_INPUT_LENGTH) { throw new Error('Expression is too long'); }
         const value = await this.evaluateTyped(new Parser(new Lexer(input).tokens()).parse(), context);
-        return { value: value.typed ?? scalarTypedValue(typedScalar(value)) };
+        return { value: value.typed ?? scalarValue(typedScalar(value)) };
     }
 
     private async evaluateTyped(expression: Expression, context: CExpressionContext): Promise<TypedExpressionValue> {
@@ -72,7 +72,7 @@ export class CExpressionService {
                 if (expression.operator === '&') {
                     if (operand.address === undefined) { throw new Error('Address-of requires an addressable value'); }
                     const type = context.resolveType(`${operand.type?.name ?? 'void'} *`);
-                    return { scalar: operand.address, type, typed: type ? typedValue(operand.address, type) : scalarTypedValue(operand.address) };
+                    return { scalar: operand.address, type, typed: scalarValue(operand.address, type) };
                 }
                 if (expression.operator === '*') {
                     const pointer = operand.type && unwrap(operand.type);
@@ -110,7 +110,7 @@ export class CExpressionService {
                 const type = context.resolveType(expression.typeName);
                 if (!type) { throw new Error(`Unsupported cast type '${expression.typeName}'`); }
                 const operand = typedScalar(await this.evaluateTyped(expression.operand, context));
-                return { scalar: operand, type, typed: typedValue(operand, type) };
+                return { scalar: operand, type, typed: scalarValue(operand, type) };
             }
         }
     }
@@ -384,13 +384,7 @@ function checked(value: number): number {
 
 interface TypedExpressionValue { scalar?: number; typed?: TypedValue; address?: number; type?: TypeInfo; }
 
-function typedScalarValue(value: number): TypedExpressionValue { return { scalar: checked(value), typed: scalarTypedValue(value) }; }
-function scalarTypedValue(value: number): TypedValue { return { bytes: new Uint8Array([value & 0xFF, value >>> 8 & 0xFF]), availability: 'available' }; }
-function typedValue(value: number, type: TypeInfo): TypedValue {
-    const bytes = new Uint8Array(Math.max(1, Math.min(type.byteSize || 2, 4)));
-    for (let index = 0; index < bytes.length; index++) { bytes[index] = value >>> (index * 8) & 0xFF; }
-    return { type, bytes, availability: 'available' };
-}
+function typedScalarValue(value: number): TypedExpressionValue { return { scalar: checked(value), typed: scalarValue(value) }; }
 function fromTypedValue(value: TypedValue, name?: string): TypedExpressionValue {
     if (value.availability !== 'available') { throw new Error(`Cannot use ${name ?? 'value'}: ${value.availability.replace('-', ' ')}`); }
     return { typed: value, scalar: isScalar(value.type) ? decode(value.bytes) : undefined, address: value.address, type: value.type };
@@ -404,8 +398,6 @@ function isScalar(type: TypeInfo | undefined): boolean {
     const kind = type && unwrap(type).kind;
     return type === undefined || !kind || kind === 'base' || kind === 'enum' || kind === 'pointer' || kind === 'reference';
 }
-function unwrap(type: TypeInfo): TypeInfo { return type.kind === 'typedef' || type.kind === 'qualified' ? type.of ? unwrap(type.of) : type : type; }
-function decode(bytes: Uint8Array | undefined): number { let value = 0; for (let index = 0; index < Math.min(bytes?.length ?? 0, 4); index++) { value |= bytes![index] << (index * 8); } return value >>> 0; }
 function typedAddress(value: number): number {
     if (!Number.isInteger(value) || value < 0 || value > 0xFFFF) { throw new Error(`Pointer 0x${(value >>> 0).toString(16).padStart(4, '0').toUpperCase()} is outside readable memory`); }
     return value;

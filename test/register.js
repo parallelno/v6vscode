@@ -35,6 +35,9 @@ const mockVscode = {
     },
     TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
     ConfigurationTarget: { Global: 1 },
+    DebugStackFrame: class DebugStackFrame {
+        constructor(session, threadId, frameId) { this.session = session; this.threadId = threadId; this.frameId = frameId; }
+    },
     DebugAdapterInlineImplementation: class DebugAdapterInlineImplementation {
         constructor(adapter) { this.adapter = adapter; }
     },

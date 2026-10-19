@@ -4,6 +4,9 @@ import { ActiveProjectService } from '../../project/active/active-project-servic
 import { DebugSymbolService } from '../../debug/metadata/debug-symbol-service';
 import { SourceLocation } from '../../debug/metadata/debug-index';
 import { resolveDebugSourcePath } from '../../debug/metadata/debug-source-path';
+import { format, scalarValue } from '../../debug/adapter/value-format';
+import { labelAddressTypeInfo } from '../../debug/adapter/symbol-fallback';
+import { ASSEMBLER_HOVER_CONTEXT } from '../../debug/adapter/evaluation-context';
 import {
     findLabelDefinition,
     findSymbolTokens,
@@ -60,60 +63,70 @@ export class SymbolLinkProvider implements vscode.HoverProvider, vscode.Definiti
         );
         if (!symbolToken) { return undefined; }
 
+        if (token.isCancellationRequested) { return undefined; }
         const registerExpression = registerExpressionForHover(
             document.lineAt(position.line).text,
             symbolToken.name,
         );
         const debugSession = vscode.debug.activeDebugSession;
-        if (registerExpression && debugSession?.type === 'v6') {
+        let value: string | undefined;
+        if (debugSession?.type === 'v6') {
             try {
+                const stackItem = vscode.debug.activeStackItem;
+                const frameId = stackItem instanceof vscode.DebugStackFrame && stackItem.session === debugSession
+                    ? stackItem.frameId : undefined;
                 const evaluation = await debugSession.customRequest('evaluate', {
-                    expression: registerExpression,
-                    context: 'hover',
+                    expression: registerExpression ?? symbolToken.name,
+                    context: ASSEMBLER_HOVER_CONTEXT,
+                    frameId,
                 });
-                if (token.isCancellationRequested || typeof evaluation?.result !== 'string') {
-                    return undefined;
-                }
-                const range = new vscode.Range(
-                    new vscode.Position(symbolToken.line, symbolToken.start),
-                    new vscode.Position(symbolToken.line, symbolToken.start + symbolToken.length),
-                );
-                return new vscode.Hover(evaluation.result, range);
+                if (typeof evaluation?.result === 'string') { value = evaluation.result; }
             } catch {
-                return undefined;
+                // A running/unavailable debugger can still show static symbol
+                // addresses and definition links, but never guessed RAM values.
             }
+        }
+        if (token.isCancellationRequested) { return undefined; }
+        if (registerExpression) {
+            return value === undefined ? undefined : this.hover(symbolToken, value);
         }
 
         const project = this.activeProjectService.getActiveProject()
             ?? await this.activeProjectService.resolve();
-        if (token.isCancellationRequested || !project?.run.debugArtifact) { return undefined; }
-
-        const context = this.contextForProject(project);
+        if (token.isCancellationRequested || !project?.run.debugArtifact) {
+            return value === undefined ? undefined : this.hover(symbolToken, value);
+        }
         let source: SourceLocation | undefined;
         try {
             source = await this.linkService.resolve(
                 document.lineAt(position.line).text,
                 { start: symbolToken.start, length: symbolToken.length },
-                context,
+                this.contextForProject(project),
             );
         } catch {
-            return undefined;
+            // Source lookup failure must not hide a successfully evaluated value.
         }
         if (token.isCancellationRequested) { return undefined; }
-        if (!source) { return undefined; }
+        if (value === undefined) {
+            const resolution = this.symbols.resolveSymbol(symbolToken.name);
+            if (resolution.kind !== 'found') { return undefined; }
+            value = format(scalarValue(resolution.symbol.address, labelAddressTypeInfo()));
+        }
+        return this.hover(symbolToken, value, source);
+    }
 
-        const resolution = this.symbols.resolveSymbol(symbolToken.name);
-        if (resolution.kind !== 'found') { return undefined; }
-
+    /** One presentation path for live values, registers, and static symbols. */
+    private hover(symbol: SymbolToken, value: string, source?: SourceLocation): vscode.Hover {
         const markdown = new vscode.MarkdownString();
-        markdown.appendText(`Value: 0x${resolution.symbol.address.toString(16).toUpperCase().padStart(4, '0')}\n`);
-        markdown.appendMarkdown(`[Go to Definition](${revealSymbolCommandUri(source)}) (ctrl + click)`);
-        markdown.isTrusted = true;
-        const range = new vscode.Range(
-            new vscode.Position(symbolToken.line, symbolToken.start),
-            new vscode.Position(symbolToken.line, symbolToken.start + symbolToken.length),
-        );
-        return new vscode.Hover(markdown, range);
+        markdown.appendText(`Value: ${value}`);
+        if (source) {
+            markdown.appendMarkdown(`\n\n[Go to Definition](${revealSymbolCommandUri(source)}) (Ctrl + Click)`);
+            markdown.isTrusted = true;
+        }
+        return new vscode.Hover(markdown, new vscode.Range(
+            new vscode.Position(symbol.line, symbol.start),
+            new vscode.Position(symbol.line, symbol.start + symbol.length),
+        ));
     }
 
     async provideDefinition(

@@ -1,4 +1,5 @@
 import { TypeInfo } from '../metadata/dwarf-types';
+import { STT_FUNC } from '../metadata/elf32-reader';
 
 /**
  * Symbol fallback for Watch, hover, and Debug Console expressions.
@@ -28,18 +29,25 @@ export const DOTTED_SYMBOL_PATTERN = /\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Z
 /** How a uniquely matched ELF symbol evaluates in an expression. */
 export type SymbolValue =
     | { kind: 'constant'; value: number }
-    | { kind: 'memory'; address: number; byteSize: number };
+    | { kind: 'memory'; address: number; byteSize: number }
+    | { kind: 'address'; address: number };
 
 /**
  * Classify a unique symbol match: absolute constants carry their value, real
  * section symbols address memory (size-bounded; untyped labels read one byte).
+ * Function symbols resolve to their own
+ * address value rather than memory contents at that address, since reading
+ * instructions as raw data is meaningless for a label hover.
  */
 export function uniqueSymbolValue(
-    symbols: ReadonlyArray<{ address: number; size: number; absolute?: boolean }>,
+    symbols: ReadonlyArray<{ address: number; size: number; absolute?: boolean; type?: number }>,
 ): SymbolValue | undefined {
     if (symbols.length !== 1) { return undefined; }
     const symbol = symbols[0];
     if (symbol.absolute) { return { kind: 'constant', value: symbol.address }; }
+    if (symbol.type === STT_FUNC) {
+        return { kind: 'address', address: symbol.address };
+    }
     return { kind: 'memory', address: symbol.address, byteSize: Math.max(1, Math.min(symbol.size || 1, 4)) };
 }
 
@@ -94,4 +102,13 @@ export function builtinTypeInfo(name: string): TypeInfo | undefined {
 /** Display type for a live-memory label value. */
 export function labelTypeInfo(byteSize: number): TypeInfo {
     return { id: -200, kind: 'base', name: 'asm', byteSize, signed: false };
+}
+
+/**
+ * Display type for a code label: the meaningful value is the label's own
+ * address, presented as hex through the shared `format()` path so
+ * hover, Watch, and Debug Console all render the same way.
+ */
+export function labelAddressTypeInfo(): TypeInfo {
+    return { id: -201, kind: 'base', name: 'asm address', byteSize: 2, signed: false, encoding: 'address' };
 }

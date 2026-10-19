@@ -79,6 +79,8 @@ suite('C source breakpoint', () => {
 
             const watch = await session.customRequest('evaluate', { expression: 's', frameId: frames[0].id, context: 'watch' });
             assert.strictEqual(watch.result, '0');
+            const hover = await session.customRequest('evaluate', { expression: 's', frameId: frames[0].id, context: 'hover' });
+            assert.strictEqual(hover.result, watch.result);
         } finally {
             await vscode.commands.executeCommand('workbench.action.debug.stop');
             vscode.debug.removeBreakpoints([breakpoint]);

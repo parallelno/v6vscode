@@ -23,7 +23,7 @@ function isGeneratedOffsetConstant(variable: VariableNode): boolean {
 
 /** Builds semantic C scopes for one selected stopped frame. */
 export class ScopeService {
-    scopes(metadata: DebugMetadataIndex, frame: DapFrameContext): SemanticScope[] {
+    scopes(metadata: DebugMetadataIndex, frame: Pick<DapFrameContext, 'instructionPc'>): SemanticScope[] {
         const visible = metadata.variablesAt(frame.instructionPc);
         const globals = metadata.scopes.variables
             .filter(variable => variable.kind === 'global')

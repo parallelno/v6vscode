@@ -1,5 +1,6 @@
 import { expect } from 'chai';
 import * as vscode from 'vscode';
+import { ASSEMBLER_HOVER_CONTEXT } from '../../../src/debug/adapter/evaluation-context';
 import {
     findLabelDefinition,
     findSymbolTokens,
@@ -21,6 +22,11 @@ describe('Symbol link provider helpers', () => {
         getText: () => 'jmp target',
         lineAt: () => ({ text: 'jmp target' }),
     } as any;
+
+    afterEach(() => {
+        (vscode.debug as any).activeDebugSession = undefined;
+        (vscode.debug as any).activeStackItem = undefined;
+    });
 
     it('uses the hovered instruction to distinguish register pairs from bytes', () => {
         expect(registerExpressionForHover('lxi h, main', 'h')).to.equal('HL');
@@ -56,7 +62,7 @@ describe('Symbol link provider helpers', () => {
         );
 
         expect(expressions).to.deep.equal(['HL']);
-        expect((hover as any).contents).to.equal('0x0100');
+        expect((hover as any).contents.value).to.equal('Value: 0x0100');
         (vscode.debug as any).activeDebugSession = undefined;
     });
 
@@ -144,5 +150,66 @@ describe('Symbol link provider helpers', () => {
 
         expect(resolveCalls).to.equal(1);
         expect(definition).to.equal(undefined);
+    });
+    it('uses identical value/link markup for live and static function symbols', async () => {
+        const requests: any[] = [];
+        const symbols = { resolveSymbol: () => ({ kind: 'found', symbol: { name: 'target', address: 0x422 } }) } as any;
+        const provider = new SymbolLinkProvider(activeProjectService, symbols, {
+            links: async () => [], resolve: async () => source,
+        });
+        const cancellation = { isCancellationRequested: false } as any;
+        const staticHover = await provider.provideHover(document, new vscode.Position(0, 5), cancellation);
+        const session = {
+            type: 'v6', customRequest: async (_command: string, args: unknown) => {
+                requests.push(args);
+                return { result: '0x0422' };
+            },
+        };
+        (vscode.debug as any).activeDebugSession = session;
+        (vscode.debug as any).activeStackItem = new (vscode.DebugStackFrame as any)(session, 1, 123);
+        const liveHover = await provider.provideHover(document, new vscode.Position(0, 5), cancellation);
+        expect((liveHover as any).contents.value).to.equal((staticHover as any).contents.value);
+        expect((liveHover as any).contents.value).to.include('Value: 0x0422');
+        expect((liveHover as any).contents.value).to.include('Go to Definition');
+        expect(requests).to.deep.equal([{ expression: 'target', context: ASSEMBLER_HOVER_CONTEXT, frameId: 123 }]);
+    });
+
+    it('shows the evaluated word field even without a matching ELF symbol or definition', async () => {
+        const expressions: string[] = [];
+        (vscode.debug as any).activeDebugSession = {
+            type: 'v6', customRequest: async (_command: string, args: { expression: string }) => {
+                expressions.push(args.expression);
+                return { result: '65535' };
+            },
+        };
+        const provider = new SymbolLinkProvider(activeProjectService, { resolveSymbol: () => ({ kind: 'missing' }) } as any, {
+            links: async () => [], resolve: async () => undefined,
+        });
+        const fieldDocument = { getText: () => 'lxi h, instance.ptr', lineAt: () => ({ text: 'lxi h, instance.ptr' }) } as any;
+        const hover = await provider.provideHover(fieldDocument, new vscode.Position(0, 10), { isCancellationRequested: false } as any);
+        expect(expressions).to.deep.equal(['instance.ptr']);
+        expect((hover as any).contents.value).to.equal('Value: 65535');
+    });
+
+    it('falls back to the static symbol tooltip when the debugger is unavailable', async () => {
+        (vscode.debug as any).activeDebugSession = {
+            type: 'v6', customRequest: async () => { throw new Error('Not stopped'); },
+        };
+        const provider = new SymbolLinkProvider(activeProjectService, {
+            resolveSymbol: () => ({ kind: 'found', symbol: { address: 0x422 } }),
+        } as any, { links: async () => [], resolve: async () => source });
+        const hover = await provider.provideHover(document, new vscode.Position(0, 5), { isCancellationRequested: false } as any);
+        expect((hover as any).contents.value).to.include('Value: 0x0422');
+        expect((hover as any).contents.value).to.include('Go to Definition');
+    });
+
+    it('does not publish a value when cancellation happens during evaluation', async () => {
+        const cancellation = { isCancellationRequested: false };
+        (vscode.debug as any).activeDebugSession = {
+            type: 'v6', customRequest: async () => { cancellation.isCancellationRequested = true; return { result: '65535' }; },
+        };
+        const provider = new SymbolLinkProvider({} as any, {} as any, { links: async () => [], resolve: async () => source });
+        const hover = await provider.provideHover(document, new vscode.Position(0, 5), cancellation as any);
+        expect(hover).to.equal(undefined);
     });
 });

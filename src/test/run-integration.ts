@@ -3,6 +3,7 @@ import * as path from 'path';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import { runTests } from '@vscode/test-electron';
+import { parseElf32, SHF_ALLOC, SHT_PROGBITS } from '../debug/metadata/elf32-reader';
 
 interface ZipEntry {
     fileName: string;
@@ -58,9 +59,22 @@ async function main(): Promise<void> {
 }
 
 async function prepareIntegrationWorkspace(extensionRoot: string, workspace: string): Promise<void> {
+    // The small ASM companion is checked in; reconstruct its ignored ROM from
+    // loadable sections so this regression does not require a local assembler.
+    const asmRoot = path.join(extensionRoot, 'test', 'fixtures', 'asm-values');
+    const asmElf = parseElf32(await fs.readFile(path.join(asmRoot, 'main.elf')));
+    const sections = asmElf.sections.filter(section => section.type === SHT_PROGBITS
+        && (section.flags & SHF_ALLOC) !== 0 && section.size > 0);
+    const firstAddress = Math.min(...sections.map(section => section.addr));
+    const endAddress = Math.max(...sections.map(section => section.addr + section.size));
+    const rom = Buffer.alloc(endAddress - firstAddress);
+    for (const section of sections) { section.data.copy(rom, section.addr - firstAddress); }
+    await fs.writeFile(path.join(asmRoot, 'main.rom'), rom);
+
     const probeRoot = path.join(extensionRoot, 'test', 'fixtures', 'cdbg');
     await fs.rm(workspace, { recursive: true, force: true });
     await fs.mkdir(workspace, { recursive: true });
+    await fs.copyFile(path.join(asmRoot, 'main.asm'), path.join(workspace, 'main.asm'));
     await fs.writeFile(path.join(workspace, 'cdbg.project.json'), JSON.stringify({
         name: 'cdbg-integration',
         run: {

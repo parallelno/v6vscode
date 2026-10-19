@@ -6,6 +6,8 @@ export async function run(): Promise<void> {
     mocha.addFile(path.resolve(__dirname, 'suite', 'extension-startup.test.js'));
     mocha.addFile(path.resolve(__dirname, 'suite', 'c-source-breakpoint.test.js'));
 
+    mocha.addFile(path.resolve(__dirname, 'suite', 'asm-value-presentation.test.js'));
+
     await new Promise<void>((resolve, reject) => {
         mocha.run(failures => {
             if (failures === 0) {

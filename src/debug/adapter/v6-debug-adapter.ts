@@ -36,14 +36,15 @@ import { WatchpointsProvider } from '../views/watchpoints-provider';
 import { DapHandleStore } from './dap-handle-store';
 import { ScopeService, SemanticScope, SemanticScopeKind } from './scope-service';
 import {
-    builtinTypeInfo, labelTypeInfo, substituteKnownSymbols, SYMBOL_NAME_PATTERN,
-    uniqueSymbolValue, SymbolValue,
+    builtinTypeInfo, labelAddressTypeInfo, labelTypeInfo, substituteKnownSymbols, uniqueSymbolValue,
 } from './symbol-fallback';
 import { DapFrameContext, StackTraceService } from './stack-trace-service';
-import { dapVariableValue, TypedValue, VariableService } from './variable-service';
+import { VariableService } from './variable-service';
+import { dapVariableValue, hexAddress, scalarValue, TypedValue } from './value-format';
 import { CExpressionService } from './c-expression-service';
+import { isAssemblerSource, isHoverEvaluation } from './evaluation-context';
 import { TypeInfo } from '../metadata/dwarf-types';
-import { DWARF_REG } from '../metadata/v6c-register-map';
+import { DWARF_REG, toDwarfRegisters } from '../metadata/v6c-register-map';
 import { StepBreakpointStore } from './step-breakpoint-store';
 import { LogicalLocationIndex } from './logical-location-index';
 import { SourceStepService, SourceStepState } from './source-step-service';
@@ -78,6 +79,7 @@ interface VariableHandle {
 }
 
 type ScopeHandle = MachineScopeHandle | SemanticScopeHandle;
+type VariablesHandle = ScopeHandle | VariableHandle;
 
 const BYTE_REGISTER_EXPRESSIONS = new Set(['A', 'F', 'B', 'C', 'D', 'E', 'H', 'L', 'M']);
 const BYTE_BREAKPOINT_OPERANDS = new Set<BreakpointOperand>(['A', 'F', 'B', 'C', 'D', 'E', 'H', 'L']);
@@ -128,8 +130,8 @@ interface InlineFrameName {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function hex4(n: number): string { return `0x${(n >>> 0).toString(16).padStart(4, '0').toUpperCase()}`; }
-function hex2(n: number): string { return `0x${(n >>> 0).toString(16).padStart(2, '0').toUpperCase()}`; }
+const hex4 = hexAddress;
+function hex2(n: number): string { return hexAddress(n, 1); }
 
 function flag(f: number, bit: number): string { return (f >> bit & 1) ? '1' : '0'; }
 
@@ -251,8 +253,9 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private readonly scopeService = new ScopeService();
     private readonly variableService = new VariableService();
     private readonly cExpressionService = new CExpressionService();
-    private readonly scopeHandles = new DapHandleStore<ScopeHandle>();
-    private readonly variableHandles = new DapHandleStore<VariableHandle>();
+    // Every DAP variablesReference belongs to one namespace, regardless of
+    // whether it represents a scope, a Watch result, or an aggregate child.
+    private readonly variablesHandles = new DapHandleStore<VariablesHandle>();
 
     constructor(
         private readonly lifecycle: EmulatorLifecycle,
@@ -636,7 +639,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                 scopes: [
                     ...semanticScopes.map(scope => ({
                         name: scope.name,
-                        variablesReference: this.scopeHandles.create(this.stoppedGeneration, {
+                        variablesReference: this.variablesHandles.create(this.stoppedGeneration, {
                             frameId,
                             kind: scope.kind,
                             scope,
@@ -655,9 +658,9 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
     private machineScopes(frameId: number): any[] {
         return [
-            { name: 'Registers', variablesReference: this.scopeHandles.create(this.stoppedGeneration, { frameId, kind: 'registers' }), expensive: false, presentationHint: 'registers' },
-            { name: 'Flags', variablesReference: this.scopeHandles.create(this.stoppedGeneration, { frameId, kind: 'flags' }), expensive: false },
-            { name: 'Raw Stack', variablesReference: this.scopeHandles.create(this.stoppedGeneration, { frameId, kind: 'stack' }), expensive: false },
+            { name: 'Registers', variablesReference: this.variablesHandles.create(this.stoppedGeneration, { frameId, kind: 'registers' }), expensive: false, presentationHint: 'registers' },
+            { name: 'Flags', variablesReference: this.variablesHandles.create(this.stoppedGeneration, { frameId, kind: 'flags' }), expensive: false },
+            { name: 'Raw Stack', variablesReference: this.variablesHandles.create(this.stoppedGeneration, { frameId, kind: 'stack' }), expensive: false },
         ];
     }
 
@@ -667,8 +670,13 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
     private async onVariables(req: any): Promise<void> {
         const ref = req.arguments?.variablesReference ?? 0;
-        const variable = this.variableHandles.get(this.stoppedGeneration, ref);
-        if (variable) {
+        const handle = this.variablesHandles.get(this.stoppedGeneration, ref);
+        if (!handle) {
+            this.sendResponseBody(req, { variables: [] });
+            return;
+        }
+        if ('value' in handle) {
+            const variable = handle;
             if (variable.depth >= 8) {
                 this.sendResponseBody(req, { variables: [] });
                 return;
@@ -677,11 +685,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             this.sendResponseBody(req, { variables: children.map(child => this.withVariableHandle(child, variable.context, variable.depth + 1)) });
             return;
         }
-        const scope = this.scopeHandles.get(this.stoppedGeneration, ref);
-        if (!scope) {
-            this.sendResponseBody(req, { variables: [] });
-            return;
-        }
+        const scope = handle;
         if ('scope' in scope) {
             const frame = this.stopContext && this.stackTraceService.frame(this.stoppedGeneration, scope.frameId);
             if (!this.debugMetadata || !this.stopContext || !frame) {
@@ -763,7 +767,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         const count = (dapVariable.namedVariables ?? 0) + (dapVariable.indexedVariables ?? 0);
         return {
             ...dapVariable,
-            variablesReference: count === 0 ? 0 : this.variableHandles.create(this.stoppedGeneration, { context, value: valueData, depth }),
+            variablesReference: count === 0 ? 0 : this.variablesHandles.create(this.stoppedGeneration, { context, value: valueData, depth }),
         };
     }
 
@@ -1497,108 +1501,91 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     }
 
     // -----------------------------------------------------------------------
-    // evaluate — selected-frame C scalars, then register names and hex literals
+    // evaluate — one typed expression path for Watch, Console, and hover
     // -----------------------------------------------------------------------
 
     private async onEvaluate(req: any): Promise<void> {
         const expression = String(req.arguments?.expression ?? '').trim();
         const frameId = req.arguments?.frameId;
-        if (typeof frameId === 'number' && this.debugMetadata && this.stopContext) {
-            const frame = this.stackTraceService.frame(this.stoppedGeneration, frameId);
-            if (frame) {
-                try {
-                    const variables = this.scopeService.scopes(this.debugMetadata!, frame)
-                        .flatMap(scope => scope.variables);
-                    // Dotted assembler constants (`char.health`) are ELF symbols,
-                    // not member paths; substitute their values before parsing.
-                    const substituted = substituteKnownSymbols(expression, name => {
-                        const entry = uniqueSymbolValue(this.debugIndex?.symbols(name) ?? []);
-                        return entry?.kind === 'constant' ? entry.value : undefined;
-                    });
-                    const result = await this.evaluateExpression(req.arguments?.context, substituted, {
-                        resolve: async name => {
-                            const variable = variables.find(candidate => candidate.name === name);
-                        if (variable) {
-                            const evaluated = await this.variableService.evaluate(
-                                this.debugMetadata!, this.stopContext!, frame.physicalFrame, variable,
-                            );
-                            return { value: evaluated.value, name };
-                        }
-                        const register = selectedFrameRegister(name, frame.physicalFrame.registers);
-                        if (register !== undefined) { return register; }
-                        // Assembler symbols: labels and constants, including
-                        // generated `.struct` offset constants (see below).
-                        const symbolValue = await this.symbolFallbackValue(name);
-                        if (symbolValue !== undefined) { return symbolValue; }
-                        throw new Error(`Unknown identifier '${name}' in frame ${frame.name}`);
-                        },
-                        read: (type, address) => this.variableService.readAt(this.stopContext!, type, address),
-                        resolveType: expressionTypeResolver(variables.map(variable => variable.typeOffset === undefined ? undefined : this.debugMetadata!.typeOf(variable.typeOffset))),
-                    });
-                    const dapResult = this.withVariableHandle(dapVariableValue(result.value, expression), this.stopContext!, 0);
-                    this.sendResponseBody(req, { result: dapResult.value, type: dapResult.type, memoryReference: dapResult.memoryReference, variablesReference: dapResult.variablesReference, namedVariables: dapResult.namedVariables, indexedVariables: dapResult.indexedVariables });
-                } catch (error) {
-                    this.sendResponse(req, false, error instanceof Error ? error.message : String(error));
-                }
-                return;
-            }
+        const context = this.stopContext;
+        const metadata = this.debugMetadata;
+        const frame = context && typeof frameId === 'number'
+            ? this.stackTraceService.frame(this.stoppedGeneration, frameId)
+            : undefined;
+        if (context && typeof frameId === 'number' && !frame) {
+            this.sendResponse(req, false, 'The selected frame is no longer available');
+            return;
         }
 
-        const expr = expression.toUpperCase();
-        const regs = await this.safeGetRegs();
-
-        if (regs) {
-            const val = this.evalExpression(expr, regs);
-            if (val !== undefined) {
-                this.sendResponseBody(req, {
-                    result: typeof val === 'number'
-                        ? BYTE_REGISTER_EXPRESSIONS.has(expr) ? hex2(val) : hex4(val)
-                        : val,
-                    variablesReference: 0,
-                });
-                return;
-            }
+        // ASM has one hover owner, with definition links and instruction-aware
+        // register pairs. Native C debug hovers continue to use this evaluator.
+        const source = frame?.source ?? this.debugIndex?.resolveAddress(frame?.instructionPc ?? context?.pc ?? 0);
+        const assemblerFrame = source ? isAssemblerSource(source.file)
+            : this.debugIndex?.sourceFiles.length && this.debugIndex.sourceFiles.every(isAssemblerSource);
+        if (req.arguments?.context === 'hover' && assemblerFrame) {
+            this.sendResponse(req, false, 'Assembler hovers are provided by the language provider');
+            return;
         }
 
-        // Without a semantic frame, assembler symbols still evaluate: absolute
-        // constants to their value, RAM labels to live memory at the address.
-        if (this.debugIndex && SYMBOL_NAME_PATTERN.test(expression)) {
-            const entry = uniqueSymbolValue(this.debugIndex.symbols(expression));
-            if (entry) {
-                const value = entry.kind === 'constant'
-                    ? entry.value
-                    : await this.readSymbolMemory(entry) ?? entry.address;
-                this.sendResponseBody(req, { result: hex4(value), variablesReference: 0 });
-                return;
-            }
+        try {
+            const regs = frame ? undefined : context ? this.cachedRegs : await this.safeGetRegs();
+            const physicalFrame = frame?.physicalFrame ?? (context ? {
+                index: 0, pc: context.pc, sp: context.sp, registers: context.topRegisters,
+            } : undefined);
+            const variables = metadata && context
+                ? this.scopeService.scopes(metadata, frame ?? { instructionPc: context.pc })
+                    .flatMap(scope => scope.variables)
+                : [];
+            const substituted = substituteKnownSymbols(expression, name => {
+                const entry = uniqueSymbolValue(this.debugIndex?.symbols(name) ?? []);
+                return entry?.kind === 'constant' ? entry.value : undefined;
+            });
+            const result = await this.evaluateExpression(req.arguments?.context, substituted, {
+                resolve: async name => {
+                    const variable = variables.find(candidate =>
+                        (candidate.name || metadata?.resolveAbstractOrigin(candidate)?.name) === name);
+                    if (variable && metadata && context && physicalFrame) {
+                        const evaluated = await this.variableService.evaluate(metadata, context, physicalFrame, variable);
+                        return { value: evaluated.value, name };
+                    }
+                    const register = physicalFrame
+                        ? selectedFrameRegister(name, physicalFrame.registers)
+                        : regs ? selectedFrameRegister(name, toDwarfRegisters(regs)) : undefined;
+                    const machineRegister = register ?? (regs ? this.evalExpression(name.toUpperCase(), regs) : undefined);
+                    if (machineRegister !== undefined) {
+                        const type = { ...labelAddressTypeInfo(), byteSize: BYTE_REGISTER_EXPRESSIONS.has(name.toUpperCase()) ? 1 : 2 };
+                        return { value: scalarValue(machineRegister, type), name };
+                    }
+                    return this.symbolFallbackValue(name, context);
+                },
+                read: (type, address) => context
+                    ? this.variableService.readAt(context, type, address)
+                    : Promise.resolve({ type, address, availability: 'unreadable' }),
+                resolveType: expressionTypeResolver(variables.map(variable => {
+                    const offset = variable.typeOffset ?? metadata?.resolveAbstractOrigin(variable)?.typeOffset;
+                    return offset === undefined ? undefined : metadata?.typeOf(offset);
+                })),
+            });
+            const variable = dapVariableValue(result.value, expression);
+            const dapResult = context ? this.withVariableHandle(variable, context, 0) : variable;
+            this.sendResponseBody(req, { result: dapResult.value, type: dapResult.type, memoryReference: dapResult.memoryReference, variablesReference: dapResult.variablesReference, namedVariables: dapResult.namedVariables, indexedVariables: dapResult.indexedVariables });
+        } catch (error) {
+            this.sendResponse(req, false, error instanceof Error ? error.message : String(error));
         }
-
-        this.sendResponse(req, false, `Cannot evaluate: ${req.arguments?.expression}`);
     }
 
-    /**
-     * Resolve an assembler symbol for expression evaluation: an absolute
-     * constant evaluates as its numeric value; a symbol in a real section is
-     * an addressable object and evaluates as live memory at its address.
-     */
-    private async symbolFallbackValue(name: string): Promise<number | import('./c-expression-service').ExpressionValue | undefined> {
+    /** Resolve untyped ELF symbols only after trying the DWARF variable/type graph. */
+    private async symbolFallbackValue(name: string, context: DebugStopContext | undefined): Promise<import('./c-expression-service').ExpressionValue | undefined> {
         const entry = uniqueSymbolValue(this.debugIndex?.symbols(name) ?? []);
         if (!entry) { return undefined; }
-        if (entry.kind === 'constant') { return entry.value; }
+        if (entry.kind === 'constant' || entry.kind === 'address') {
+            return { name, value: scalarValue(entry.kind === 'constant' ? entry.value : entry.address, labelAddressTypeInfo()) };
+        }
         const type = labelTypeInfo(entry.byteSize);
-        const value = await this.variableService.readAt(this.stopContext!, type, entry.address);
-        return { value: { ...value, address: entry.address }, name };
-    }
-
-    /** Read live bytes for a memory symbol; undefined when unreadable. */
-    private async readSymbolMemory(entry: Extract<SymbolValue, { kind: 'memory' }>): Promise<number | undefined> {
-        if (!this.stopContext) { return undefined; }
-        const value = await this.variableService.readAt(
-            this.stopContext, labelTypeInfo(entry.byteSize), entry.address);
-        if (value.availability !== 'available' || !value.bytes) { return undefined; }
-        let result = 0;
-        for (let index = 0; index < value.bytes.length; index++) { result |= value.bytes[index] << (index * 8); }
-        return result >>> 0;
+        const value: TypedValue = context
+            ? await this.variableService.readAt(context, type, entry.address)
+            : { type, address: entry.address, availability: 'unreadable' };
+        return { value, name };
     }
 
     private async evaluateExpression(
@@ -1607,7 +1594,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         evaluationContext: import('./c-expression-service').CExpressionContext,
     ): Promise<import('./c-expression-service').ExpressionValue> {
         const evaluation = this.cExpressionService.evaluateValue(expression, evaluationContext);
-        if (context !== 'hover') { return evaluation; }
+        if (!isHoverEvaluation(context)) { return evaluation; }
         let timeout: NodeJS.Timeout | undefined;
         try {
             return await Promise.race([
@@ -1640,11 +1627,6 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             M:  regs.m,
         };
         if (expr in map) { return map[expr]; }
-
-        // Hex literal: 0x..., $..., or decimal
-        const hexMatch = expr.match(/^(?:0X([0-9A-F]+)|\$([0-9A-F]+))$/);
-        if (hexMatch) { return parseInt(hexMatch[1] ?? hexMatch[2], 16); }
-        if (/^\d+$/.test(expr)) { return parseInt(expr, 10); }
 
         return undefined;
     }
@@ -2108,16 +2090,14 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         this.stoppedGeneration++;
         this.stopContext = undefined;
         this.stackTraceService.clear();
-        this.scopeHandles.reset(this.stoppedGeneration);
-        this.variableHandles.reset(this.stoppedGeneration);
+        this.variablesHandles.reset(this.stoppedGeneration);
     }
 
     private captureStopContext(): void {
         if (!this.debugMetadata || !this.client || !this.cachedRegs) { return; }
         this.stoppedGeneration++;
         this.stopContext = DebugStopContext.from(this.debugMetadata, this.client, this.cachedRegs);
-        this.scopeHandles.reset(this.stoppedGeneration);
-        this.variableHandles.reset(this.stoppedGeneration);
+        this.variablesHandles.reset(this.stoppedGeneration);
     }
 
     private async cleanup(terminateDebuggee: boolean): Promise<void> {
