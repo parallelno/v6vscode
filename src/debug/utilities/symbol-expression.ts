@@ -1,3 +1,4 @@
+import { parseIntegerLiteral } from '../../shared/numbers';
 export type SymbolResolver = (name: string) => number;
 
 const BARE_SYMBOL_PATTERN = /^[A-Za-z_.@][A-Za-z0-9_.@$]*$/;
@@ -75,7 +76,7 @@ class Parser {
         const number = /^(?:0x[0-9a-f]+|\$[0-9a-f]+|[0-9a-f]+h|[0-9]+)/i.exec(rest)?.[0];
         if (number) {
             this.offset += number.length;
-            return parseNumericLiteral(number);
+            return checked(parseIntegerLiteral(number)!);
         }
         const symbol = SYMBOL_TOKEN_PATTERN.exec(rest)?.[0];
         if (symbol) {
@@ -97,12 +98,6 @@ class Parser {
     }
 }
 
-function parseNumericLiteral(value: string): number {
-    if (value.startsWith('$')) { return parseInt(value.slice(1), 16); }
-    if (/^0x/i.test(value)) { return parseInt(value.slice(2), 16); }
-    if (/h$/i.test(value)) { return parseInt(value.slice(0, -1), 16); }
-    return parseInt(value, 10);
-}
 
 function checked(value: number): number {
     if (!Number.isSafeInteger(value)) { throw new Error('Expression is outside the safe integer range'); }

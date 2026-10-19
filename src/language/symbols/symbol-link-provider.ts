@@ -1,3 +1,4 @@
+import { codeBeforeComment } from '../asm-lexical';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { ActiveProjectService } from '../../project/active/active-project-service';
@@ -175,15 +176,4 @@ export class SymbolLinkProvider implements vscode.HoverProvider, vscode.Definiti
             executable: project.run.executable,
         };
     }
-}
-
-function codeBeforeComment(line: string): string {
-    let quoted = false;
-    let result = '';
-    for (const character of line) {
-        if (character === '"') { quoted = !quoted; result += ' '; continue; }
-        if (!quoted && character === ';') { break; }
-        result += quoted ? ' ' : character;
-    }
-    return result;
 }

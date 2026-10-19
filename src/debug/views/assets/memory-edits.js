@@ -1,3 +1,4 @@
+import { parseIntegerLiteral, formatHex as hex } from '../../../../out/webview/numbers.js';
 // @ts-check
 (function () {
     // @ts-ignore
@@ -29,24 +30,15 @@
     let listMenuSource = null;
 
     function post(message) { vscode.postMessage({ generation, ...message }); }
-    function hex(value, width) { return `0x${Number(value).toString(16).toUpperCase().padStart(width, '0')}`; }
     function parseByte(text) {
-        const value = text.trim(); let parsed;
-        if (/^[0-9]+$/.test(value)) parsed = parseInt(value, 10);
-        else if (/^\$[0-9a-f]+$/i.test(value)) parsed = parseInt(value.slice(1), 16);
-        else if (/^0x[0-9a-f]+$/i.test(value)) parsed = parseInt(value.slice(2), 16);
-        else if (/^[0-9a-f]+h$/i.test(value)) parsed = parseInt(value.slice(0, -1), 16);
-        else throw new Error('Enter a byte as decimal, $NN, 0xNN, or NNh');
+        const parsed = parseIntegerLiteral(text);
+        if (parsed === undefined) throw new Error('Enter a byte as decimal, $NN, 0xNN, or NNh');
         if (parsed > 255) throw new Error('Byte value must be in the range 0..255');
         return parsed;
     }
     function parseAddress(text) {
-        const value = text.trim(); let parsed;
-        if (/^[0-9]+$/.test(value)) parsed = parseInt(value, 10);
-        else if (/^\$[0-9a-f]+$/i.test(value)) parsed = parseInt(value.slice(1), 16);
-        else if (/^0x[0-9a-f]+$/i.test(value)) parsed = parseInt(value.slice(2), 16);
-        else if (/^[0-9a-f]+h$/i.test(value)) parsed = parseInt(value.slice(0, -1), 16);
-        else throw new Error('Enter an address as decimal, $NN, 0xNN, or NNh');
+        const parsed = parseIntegerLiteral(text);
+        if (parsed === undefined) throw new Error('Enter an address as decimal, $NN, 0xNN, or NNh');
         if (!Number.isSafeInteger(parsed)) throw new Error('Address is outside the supported range');
         return parsed;
     }

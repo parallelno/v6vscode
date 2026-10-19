@@ -1,3 +1,4 @@
+import { codeBeforeComment } from '../asm-lexical';
 import { SourceLocation, SymbolInfo } from '../../debug/metadata/debug-index';
 import { DebugSymbolService } from '../../debug/metadata/debug-symbol-service';
 import { resolveDebugSourcePath } from '../../debug/metadata/debug-source-path';
@@ -251,16 +252,6 @@ export class DebugSourceSymbolLinkService implements SourceSymbolLinkService {
     }
 }
 
-function codeBeforeComment(line: string): string {
-    let quoted = false;
-    let result = '';
-    for (const character of line) {
-        if (character === '"') { quoted = !quoted; result += ' '; continue; }
-        if (!quoted && character === ';') { break; }
-        result += quoted ? ' ' : character;
-    }
-    return result;
-}
 
 function escapeRegExp(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

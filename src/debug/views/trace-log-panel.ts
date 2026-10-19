@@ -1,3 +1,4 @@
+import { formatHex } from '../../shared/numbers';
 import * as crypto from 'crypto';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -429,7 +430,7 @@ export class TraceLogPanel implements vscode.Disposable {
     }
 }
 
-function formatAddress(value: number): string { return `0x${value.toString(16).toUpperCase().padStart(4, '0')}`; }
+function formatAddress(value: number): string { return formatHex(value, 4); }
 function validGeneration(value: number): boolean { return Number.isSafeInteger(value) && value > 0; }
 function validIndex(value: number): boolean { return Number.isSafeInteger(value) && value >= 0; }
 function validLines(value: number): boolean { return Number.isSafeInteger(value) && value > 0 && value <= 4096; }

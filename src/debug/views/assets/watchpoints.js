@@ -1,3 +1,4 @@
+import { parseIntegerLiteral, formatHex as hex } from '../../../../out/webview/numbers.js';
 // @ts-check
 (function () {
     // @ts-ignore
@@ -28,7 +29,6 @@
     let stoppedIds = new Set();
 
     function post(message) { vscode.postMessage({ generation, ...message }); }
-    function hex(value, width) { return `0x${Number(value).toString(16).toUpperCase().padStart(width, '0')}`; }
     function watchpointValue(entry) { return hex(entry.value, entry.type === 'WORD' ? 4 : 2); }
     function defaultWatchpoint() {
         return { globalAddr: '0', len: 1, value: 0, access: 'RW', condition: 'ANY', type: 'LEN', active: true, comment: '' };
@@ -135,7 +135,7 @@
     function wrap(control, className = '') { const element = cell(className); element.appendChild(control); return element; }
     function input(type, value, label) { const element = document.createElement('input'); element.type = type; if (type === 'checkbox') element.checked = Boolean(value); else element.value = String(value); element.setAttribute('aria-label', label); return element; }
     function select(values, selected, label) { const element = document.createElement('select'); element.setAttribute('aria-label', label); values.forEach(value => { const option = document.createElement('option'); option.value = value; option.textContent = value; option.selected = value === selected; element.appendChild(option); }); return element; }
-    function parseNumber(text) { const value = text.trim(); let parsed; if (/^\$[0-9a-f]+$/i.test(value)) parsed = parseInt(value.slice(1), 16); else if (/^0x[0-9a-f]+$/i.test(value)) parsed = parseInt(value.slice(2), 16); else if (/^[0-9a-f]+h$/i.test(value)) parsed = parseInt(value.slice(0, -1), 16); else if (/^[0-9]+$/.test(value)) parsed = parseInt(value, 10); else throw new Error(`Invalid number: ${text}`); return parsed; }
+    function parseNumber(text) { const value = parseIntegerLiteral(text); if (value === undefined) throw new Error(`Invalid number: ${text}`); return value; }
     function parseNumericField(control) {
         try { return parseNumber(control.value); }
         catch (error) {

@@ -76,7 +76,7 @@ export class WatchpointsProvider implements vscode.Disposable {
         const assetsUri = vscode.Uri.joinPath(this.extensionUri, 'src', 'debug', 'views', 'assets');
         const panel = vscode.window.createWebviewPanel(
             'v6.watchpoints', 'Watchpoints', vscode.ViewColumn.Beside,
-            { enableScripts: true, localResourceRoots: [assetsUri], retainContextWhenHidden: true },
+            { enableScripts: true, localResourceRoots: [assetsUri, vscode.Uri.joinPath(this.extensionUri, 'out', 'webview')], retainContextWhenHidden: true },
         );
         this.panel = panel;
         panel.webview.html = this.html(panel.webview, assetsUri);
@@ -333,13 +333,13 @@ export class WatchpointsProvider implements vscode.Disposable {
         const cssUri = webview.asWebviewUri(vscode.Uri.joinPath(assetsUri, 'watchpoints.css'));
         const jsUri = webview.asWebviewUri(vscode.Uri.joinPath(assetsUri, 'watchpoints.js'));
         return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src ${webview.cspSource} 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${cssUri}"><title>Watchpoints</title></head>
 <body><div id="status" role="status">No active emulator session</div><div id="table" role="grid" aria-label="V6 Watchpoints">
 <div class="header" role="row"><span role="columnheader">Activity</span><span role="columnheader">Global Address</span><span role="columnheader">Access</span><span role="columnheader">Condition</span><span role="columnheader">Value</span><span role="columnheader">Type</span><span role="columnheader">Len</span><span role="columnheader">Comment</span></div>
 <div id="rows"></div><div id="empty" tabindex="0">No watchpoints</div></div><div id="preview" role="tooltip" hidden></div><div id="live" class="sr-only" aria-live="polite"></div>
 <div id="menu" role="menu" hidden><button role="menuitem" data-action="add">Add</button><button role="menuitem" data-action="reveal">Find in Hex Viewer</button><button role="menuitem" data-action="toggle">Enable</button><button role="menuitem" data-action="delete">Delete</button><button role="menuitem" data-action="disableAll">Disable All</button><button role="menuitem" data-action="deleteAll">Delete All</button></div>
-<script nonce="${nonce}" src="${jsUri}"></script></body></html>`;
+<script type="module" nonce="${nonce}" src="${jsUri}"></script></body></html>`;
     }
 }
 

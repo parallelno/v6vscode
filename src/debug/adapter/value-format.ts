@@ -1,3 +1,4 @@
+import { formatHex } from '../../shared/numbers';
 import { TypeInfo } from '../metadata/dwarf-types';
 import { EvaluatedLocation } from '../metadata/dwarf-expression';
 
@@ -63,7 +64,7 @@ export function escapeCharacter(value: number): string {
 }
 
 export function hexAddress(address: number, byteSize = 2): string {
-    return `0x${(address >>> 0).toString(16).padStart(byteSize * 2, '0').toUpperCase()}`;
+    return formatHex(address >>> 0, byteSize * 2);
 }
 
 /** Encode an immediate using the same width rules as memory-backed values. */

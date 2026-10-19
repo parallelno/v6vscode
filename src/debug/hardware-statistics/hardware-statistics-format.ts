@@ -1,3 +1,4 @@
+import { parseIntegerLiteral, formatHex as hex } from '../../shared/numbers';
 import { HardwareStatisticsSnapshot } from './hardware-statistics-model';
 
 export interface HardwareStatisticsRow {
@@ -52,13 +53,8 @@ export function paletteTooltip(index: number, hwColor: number): string {
 }
 
 export function parseHardwareByte(input: string): number {
-    const value = input.trim();
-    let parsed: number;
-    if (/^0x[0-9a-f]+$/i.test(value)) parsed = Number.parseInt(value.slice(2), 16);
-    else if (/^\$[0-9a-f]+$/i.test(value)) parsed = Number.parseInt(value.slice(1), 16);
-    else if (/^[0-9a-f]+h$/i.test(value)) parsed = Number.parseInt(value.slice(0, -1), 16);
-    else if (/^[0-9]+$/.test(value)) parsed = Number.parseInt(value, 10);
-    else throw new Error('Palette color must be one byte in decimal, 0xNN, $NN, or NNh form');
+    const parsed = parseIntegerLiteral(input);
+    if (parsed === undefined) { throw new Error('Palette color must be one byte in decimal, 0xNN, $NN, or NNh form'); }
     if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 0xFF) {
         throw new Error('Palette color must be in the range 0..255');
     }
@@ -74,7 +70,3 @@ function formatUptime(uptimeMs: number): string {
 }
 
 function bool(value: boolean): string { return value ? 'True' : 'False'; }
-
-function hex(value: number, width: number): string {
-    return `0x${value.toString(16).toUpperCase().padStart(width, '0')}`;
-}

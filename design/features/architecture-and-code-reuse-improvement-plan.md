@@ -1,6 +1,6 @@
 # Architecture, Code Reuse, and Maintainability Improvement Plan
 
-**Status:** Approved for staged implementation; R01-R04 implemented and verified in stage 1; R05/R06 implemented as a two-feature pilot in stage 2. R07-R24 remain pending.
+**Status:** Approved for staged implementation; R01-R04 complete in stage 1; R05/R06 complete as a two-feature pilot in stage 2; R07 complete in stage 3. R08-R24 remain pending.
 **Audit date:** 2026-10-18 (workspace session; some validation timestamps are 2026-10-19 UTC).
 **Owner:** v6vscode maintainers.
 **Repository:** `C:\Work\Programming\v6vscode`.
@@ -55,7 +55,15 @@ Stage 2 verification: **669 unit tests with zero skips**, 62 regressions, six re
 
 Intentional behavior changes: concurrent Memory Edits refreshes now coalesce within a session; malformed replies surface structured protocol failures; disconnected/disposed/old-session operations reject rather than crossing into a new session. No layout, public command, project JSON or IPC schema changes. No automatic mutation retry or rollback of already-sent commands is introduced. A pending operation settles when its guarded continuation or bounded transport deadline runs; invalidation is not remote cancellation. Custom transports must provide connection identity and honor the supplied dispatch scope. Shared artifact/symbol ownership remains for R11; browser build/panel-shell consolidation remains for R15/R16.
 
-**Next stage:** R07 pure numeric/byte/hex and ASM lexical helpers, characterized across existing consumers before extraction. R08 stop participants and R09 API/import-boundary gates follow as separate approved slices.
+## Implementation progress — stage 3 (R07)
+
+Shared unsigned decimal/explicit-hex conversion and minimum-digit hex formatting now serve host queries, palette input, address expressions, debugger address formatting, and Memory Edits/Watchpoints browser consumers. Feature range checks and error wording remain local: byte (0..255), CPU (0..65535), global-address limits, expression symbol lookup and explicit machine wrapping are not conflated. Both browser entry points import an ESM build of the same TypeScript numeric implementation; the standard compile/prepublish path emits it, resource roots/CSP allow it, and a packaged real webview test executes it. This is a narrow browser-safe build seed, not completion of R15's full browser checking/migration.
+
+The duplicated ASM string/comment maskers now use one offset-preserving helper. Existing double-quote toggling, semicolon handling and single-quote policy are retained. One intentional correctness fix preserves UTF-16 positions after astral characters inside masked strings. No UI layout or public schema changes.
+
+Verification: 676 unit tests, zero skips; 62 regressions; seven packaged Extension Host/emulator tests including the new CSP-restricted numeric ESM smoke and existing hover/value/stepping checks. CI/host/browser-shared compilation pass; lint remains at zero errors and the existing 66 warnings. Shared host/ESM literal vectors, explicit range/width policy checks and ASM offset tests pass.
+
+**Next stage:** R08 awaited stop participants, then R09 API/import-boundary gates as separate approved slices. R10-R24 remain separate roadmap work.
 
 ## 1. Executive assessment
 

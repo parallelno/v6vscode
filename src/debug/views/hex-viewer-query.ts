@@ -1,3 +1,4 @@
+import { parseIntegerLiteral } from '../../shared/numbers';
 import { bareSymbol, validateSymbolExpression } from '../utilities/symbol-expression';
 
 export type ParsedLocation =
@@ -50,18 +51,10 @@ function parseLocation(input: string): ParsedLocation | string {
         return 'Address or symbol is required';
     }
 
-    let value: number | undefined;
-    if (/^[0-9]+$/.test(input)) {
-        value = Number.parseInt(input, 10);
-    } else if (/^0x[0-9a-f]+$/i.test(input)) {
-        value = Number.parseInt(input.slice(2), 16);
-    } else if (/^[0-9a-f]+h$/i.test(input)) {
-        value = Number.parseInt(input.slice(0, -1), 16);
-    } else if (/^\$[0-9a-f]+$/i.test(input)) {
-        value = Number.parseInt(input.slice(1), 16);
-    } else if (bareSymbol(input)) {
+    const value = parseIntegerLiteral(input);
+    if (value === undefined && bareSymbol(input)) {
         return { kind: 'symbol', name: input };
-    } else {
+    } else if (value === undefined) {
         const error = validateSymbolExpression(input);
         return error ?? { kind: 'expression', value: input };
     }

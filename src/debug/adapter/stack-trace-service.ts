@@ -1,3 +1,4 @@
+import { formatHex } from '../../shared/numbers';
 import { DebugStopContext, PhysicalFrame } from '../metadata/debug-stop-context';
 import { DapHandleStore } from './dap-handle-store';
 
@@ -84,5 +85,5 @@ export class StackTraceService {
 }
 
 function hex4(address: number): string {
-    return `0x${(address & 0xFFFF).toString(16).padStart(4, '0').toUpperCase()}`;
+    return formatHex(address & 0xFFFF, 4);
 }

@@ -1,3 +1,4 @@
+import { formatHex } from '../../shared/numbers';
 import * as crypto from 'crypto';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -312,7 +313,7 @@ export class PerformancePanel implements vscode.Disposable {
 }
 
 function validId(value: number): boolean { return Number.isSafeInteger(value) && value >= 0 && value <= 0x7FFFFFFF; }
-function formatAddress(value: number): string { return `0x${value.toString(16).toUpperCase().padStart(4, '0')}`; }
+function formatAddress(value: number): string { return formatHex(value, 4); }
 function performanceErrorField(error: unknown): 'addrStart' | 'addrEnd' | undefined {
     const field = diagnosticField(error);
     return field === 'addrStart' || field === 'addrEnd' ? field : undefined;

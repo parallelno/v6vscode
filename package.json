@@ -528,7 +528,8 @@
     ]
   },
   "scripts": {
-    "compile": "tsc -p ./",
+    "compile": "tsc -p ./ && npm run compile:browser-shared",
+    "compile:browser-shared": "tsc -p tsconfig.browser-shared.json",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts",
     "test": "npm run test:unit",

@@ -1,3 +1,5 @@
+import { parseIntegerLiteral } from '../../shared/numbers';
+
 export type ParsedMemoryEditQuery =
     | { kind: 'empty' }
     | { kind: 'value'; value: number }
@@ -6,16 +8,8 @@ export type ParsedMemoryEditQuery =
 export function parseMemoryEditQuery(input: string): ParsedMemoryEditQuery {
     const text = input.trim();
     if (!text) { return { kind: 'empty' }; }
-    let value: number;
-    if (/^[0-9]+$/.test(text)) {
-        value = Number.parseInt(text, 10);
-    } else if (/^\$[0-9a-f]+$/i.test(text)) {
-        value = Number.parseInt(text.slice(1), 16);
-    } else if (/^0x[0-9a-f]+$/i.test(text)) {
-        value = Number.parseInt(text.slice(2), 16);
-    } else if (/^[0-9a-f]+h$/i.test(text)) {
-        value = Number.parseInt(text.slice(0, -1), 16);
-    } else {
+    const value = parseIntegerLiteral(text);
+    if (value === undefined) {
         return { kind: 'invalid', message: 'Enter a byte as decimal, $NN, 0xNN, or NNh' };
     }
     return value <= 0xFF

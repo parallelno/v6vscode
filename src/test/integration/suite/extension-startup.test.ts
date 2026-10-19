@@ -30,4 +30,25 @@ suite('Language presentation startup', () => {
             assert.notStrictEqual(path.resolve(extension.extensionPath).toLowerCase(), sourceRoot);
         }
     });
+
+    test('loads the shared numeric ESM in a CSP-restricted webview from shipped resources', async () => {
+        const extension = vscode.extensions.getExtension('parallelno.v6vscode')!;
+        const root = vscode.Uri.joinPath(extension.extensionUri, 'out', 'webview');
+        const panel = vscode.window.createWebviewPanel('v6.numericSmoke', 'Numeric smoke', vscode.ViewColumn.Beside,
+            { enableScripts: true, localResourceRoots: [root] });
+        const moduleUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, 'numbers.js'));
+        try {
+            const result = new Promise<unknown>((resolve, reject) => {
+                const timer = setTimeout(() => reject(new Error('Shared numeric module did not load in webview')), 10000);
+                panel.webview.onDidReceiveMessage(value => { clearTimeout(timer); resolve(value); });
+            });
+            panel.webview.html = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy"
+                content="default-src 'none'; script-src ${panel.webview.cspSource} 'nonce-numericSmoke';"></head><body>
+                <script type="module" nonce="numericSmoke">
+                    import { parseIntegerLiteral, formatHex } from '${moduleUri}';
+                    acquireVsCodeApi().postMessage({ byte: parseIntegerLiteral('$FF'), hex: formatHex(0x20ffff, 6) });
+                </script></body></html>`;
+            assert.deepStrictEqual(await result, { byte: 255, hex: '0x20FFFF' });
+        } finally { panel.dispose(); }
+    });
 });
