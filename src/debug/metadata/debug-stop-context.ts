@@ -36,7 +36,7 @@ export class DebugStopContext {
 
     static from(
         metadata: DebugMetadataIndex,
-        client: import('../../emulator/client/ipc-client').IpcClient,
+        client: import('../../emulator/session/session-operations').CommandSender,
         regs: import('../../emulator/protocol/ipc-commands').GetRegsResponse,
     ): DebugStopContext {
         return new DebugStopContext(metadata, new StopMemoryReader(client), toDwarfRegisters(regs));

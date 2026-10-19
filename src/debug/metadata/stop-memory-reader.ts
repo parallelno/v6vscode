@@ -6,14 +6,14 @@
  * so a single bad read degrades one variable rather than aborting the stop.
  */
 
-import { IpcClient } from '../../emulator/client/ipc-client';
+import type { CommandSender } from '../../emulator/session/session-operations';
 import { IpcCommand } from '../../emulator/protocol/ipc-commands';
 import { ReadMemoryResponse } from '../../emulator/protocol/memory-models';
 
 const MAX_READ = 256;
 
 export class StopMemoryReader {
-    constructor(private readonly client: IpcClient) {}
+    constructor(private readonly client: CommandSender) {}
 
     /** Read a little-endian integer of byteSize (1 or 2) at a 16-bit address. */
     async read(address: number, byteSize: number): Promise<number | undefined> {

@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { IpcClient } from '../../emulator/client/ipc-client';
+import type { SessionLease } from '../../emulator/session/session-coordinator';
+import type { CommandSender } from '../../emulator/session/session-operations';
 import { EmulatorProcess } from '../../emulator/launcher/v6emul-launcher';
 import { DebugLaunchRequest, EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
 import type { EmulatorPanel } from '../../emulator/panel/emulator-panel';
@@ -9,7 +10,6 @@ import {
     IpcCommand,
     GetRegsResponse,
     IsRunningResponse,
-    PingResponse,
 } from '../../emulator/protocol/ipc-commands';
 import {
     BreakpointOperand,
@@ -29,7 +29,7 @@ import { DebugStopContext } from '../metadata/debug-stop-context';
 import { resolveDebugSourcePath } from '../metadata/debug-source-path';
 import { Logger } from '../../platform/logging/logger';
 import { PathService } from '../../platform/files/path-service';
-import { getServerInfo, supportsStopRecords, validateDebuggerServer } from '../../emulator/protocol/ipc-server-info';
+import { supportsStopRecords } from '../../emulator/protocol/ipc-server-info';
 import { WatchpointService } from '../watchpoints/watchpoint-service';
 import { evaluateSymbolExpression, validateSymbolExpression } from '../utilities/symbol-expression';
 import type { WatchpointsProvider } from '../views/watchpoints-provider';
@@ -182,7 +182,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     readonly onDidSendMessage = this._onDidSendMessage.event;
 
     // IPC
-    private client: IpcClient | null = null;
+    private client: (CommandSender & { readonly connected: boolean }) | null = null;
+    private sessionLease: SessionLease | undefined;
     private emulatorProcess: EmulatorProcess | null = null;
 
     // Debug metadata
@@ -281,7 +282,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     }
 
     dispose(): void {
-        this.cleanup(false);
+        void this.cleanup(false).catch(error => this.logger.error(`v6-debug dispose: ${error}`));
         this._onDidSendMessage.dispose();
     }
 
@@ -370,15 +371,17 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             };
             this.stopOnEntry = Boolean(args.stopOnEntry);
             const launch = await this.lifecycle.startDebug(this.launchRequest);
-            const { client, process, port } = launch;
-            this.client = client;
+            const { process, port } = launch;
+            const lease = this.lifecycle.captureSession();
+            this.sessionLease = lease;
+            this.client = lease;
             this.emulatorProcess = process;
             this.stopRecordsSupported = this.lifecycle.serverInfo !== undefined
                 && supportsStopRecords(this.lifecycle.serverInfo);
             this.publishDynamicCapabilities();
             process.spawnResult.exitPromise.then(code => {
                 this.logger.info(`v6emul exited with code ${code}`);
-                if (!this.terminationRequested) {
+                if (this.sessionLease === lease && !this.terminationRequested) {
                     this.emitTerminated(code ?? 0);
                 }
             }).catch(() => {});
@@ -394,6 +397,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                 const romPath = String(args.program ?? '');
                 try {
                     const loadResult = await loadDebugArtifact(elfPath, romPath);
+                    lease.assertCurrent();
                     this.debugIndex = loadResult.index;
                     this.debugMetadata = loadResult.metadata;
                     this.debugMetadataError = '';
@@ -410,6 +414,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             }
 
             // Keep paused until configurationDone
+            lease.assertCurrent();
             this.sessionState = 'paused';
             try {
                 this.emulatorPanel.reveal();
@@ -427,7 +432,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         } catch (err: any) {
             this.logger.error(`v6-debug: launch failed: ${err?.stack ?? err}`);
             this.sendResponse(req, false, `Launch failed: ${err.message}`);
-            this.cleanup(true);
+            await this.cleanup(true).catch(error => this.logger.error(`v6-debug cleanup: ${error}`));
         }
     }
 
@@ -440,22 +445,11 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         try {
             const port = Number(args.port ?? 9876);
             const host = String(args.host ?? '127.0.0.1');
-            const client = new IpcClient(this.logger);
-            await client.connect(port, host);
-            this.client = client;
-
-            const serverInfo = await getServerInfo(client);
-            validateDebuggerServer(serverInfo);
-            this.stopRecordsSupported = supportsStopRecords(serverInfo);
+            const lease = await this.lifecycle.attach(port, host);
+            this.sessionLease = lease;
+            this.client = lease;
+            this.stopRecordsSupported = this.lifecycle.serverInfo !== undefined && supportsStopRecords(this.lifecycle.serverInfo);
             this.publishDynamicCapabilities();
-
-            const ping = await client.send<PingResponse>(IpcCommand.PING);
-            if (!ping.ok) {
-                throw new Error('PING failed');
-            }
-
-            await client.send(IpcCommand.DEBUG_ATTACH, { data: true });
-            await client.send(IpcCommand.STOP);
             this.sessionState = 'paused';
 
             this.sendResponseBody(req, {});
@@ -472,7 +466,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private async onConfigurationDone(req: any): Promise<void> {
         try {
             if (this.launchRequest) {
-                await this.lifecycle.loadDebugProgram(this.launchRequest);
+                await this.lifecycle.loadDebugProgram(this.launchRequest, this.sessionLease);
             }
             this.sendResponseBody(req, {});
 
@@ -486,7 +480,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             }
         } catch (err: any) {
             this.sendResponse(req, false, `Could not load debug program: ${err.message}`);
-            this.cleanup(true);
+            await this.cleanup(true).catch(error => this.logger.error(`v6-debug cleanup: ${error}`));
         }
     }
 
@@ -817,7 +811,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         this.pendingStep = false;
         this.sessionState = 'running';
         await this.client.send(IpcCommand.RUN, undefined, 5000, 'critical');
-        this.lifecycle.setExecutionRunning(true);
+        this.lifecycle.setExecutionRunning(true, this.sessionLease);
         this.sendEvent('continued', { threadId: THREAD_ID, allThreadsContinued: true });
         this.startPoll();
     }
@@ -830,7 +824,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         await this.cancelSourceStep();
         this.pendingPause = true;
         await this.client?.send(IpcCommand.STOP, undefined, 5000, 'critical');
-        this.lifecycle.setExecutionRunning(false);
+        this.lifecycle.setExecutionRunning(false, this.sessionLease);
         this.sendResponseBody(req, {});
         // Poll will detect the stop and emit StoppedEvent
     }
@@ -1014,12 +1008,12 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         if (!this.client) { return; }
         await this.captureStopBaseline();
         this.sessionState = 'running';
-        this.lifecycle.setExecutionRunning(true);
+        this.lifecycle.setExecutionRunning(true, this.sessionLease);
         this.sendEvent('continued', { threadId: THREAD_ID, allThreadsContinued: true });
         await this.client.send(IpcCommand.EXECUTE_INSTR, undefined, 5000, 'critical');
         // EXECUTE_INSTR keeps the emulator paused — read stop state immediately
         this.sessionState = 'paused';
-        this.lifecycle.setExecutionRunning(false);
+        this.lifecycle.setExecutionRunning(false, this.sessionLease);
         const record = this.stopRecordsSupported ? await this.readStopRecord() : undefined;
         if (record && record.sequence !== this.lastStopSequence) {
             this.lastStopSequence = record.sequence;
@@ -1652,7 +1646,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             const response = await this.client.send(IpcCommand.RESTART, undefined, 5000, 'critical');
             if (!response.ok) { throw new Error(response.error ?? 'Emulator restart failed'); }
             this.sessionState = 'paused';
-            this.lifecycle.setExecutionRunning(false);
+            this.lifecycle.setExecutionRunning(false, this.sessionLease);
             if (resume) {
                 await this.run();
             } else {
@@ -1672,7 +1666,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         await this.sendControl(IpcCommand.STOP, 'Emulator stop failed');
         await this.sendControl(IpcCommand.RESET, 'Emulator reset failed');
         this.sessionState = 'paused';
-        this.lifecycle.setExecutionRunning(false);
+        this.lifecycle.setExecutionRunning(false, this.sessionLease);
         if (resume) {
             await this.run();
         } else {
@@ -1690,7 +1684,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         await this.sendControl(IpcCommand.STOP, 'Emulator stop failed');
         await this.sendControl(IpcCommand.RESET, 'Emulator reset failed');
         await this.sendControl(IpcCommand.RESTART, 'Emulator restart failed');
-        await this.lifecycle.reloadDebugRom(this.launchRequest);
+        await this.lifecycle.reloadDebugRom(this.launchRequest, this.sessionLease);
         const debugResetRequest: DebugResetRequest = { resetRecorder: true };
         await this.sendControl(
             IpcCommand.DEBUG_RESET,
@@ -1698,7 +1692,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             debugResetRequest,
         );
         this.sessionState = 'paused';
-        this.lifecycle.setExecutionRunning(false);
+        this.lifecycle.setExecutionRunning(false, this.sessionLease);
         await this.run();
     }
 
@@ -1765,7 +1759,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                             this.pollingActive = false;
                             this.pollTimer = null;
                             this.sessionState = 'paused';
-                            this.lifecycle.setExecutionRunning(false);
+                            this.lifecycle.setExecutionRunning(false, this.sessionLease);
                             await this.onStop();
                             return;
                         }
@@ -1775,7 +1769,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                     this.pollingActive = false;
                     this.pollTimer = null;
                     this.sessionState = 'paused';
-                    this.lifecycle.setExecutionRunning(false);
+                    this.lifecycle.setExecutionRunning(false, this.sessionLease);
                     if (record) { this.lastStopSequence = record.sequence; }
                     await this.onStop(record);
                     return;
@@ -1912,11 +1906,11 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         await this.captureStopBaseline();
         this.cachedRegs = null;
         this.sessionState = 'running';
-        this.lifecycle.setExecutionRunning(true);
+        this.lifecycle.setExecutionRunning(true, this.sessionLease);
         const response = await this.client?.send(IpcCommand.RUN, undefined, 5000, 'critical');
         if (!response?.ok) {
             this.sessionState = 'paused';
-            this.lifecycle.setExecutionRunning(false);
+            this.lifecycle.setExecutionRunning(false, this.sessionLease);
             this.emitStopped('breakpoint', undefined, 'Logpoint automatic resume failed.');
             return;
         }
@@ -2112,8 +2106,11 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     }
 
     private async cleanup(terminateDebuggee: boolean): Promise<void> {
+        const lease = this.sessionLease;
+        const current = !lease || lease.connected;
+        const ownedTermination = current && terminateDebuggee && this.lifecycle.owner === 'debug';
         // A required save may fail. Do not discard the DAP session before it can be retried.
-        if (terminateDebuggee && this.lifecycle.owner === 'debug') { await this.lifecycle.stop(); }
+        if (ownedTermination) { await this.lifecycle.stop(); }
         this.stopPoll();
         await this.cancelSourceStep();
         await this.releaseSourceStepBreakpoints();
@@ -2124,7 +2121,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         this.lastResolvedSource = undefined;
 
         // Remove all DAP-owned breakpoints
-        if (this.client?.connected) {
+        if (current && this.client?.connected) {
             if (this.watchpointService?.available) {
                 for (const id of this.dapWatchpointIds) {
                     await this.watchpointService.delete(id).catch(() => {});
@@ -2134,16 +2131,11 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                 await this.client.send(IpcCommand.DEBUG_BREAKPOINT_DEL, { addr }).catch(() => {});
             }
             await this.client.send(IpcCommand.DEBUG_ATTACH, { data: false }).catch(() => {});
-            if (terminateDebuggee && this.lifecycle.owner !== 'debug') {
+            if (terminateDebuggee && this.lifecycle.owner !== 'debug' && !lease) {
                 await this.client.send(IpcCommand.EXIT, {}).catch(() => {});
             }
-            if (this.lifecycle.owner === 'debug') {
-                if (!terminateDebuggee) {
-                    this.lifecycle.disconnect();
-                }
-            } else {
-                this.client.disconnect();
-            }
+            // Both borrowed attach and owned launch detach through the coordinator.
+            if (!ownedTermination && (!lease || lease.connected)) { this.lifecycle.disconnect(); }
         }
 
         this.bpAddrToId.clear();
@@ -2154,6 +2146,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         this.watchpointIdToDapId.clear();
         this.dapWatchpointIds.clear();
         this.client = null;
+        this.sessionLease = undefined;
         this.emulatorProcess = null;
         this.cachedRegs = null;
         this.invalidateStopContext();

@@ -1,4 +1,4 @@
-import { IpcClient } from '../client/ipc-client';
+import type { CommandSender } from '../session/session-operations';
 import { GetServerInfoResponse, IpcCommand } from './ipc-commands';
 
 export const SUPPORTED_IPC_PROTOCOL_VERSION = 2;
@@ -14,7 +14,7 @@ export const SUPPORTED_SCRIPT_SCHEMA = 1;
 export const SUPPORTED_SCRIPT_OVERLAY_SCHEMA = 1;
 
 /** Reads and validates the required server metadata handshake. */
-export async function getServerInfo(client: IpcClient): Promise<GetServerInfoResponse> {
+export async function getServerInfo(client: CommandSender): Promise<GetServerInfoResponse> {
     const response = await client.send<GetServerInfoResponse>(IpcCommand.GET_SERVER_INFO);
     if (!response.ok) {
         throw new Error(

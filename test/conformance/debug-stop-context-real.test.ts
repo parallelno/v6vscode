@@ -16,6 +16,7 @@ import { DWARF_REG } from '../../src/debug/metadata/v6c-register-map';
 import { IpcClient } from '../../src/emulator/client/ipc-client';
 import { IpcCommand } from '../../src/emulator/protocol/ipc-commands';
 import { Logger } from '../../src/platform/logging/logger';
+import { SessionCoordinator } from '../../src/emulator/session/session-coordinator';
 
 const REPOSITORY_ROOT = repositoryRoot();
 const PROBE_ELF = fixturePath('cdbg', 'probe-O0.elf');
@@ -135,5 +136,21 @@ describe('DebugStopContext real-emulator verification', function () {
             await edits.deleteAll().catch(() => {});
             performance.dispose(); edits.dispose();
         }
+    });
+
+    it('negotiates a borrowed session through the coordinator and detaches without exiting the emulator', async () => {
+        client.disconnect();
+        const transport = new IpcClient(new Logger());
+        const coordinator = new SessionCoordinator({} as any, {} as any, transport, new Logger(), {} as any);
+        try {
+            const session = await coordinator.attach(port);
+            expect(coordinator.connectionSnapshot.ownership).to.equal('borrowed');
+            expect(coordinator.serverInfo?.protocolVersion).to.equal(2);
+            expect((await session.send(IpcCommand.GET_REGS)).ok).to.equal(true);
+            await coordinator.shutdown();
+            expect(session.connected).to.equal(false);
+            await client.connect(port);
+            expect((await client.send(IpcCommand.PING)).ok).to.equal(true);
+        } finally { coordinator.disconnect(); }
     });
 });

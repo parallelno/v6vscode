@@ -1,6 +1,6 @@
 # Architecture, Code Reuse, and Maintainability Improvement Plan
 
-**Status:** Approved for staged implementation; R01-R04 complete in stage 1; R05/R06 complete as a two-feature pilot in stage 2; R07 complete in stage 3; R08 complete in stage 4; R09 complete in stage 5. R10-R24 remain pending.
+**Status:** Approved for staged implementation; R01-R04 complete in stage 1; R05/R06 complete as a two-feature pilot in stage 2; R07 complete in stage 3; R08 complete in stage 4; R09 complete in stage 5; R10 complete in stage 6. R11-R24 remain pending.
 **Audit date:** 2026-10-18 (workspace session; some validation timestamps are 2026-10-19 UTC).
 **Owner:** v6vscode maintainers.
 **Repository:** `C:\Work\Programming\v6vscode`.
@@ -83,7 +83,17 @@ TypeScript-AST gates now distinguish type-only versus runtime imports/exports/re
 
 Verification: 692 unit tests, zero skips; 62 regressions; two live conformance tests; full host/test/browser-shared compilation and CI pass; zero lint errors with the pre-existing 66 warnings. Seven real Extension Host/emulator tests pass on 1.90.0 from source, seven pass from the packaged VSIX on current stable, and all seven pass from the packaged VSIX on 1.90.0. The package smoke executes numeric ESM under webview CSP and retains existing ASM value/hover and C breakpoint/stepping coverage. No new regressions were observed in these checks. Network/cache prerequisites and broader future browser checking remain explicit.
 
-**Next stage:** R10 session coordinator, incrementally reusing the scoped operations and awaited stop participants; R11 artifact ownership and later stages remain separate roadmap work. R01-R09 short-term groundwork is complete.
+Stage 5 commit: `3f9f8c7` — `Verify VS Code API floor and enforce architecture contracts`.
+
+## Implementation progress — stage 6 (R10)
+
+The session coordinator now owns run/debug/borrowed-attach connection establishment, common metadata/PING negotiation, debugger attachment, process monitoring, scope leases and teardown. EmulatorLifecycle remains an import-compatible facade, not a second state owner. An immutable snapshot separates connection, execution, ownership and mode. Attach no longer creates an invisible private DAP socket: shared feature observers see its negotiated session. Borrowed attach shutdown detaches without persistence/EXIT; attach refuses to silently replace a live owned process. Owned launch termination retains R08 save/retry behavior.
+
+Connection transitions serialize, reject superseded pending opens and cancel in-progress connection attempts; post-await and wire-dispatch guards prevent negotiation/reload/command crossover. DAP uses an origin-bound lease and guards lifecycle execution/program updates; old adapter cleanup/exit callbacks cannot disconnect or terminate the replacement. Transport loss invalidates observers and leases. Run reload moved behind the coordinator without changing LOAD_ROM versus SET_MEM policies. Process monitoring has one identity-checked implementation; no automatic mutation replay/reconnect is introduced. The compatibility state enum and existing command/view IDs remain stable. Broad breakpoint/execution policy extraction remains R14; program image normalization remains R18.
+
+Verification: 700 unit tests with zero skips, 62 regressions, seven minimum-version Extension Host/emulator tests, seven packaged current-version tests and three live conformance tests, including real borrowed attach/detach/reconnect. Host/browser-shared/full test compilation pass; CI passes with zero lint errors and the existing 66 warnings. New tests cover borrowed ownership, failed/delayed negotiation, stale leases/process exits, superseded launch and transport loss. Existing stop persistence, hover/value and stepping regressions remain green.
+
+**Next stage:** R11 versioned artifact repository and independent consumer selections, with same-path rebuild/concurrent-load/isolation tests. R12-R24 remain separate roadmap work.
 
 ## 1. Executive assessment
 

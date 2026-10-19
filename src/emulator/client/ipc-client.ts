@@ -1,6 +1,7 @@
 import { TimerClock, systemTimerClock } from '../../platform/async/timer-clock';
 import type { OperationScope } from '../../platform/async/scoped-task-queue';
 import * as net from 'net';
+import { EventEmitter } from 'events';
 import { IpcCommand, IpcResponse } from '../protocol/ipc-commands';
 import { encodeRequest, decodeResponse, frameLength, MAX_IPC_PAYLOAD_BYTES } from '../protocol/ipc-codec';
 import { V6Error } from '../../platform/errors/v6-error';
@@ -37,7 +38,7 @@ interface PendingRequest {
 }
 
 /** One request at a time: an indeterminate stream must be abandoned, not reused. */
-export class IpcClient {
+export class IpcClient extends EventEmitter {
     private socket: net.Socket | null = null;
     private connecting: { promise: Promise<void>; cancel(error: Error): void } | undefined;
     private receiveBuffer = Buffer.alloc(0);
@@ -49,6 +50,7 @@ export class IpcClient {
     private readonly limits: IpcClientLimits;
 
     constructor(private readonly logger: Logger, limits: Partial<IpcClientLimits> = {}, private readonly clock: TimerClock = systemTimerClock) {
+        super();
         this.limits = { ...DEFAULT_LIMITS, ...limits };
         for (const value of Object.values(this.limits)) {
             if (!Number.isSafeInteger(value) || value <= 0) { throw new RangeError('IPC limits must be positive safe integers'); }
@@ -210,6 +212,7 @@ export class IpcClient {
 
     /** Detach first, settle everything once, and never dispatch on a failed stream. */
     private failConnection(error: Error): void {
+        const wasConnected = this.socket !== null || this.connecting !== undefined;
         if (this.socket || this.connecting) { this.epoch++; }
         this.connecting?.cancel(error);
         const socket = this.socket;
@@ -226,6 +229,7 @@ export class IpcClient {
             this.clock.cancel(request.timer);
             request.reject(error);
         }
+        if (wasConnected) { this.emit('disconnect', error); }
     }
 
     private processNextInQueue(): void {
