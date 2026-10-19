@@ -1,6 +1,6 @@
 # Architecture, Code Reuse, and Maintainability Improvement Plan
 
-**Status:** Approved for staged implementation; R01-R04 complete in stage 1; R05/R06 complete as a two-feature pilot in stage 2; R07 complete in stage 3; R08 complete in stage 4; R09 complete in stage 5; R10 complete in stage 6. R11-R24 remain pending.
+**Status:** Approved for staged implementation; R01-R04 complete in stage 1; R05/R06 complete as a two-feature pilot in stage 2; R07 complete in stage 3; R08 complete in stage 4; R09 complete in stage 5; R10 complete in stage 6; R11 complete in stage 7. R12-R24 remain pending.
 **Audit date:** 2026-10-18 (workspace session; some validation timestamps are 2026-10-19 UTC).
 **Owner:** v6vscode maintainers.
 **Repository:** `C:\Work\Programming\v6vscode`.
@@ -93,7 +93,19 @@ Connection transitions serialize, reject superseded pending opens and cancel in-
 
 Verification: 700 unit tests with zero skips, 62 regressions, seven minimum-version Extension Host/emulator tests, seven packaged current-version tests and three live conformance tests, including real borrowed attach/detach/reconnect. Host/browser-shared/full test compilation pass; CI passes with zero lint errors and the existing 66 warnings. New tests cover borrowed ownership, failed/delayed negotiation, stale leases/process exits, superseded launch and transport loss. Existing stop persistence, hover/value and stepping regressions remain green.
 
-**Next stage:** R11 versioned artifact repository and independent consumer selections, with same-path rebuild/concurrent-load/isolation tests. R12-R24 remain separate roadmap work.
+Stage 6 commit: `b4c9eaf` — `Coordinate owned and borrowed emulator sessions with scoped leases`.
+
+## Implementation progress — stage 7 (R11)
+
+Added one bounded artifact repository keyed by canonical ELF/executable identity and SHA-256 fingerprints of the exact captured byte snapshots decoded/validated. Concurrent loads coalesce; repeated unchanged versions reuse parsing; force/invalidate prevents stale in-flight reads from repopulating the cache. Defaults bound each disk input to 64 MiB and retained versions to eight entries. Same-path/same-size/same-mtime rebuilds are detected. DAP and symbol selections share the repository; standalone loader remains for fixture/compatibility callers.
+
+Active-project resolution publishes relevant settings/selection changes and rejects older resolution results. Each panel/language/hover consumer has an independent selection with removable project subscriptions; clearing/failing one selection cannot clear another or the repository. Project changes prompt visible panels to synchronize; explicit Hex Viewer/Performance refresh also reloads symbols. Stable artifact versions retain symbol IDs. Query arrays/records are frozen; semantic query views block mutation and return defensive Buffer copies while private lazy parser caches remain usable. Language requests fork a selection to avoid concurrent-project lookup crossover. Definition-scan caching is bounded and keyed by artifact/source revision, invalidated by editor change/close notifications rather than cleared on every load.
+
+Verification: 710 unit tests, zero skips; 62 regressions; seven minimum-version Extension Host/emulator tests; seven packaged current-version tests; three live conformance tests. Host/browser-shared/full test compilation, focused compiled repository/project/session/language tests and CI pass. Lint retains zero errors and the existing 66 warnings. Tests cover content/executable changes, same-mtime rebuilds, coalescing, force/eviction, retained immutable handles, failed/cleared/older loads, project notifications and source-edit invalidation. Existing ASM hover/value/struct-pool and C stepping behavior remains green.
+
+Limitations: content checks read/hash inputs on each requested load for correctness, not speculative performance; cache size bounds retained versions, not a strict heap-byte budget. External filesystem edits are observed on reload (no background watcher introduced); editor source changes invalidate definitions immediately. Missing executable validation retains the standalone loader's existing behavior. No automatic reinterpretation of a running session's old metadata as a newly built ROM is attempted; a debug launch obtains a versioned handle for its load. Full artifact/build event coordination can extend this foundation without reintroducing global mutable selection.
+
+**Next stage:** R12 validated memory backend with separate stopped/live adapters, then R13 typed-value domain ownership. R14-R24 remain separate roadmap work.
 
 ## 1. Executive assessment
 

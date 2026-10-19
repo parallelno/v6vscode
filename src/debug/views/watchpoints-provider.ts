@@ -30,9 +30,9 @@ export const CMD_ADD_WATCHPOINT = 'v6.addWatchpoint';
 export class WatchpointsProvider implements vscode.Disposable {
     private panel: vscode.WebviewPanel | undefined;
     private readonly memory: MemoryService;
-    private readonly symbols = new DebugSymbolService();
     private readonly addressExpressions = new EntryExpressionStore<WatchpointEntry, 'globalAddr'>(['globalAddr']);
     private pollTimer: ReturnType<typeof setInterval> | undefined;
+    private readonly projectListener: vscode.Disposable | undefined;
     private readonly stateListener: () => void;
     private readonly changeListener: () => void;
 
@@ -44,11 +44,13 @@ export class WatchpointsProvider implements vscode.Disposable {
         private readonly activeProjectService: ActiveProjectService,
         private readonly logger: Logger,
         private readonly onOpenStateChanged: (open: boolean) => void = () => {},
+        private readonly symbols: DebugSymbolService = new DebugSymbolService(),
     ) {
         this.memory = new MemoryService(lifecycle.ipcClient, undefined);
         this.stateListener = () => void this.syncSession();
         this.changeListener = () => this.postSnapshot();
         this.lifecycle.on('stateChange', this.stateListener);
+        this.projectListener = this.activeProjectService.onDidChange?.(() => void this.syncSession());
         this.service.on('change', this.changeListener);
     }
 
@@ -127,6 +129,7 @@ export class WatchpointsProvider implements vscode.Disposable {
     dispose(): void {
         this.stopPolling();
         this.lifecycle.removeListener('stateChange', this.stateListener);
+        this.projectListener?.dispose();
         this.service.removeListener('change', this.changeListener);
         this.panel?.dispose();
     }

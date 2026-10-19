@@ -31,6 +31,8 @@ export async function createLanguageServices(
             return undefined;
         }
     });
+    const sourceChanged = vscode.workspace.onDidChangeTextDocument(() => symbolLinks.invalidateSourceDefinitions());
+    const sourceClosed = vscode.workspace.onDidCloseTextDocument(() => symbolLinks.invalidateSourceDefinitions());
     const presentation = new DefaultLanguagePresentationService(
         sourceLines,
         highlighter,
@@ -43,6 +45,8 @@ export async function createLanguageServices(
         presentation,
         dispose: () => {
             sourceLines.dispose();
+            sourceChanged.dispose();
+            sourceClosed.dispose();
             if ('clear' in highlighter && typeof highlighter.clear === 'function') {
                 highlighter.clear();
             }

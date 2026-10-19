@@ -7,6 +7,10 @@ import { WorkspaceService } from '../../platform/files/workspace-service';
 
 export class ActiveProjectService {
     private activeProject: V6Project | undefined;
+    private readonly projectChanged = new vscode.EventEmitter<V6Project | undefined>();
+    readonly onDidChange = this.projectChanged.event;
+    private resolveGeneration = 0;
+    private publishedKey = '';
 
     constructor(
         private readonly discovery: ProjectDiscovery,
@@ -20,12 +24,14 @@ export class ActiveProjectService {
     }
 
     async resolve(): Promise<V6Project | undefined> {
+        const generation = ++this.resolveGeneration;
         const roots = this.workspaceService.getRootUris();
         const projectUris = await this.discovery.findProjects(roots);
+        if (generation !== this.resolveGeneration) { return this.activeProject; }
 
         if (projectUris.length === 0) {
             this.logger.info('No *.project.json files found in workspace.');
-            this.activeProject = undefined;
+            this.publish(undefined);
             return undefined;
         }
 
@@ -44,6 +50,7 @@ export class ActiveProjectService {
             const picked = await vscode.window.showQuickPick(items, {
                 placeHolder: 'Select a project',
             });
+            if (generation !== this.resolveGeneration) { return this.activeProject; }
 
             if (!picked) {
                 return this.activeProject;
@@ -53,7 +60,20 @@ export class ActiveProjectService {
             this.logger.info(`User selected project: ${selectedUri.fsPath}`);
         }
 
-        this.activeProject = await this.repository.load(selectedUri);
+        const project = await this.repository.load(selectedUri);
+        if (generation !== this.resolveGeneration) { return this.activeProject; }
+        this.publish(project);
         return this.activeProject;
+    }
+
+    dispose(): void { this.resolveGeneration++; this.projectChanged.dispose(); }
+
+    private publish(project: V6Project | undefined): void {
+        const key = project ? JSON.stringify([project.uri.fsPath, project.run]) : '';
+        this.activeProject = project;
+        if (key !== this.publishedKey) {
+            this.publishedKey = key;
+            this.projectChanged.fire(project);
+        }
     }
 }

@@ -217,8 +217,22 @@ export function buildDebugIndex(
     }
     symbolsByAddr.sort((a, b) => a.address - b.address || a.name.localeCompare(b.name));
 
+    // Query results may be shared by several artifact selections. Freeze published
+    // records/arrays, not just the outer handle, so a consumer cannot corrupt peers.
+    for (const location of byAddress.values()) { Object.freeze(location); }
+    for (const rows of rowsByAddress.values()) { rows.forEach(Object.freeze); Object.freeze(rows); }
+    for (const symbol of symbolsByAddr) {
+        if (symbol.declaration) { Object.freeze(symbol.declaration); }
+        Object.freeze(symbol);
+    }
+    for (const symbols of symbolsByName.values()) { Object.freeze(symbols); }
+    statementRows.forEach(Object.freeze);
+    Object.freeze(statementRows);
+    Object.freeze(sourceFiles);
+    Object.freeze(symbolsByAddr);
+
     // ---- Return implementation ----
-    return {
+    return Object.freeze<DebugIndex>({
         sourceFiles,
         statementRows,
 
@@ -297,7 +311,7 @@ export function buildDebugIndex(
             }
             return best;
         },
-    };
+    });
 }
 
 // ---------------------------------------------------------------------------

@@ -14,6 +14,7 @@ describe('Source symbol link service', () => {
 
     function symbols(resolution: unknown, sourceFiles: string[] = []) {
         return {
+            fork() { return this; },
             load: async () => {},
             resolveSymbol: (name: string) => name === 'target' ? resolution : { kind: 'missing' },
             sourceFiles: () => sourceFiles,
@@ -96,6 +97,26 @@ describe('Source symbol link service', () => {
         expect(await service.resolve('target', { start: -1, length: 6 }, context)).to.equal(undefined);
     });
 
+    it('retains definition scans for one artifact version and invalidates them on source edits', async () => {
+        let text = '.macro macro_name(x)\n.endmacro';
+        let reads = 0;
+        const selection = {
+            artifactVersion: 'one', fork() { return this; }, load: async () => {},
+            resolveSymbol: () => ({ kind: 'missing' }), sourceFiles: () => ['defs.asm'],
+        } as any;
+        const service = new DebugSourceSymbolLinkService(selection, async () => { reads++; return text; });
+        await service.resolve('macro_name', { start: 0, length: 10 }, context);
+        await service.resolve('macro_name', { start: 0, length: 10 }, context);
+        expect(reads).to.equal(1);
+        text = '\n\n.macro macro_name(x)\n.endmacro';
+        service.invalidateSourceDefinitions();
+        expect((await service.resolve('macro_name', { start: 0, length: 10 }, context))?.line).to.equal(3);
+        expect(reads).to.equal(2);
+        selection.artifactVersion = 'two';
+        await service.resolve('macro_name', { start: 0, length: 10 }, context);
+        expect(reads).to.equal(3);
+    });
+
     describe('struct definitions', () => {
         const structSource = [
             '.struct actor',
@@ -112,6 +133,7 @@ describe('Source symbol link service', () => {
 
         function missingSymbols(sourceFiles: string[]) {
             return {
+                fork() { return this; },
                 load: async () => {},
                 resolveSymbol: () => ({ kind: 'missing' }),
                 sourceFiles: () => sourceFiles,

@@ -1,4 +1,4 @@
-import { loadDebugArtifact } from './debug-artifact-loader';
+import { ArtifactRepository, ArtifactHandle, artifactRepository } from './artifact-repository';
 import { DebugIndex, SourceLocation, SymbolInfo } from './debug-index';
 
 export type SymbolResolution =
@@ -12,32 +12,57 @@ export interface IndexedSymbol extends SymbolInfo {
 
 export class DebugSymbolService {
     private index: DebugIndex | undefined;
-    private artifactPath = '';
+    private handle: ArtifactHandle | undefined;
     private generation = 0;
     private loadGeneration = 0;
+    private projectSubscription: { dispose(): void } | undefined;
 
-    async load(artifactPath: string, executablePath: string): Promise<void> {
+    constructor(private readonly repository: ArtifactRepository = artifactRepository) {}
+
+    fork(): DebugSymbolService { return new DebugSymbolService(this.repository); }
+    get artifactVersion(): string | undefined { return this.handle?.version; }
+    get snapshot(): ArtifactHandle | undefined { return this.handle; }
+
+    /** Each consumer follows project selection independently; clearing it never clears the repository. */
+    followProject(projects: {
+        onDidChange(listener: (project: { run: { debugArtifact?: string; executable: string } } | undefined) => void): { dispose(): void };
+    }): this {
+        this.projectSubscription?.dispose();
+        this.projectSubscription = projects.onDidChange(project => {
+            this.clear();
+            if (project?.run.debugArtifact) {
+                void this.load(project.run.debugArtifact, project.run.executable).catch(() => { /* Consumer reports loading errors. */ });
+            }
+        });
+        return this;
+    }
+
+    dispose(): void { this.projectSubscription?.dispose(); this.projectSubscription = undefined; this.clear(); }
+
+    async load(artifactPath: string, executablePath: string, force = false): Promise<void> {
         if (!artifactPath) {
             this.clear();
             return;
         }
-        if (artifactPath === this.artifactPath && this.index) {
-            return;
-        }
         const loadGeneration = ++this.loadGeneration;
-        const result = await loadDebugArtifact(artifactPath, executablePath);
+        let result: ArtifactHandle;
+        try { result = await this.repository.load(artifactPath, executablePath, force); }
+        catch (error) {
+            if (loadGeneration !== this.loadGeneration) { return; }
+            throw error;
+        }
         if (loadGeneration !== this.loadGeneration) {
             return;
         }
         this.index = result.index;
-        this.artifactPath = artifactPath;
-        this.generation++;
+        if (this.handle?.version !== result.version) { this.generation++; }
+        this.handle = result;
     }
 
     clear(): void {
         this.loadGeneration++;
         this.index = undefined;
-        this.artifactPath = '';
+        this.handle = undefined;
         this.generation++;
     }
 

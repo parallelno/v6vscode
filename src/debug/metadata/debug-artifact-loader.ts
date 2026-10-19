@@ -83,14 +83,13 @@ function filesForUnit(
  * section address. C artifacts commonly split this image across .text and
  * .data, while assembly companions may contain only .text.
  */
-function validateRomElf(elf: ReturnType<typeof parseElf32>, romPath: string): string | undefined {
-    if (!romPath || !fs.existsSync(romPath)) { return undefined; }
+function validateRomElf(elf: ReturnType<typeof parseElf32>, rom: Buffer | undefined): string | undefined {
+    if (!rom) { return undefined; }
     const loadableSections = elf.sections
         .filter(section => section.type === SHT_PROGBITS && (section.flags & SHF_ALLOC) !== 0 && section.data.length > 0)
         .sort((left, right) => left.addr - right.addr);
     if (loadableSections.length === 0) { return undefined; }
 
-    const rom = fs.readFileSync(romPath);
     const loadAddress = loadableSections[0].addr;
     const imageEnd = Math.max(...loadableSections.map(section => section.addr + section.data.length));
     const imageSize = imageEnd - loadAddress;
@@ -131,6 +130,12 @@ export async function loadDebugArtifact(elfPath: string, romPath = ''): Promise<
     }
 
     const elfBuf = fs.readFileSync(elfPath);
+    const rom = romPath && fs.existsSync(romPath) ? fs.readFileSync(romPath) : undefined;
+    return decodeDebugArtifact(elfBuf, rom);
+}
+
+/** Decode one captured byte snapshot; repositories must fingerprint these exact bytes. */
+export function decodeDebugArtifact(elfBuf: Buffer, rom?: Buffer): LoadResult {
     const elf = parseElf32(elfBuf);
 
     const debugInfo = elf.sections.find(section => section.name === '.debug_info');
@@ -177,7 +182,7 @@ export async function loadDebugArtifact(elfPath: string, romPath = ''): Promise<
     }
 
     // Validate ROM/ELF match
-    const validationWarning = validateRomElf(elf, romPath);
+    const validationWarning = validateRomElf(elf, rom);
     if (validationWarning) {
         throw new Error(validationWarning);
     }

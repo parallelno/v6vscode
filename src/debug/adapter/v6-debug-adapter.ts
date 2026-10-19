@@ -22,7 +22,7 @@ import {
     StopRecord,
     StopReason,
 } from '../../emulator/protocol/debug-models';
-import { loadDebugArtifact } from '../metadata/debug-artifact-loader';
+import { artifactRepository } from '../metadata/artifact-repository';
 import { DebugIndex, SourceLocation } from '../metadata/debug-index';
 import { DebugMetadataIndex } from '../metadata/debug-metadata-index';
 import { DebugStopContext } from '../metadata/debug-stop-context';
@@ -396,7 +396,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                     : path.resolve(folder, debugArtifact);
                 const romPath = String(args.program ?? '');
                 try {
-                    const loadResult = await loadDebugArtifact(elfPath, romPath);
+                    const loadResult = await artifactRepository.load(elfPath, romPath);
                     lease.assertCurrent();
                     this.debugIndex = loadResult.index;
                     this.debugMetadata = loadResult.metadata;

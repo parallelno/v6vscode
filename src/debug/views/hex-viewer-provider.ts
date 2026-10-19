@@ -51,6 +51,7 @@ export class HexViewerProvider implements vscode.Disposable {
     private queryTimer: ReturnType<typeof setTimeout> | undefined;
     private refreshActive = false;
     private pendingRefresh: VisibleRange | undefined;
+    private readonly projectListener: vscode.Disposable | undefined;
     private readonly stateListener: () => void;
     private pendingNavigation: {
         space: MemorySpace;
@@ -75,6 +76,7 @@ export class HexViewerProvider implements vscode.Disposable {
         this.memory = new MemoryService(client, undefined);
         this.stateListener = () => void this.syncSession();
         this.lifecycle.on('stateChange', this.stateListener);
+        this.projectListener = this.activeProjectService.onDidChange?.(() => void this.syncSession());
     }
 
     toggle(): void {
@@ -125,6 +127,7 @@ export class HexViewerProvider implements vscode.Disposable {
 
     async refresh(): Promise<void> {
         if (this.visibleRange && this.panel?.visible) {
+            await this.loadSymbols();
             await this.refreshVisible(this.visibleRange);
         }
     }
@@ -160,6 +163,7 @@ export class HexViewerProvider implements vscode.Disposable {
         this.stopRefreshTimer();
         if (this.queryTimer) { clearTimeout(this.queryTimer); }
         this.lifecycle.removeListener('stateChange', this.stateListener);
+        this.projectListener?.dispose();
         this.panel?.dispose();
     }
 

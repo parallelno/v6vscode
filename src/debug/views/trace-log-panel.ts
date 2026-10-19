@@ -46,6 +46,7 @@ export class TraceLogPanel implements vscode.Disposable {
     private sourceContext: SourceDocumentContext | undefined;
     private projectRoot = '';
     private readonly rows = new Map<number, PreparedRow>();
+    private readonly projectListener: vscode.Disposable | undefined;
     private readonly stateListener: () => void;
     private readonly breakpointListener: vscode.Disposable;
 
@@ -63,6 +64,7 @@ export class TraceLogPanel implements vscode.Disposable {
     ) {
         this.stateListener = () => void this.syncSession();
         this.lifecycle.on('stateChange', this.stateListener);
+        this.projectListener = this.activeProjectService.onDidChange?.(() => void this.syncSession());
         this.breakpointListener = vscode.debug.onDidChangeBreakpoints(() => this.postBreakpointStates());
     }
 
@@ -105,6 +107,7 @@ export class TraceLogPanel implements vscode.Disposable {
         this.syncGeneration++;
         this.cancelQuery();
         this.lifecycle.removeListener('stateChange', this.stateListener);
+        this.projectListener?.dispose();
         this.breakpointListener.dispose();
         this.service.setVisible(false);
         this.panel?.dispose();

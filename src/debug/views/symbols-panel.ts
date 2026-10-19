@@ -26,6 +26,7 @@ export class SymbolsPanel implements vscode.Disposable {
     private panel: vscode.WebviewPanel | undefined;
     private queryTimer: ReturnType<typeof setTimeout> | undefined;
     private syncGeneration = 0;
+    private readonly projectListener: vscode.Disposable | undefined;
     private readonly stateListener: (state: string) => void;
 
     constructor(
@@ -42,6 +43,7 @@ export class SymbolsPanel implements vscode.Disposable {
             if (state === 'stopped') { this.clearSession(); }
         };
         this.lifecycle.on('stateChange', this.stateListener);
+        this.projectListener = this.activeProjectService.onDidChange?.(() => void this.syncSymbols());
     }
 
     toggle(): void {
@@ -85,6 +87,7 @@ export class SymbolsPanel implements vscode.Disposable {
         this.syncGeneration++;
         this.cancelQuery();
         this.lifecycle.removeListener('stateChange', this.stateListener);
+        this.projectListener?.dispose();
         this.panel?.dispose();
     }
 

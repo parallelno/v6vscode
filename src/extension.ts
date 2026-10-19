@@ -105,9 +105,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     const projectDiscovery = new ProjectDiscovery();
     const projectRepository = new ProjectRepository(logger);
-    const activeProjectService = new ActiveProjectService(
+    const activeProjectService = store.add(new ActiveProjectService(
         projectDiscovery, projectRepository, workspaceService, logger,
-    );
+    ));
 
     // Emulator services
     const locator = new V6emulLocator({
@@ -171,10 +171,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         CMD_REFRESH_HARDWARE_STATISTICS,
         () => hardwareStatistics.refresh(),
     ));
-    const debugSymbols = new DebugSymbolService();
+    const createSymbols = () => store.add(new DebugSymbolService().followProject(activeProjectService));
+    const debugSymbols = createSymbols();
     const languageServices = store.add(await createLanguageServices(
         context.extensionUri.fsPath,
-        debugSymbols,
+        createSymbols(),
     ));
     const memoryEdits = store.add(new MemoryEditService(lifecycle, ipcClient));
     const hexViewer = store.add(new HexViewerProvider(
@@ -189,7 +190,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             panelLauncher.setOpen(CMD_TOGGLE_HEX_VIEWER, open);
             void vscode.commands.executeCommand('setContext', CONTEXT_HEX_VIEWER_OPEN, open);
         },
-        debugSymbols,
+        createSymbols(),
     ));
     void vscode.commands.executeCommand('setContext', CONTEXT_HEX_VIEWER_OPEN, false);
     store.add(vscode.commands.registerCommand(CMD_TOGGLE_HEX_VIEWER, () => hexViewer.toggle()));
@@ -215,7 +216,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         context.extensionUri,
         lifecycle,
         performanceService,
-        debugSymbols,
+        createSymbols(),
         activeProjectService,
         context.workspaceState,
         logger,
@@ -233,7 +234,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         context.extensionUri,
         lifecycle,
         traceLogService,
-        debugSymbols,
+        createSymbols(),
         languageServices.presentation,
         languageServices.symbolLinks,
         activeProjectService,
@@ -267,7 +268,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         lifecycle,
         activeProjectService,
         context.workspaceState,
-        debugSymbols,
+        createSymbols(),
         hexViewer,
         logger,
         open => {
@@ -303,6 +304,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             panelLauncher.setOpen(CMD_TOGGLE_WATCHPOINTS, open);
             void vscode.commands.executeCommand('setContext', CONTEXT_WATCHPOINTS_OPEN, open);
         },
+        createSymbols(),
     ));
     void vscode.commands.executeCommand('setContext', CONTEXT_WATCHPOINTS_OPEN, false);
     store.add(vscode.commands.registerCommand(CMD_TOGGLE_WATCHPOINTS, () => watchpoints.toggle()));

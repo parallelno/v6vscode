@@ -29,6 +29,7 @@ export class PerformancePanel implements vscode.Disposable {
         ['addrStart', 'addrEnd'],
         (_field, value) => formatAddress(value),
     );
+    private readonly projectListener: vscode.Disposable | undefined;
     private readonly stateListener: () => void;
     private readonly changeListener: () => void;
 
@@ -45,6 +46,7 @@ export class PerformancePanel implements vscode.Disposable {
         this.stateListener = () => void this.syncSession();
         this.changeListener = () => this.postSnapshot();
         this.lifecycle.on('stateChange', this.stateListener);
+        this.projectListener = this.activeProjectService.onDidChange?.(() => void this.syncSession());
         this.service.on('change', this.changeListener);
     }
 
@@ -76,7 +78,10 @@ export class PerformancePanel implements vscode.Disposable {
     }
 
     async refresh(): Promise<void> {
-        await this.runOperation('refresh', () => this.service.refresh());
+        await this.runOperation('refresh', async current => {
+            await this.loadSymbols();
+            if (current()) { await this.service.refresh(); }
+        });
     }
 
     dispose(): void {
@@ -84,6 +89,7 @@ export class PerformancePanel implements vscode.Disposable {
         this.disposed = true;
         this.stopPolling();
         this.lifecycle.removeListener('stateChange', this.stateListener);
+        this.projectListener?.dispose();
         this.service.removeListener('change', this.changeListener);
         this.panel?.dispose();
     }

@@ -129,6 +129,9 @@ function findDefinitionMatch(text: string, definition: RegExp, name: string): So
 
 export class DebugSourceSymbolLinkService implements SourceSymbolLinkService {
     private definitionScanCache = new Map<string, SourceLocation | undefined>();
+    private sourceRevision = 0;
+
+    invalidateSourceDefinitions(): void { this.sourceRevision++; this.definitionScanCache.clear(); }
 
     constructor(
         private readonly symbols: DebugSymbolService,
@@ -136,10 +139,10 @@ export class DebugSourceSymbolLinkService implements SourceSymbolLinkService {
     ) {}
 
     async links(text: string, context: SourceDocumentContext): Promise<readonly SymbolLink[]> {
-        await this.load(context);
+        const symbols = await this.load(context);
         const links: SymbolLink[] = [];
         for (const token of findSymbolTokens(text)) {
-            const target = await this.resolveToken(token.name, context.projectRoot);
+            const target = await this.resolveToken(token.name, context.projectRoot, symbols);
             if (target) {
                 links.push({
                     start: token.start,
@@ -169,25 +172,26 @@ export class DebugSourceSymbolLinkService implements SourceSymbolLinkService {
         if (!token || text.slice(range.start, range.start + range.length) !== token.name) {
             return undefined;
         }
-        await this.load(context);
-        return this.resolveToken(token.name, context.projectRoot);
+        const symbols = await this.load(context);
+        return this.resolveToken(token.name, context.projectRoot, symbols);
     }
 
-    private async load(context: SourceDocumentContext): Promise<void> {
-        await this.symbols.load(context.debugArtifact, context.executable);
-        this.definitionScanCache.clear();
+    private async load(context: SourceDocumentContext): Promise<DebugSymbolService> {
+        const symbols = this.symbols.fork();
+        await symbols.load(context.debugArtifact, context.executable);
+        return symbols;
     }
 
-    private async resolveToken(name: string, projectRoot: string): Promise<SourceLocation | undefined> {
-        const resolution = this.symbols.resolveSymbol(name);
+    private async resolveToken(name: string, projectRoot: string, symbols: DebugSymbolService): Promise<SourceLocation | undefined> {
+        const resolution = symbols.resolveSymbol(name);
         if (resolution.kind === 'found') {
-            return await this.sourceForSymbol(resolution.symbol, projectRoot)
-                ?? this.scanDefinitionInSources(name, projectRoot);
+            return await this.sourceForSymbol(resolution.symbol, projectRoot, symbols)
+                ?? this.scanDefinitionInSources(name, projectRoot, symbols);
         }
         if (resolution.kind === 'missing') {
             // Macros and constants without DWARF declarations produce no ELF
             // symbol — locate their definition by scanning the sources.
-            return this.scanDefinitionInSources(name, projectRoot);
+            return this.scanDefinitionInSources(name, projectRoot, symbols);
         }
         return undefined;
     }
@@ -195,10 +199,11 @@ export class DebugSourceSymbolLinkService implements SourceSymbolLinkService {
     private async sourceForSymbol(
         symbol: SymbolInfo,
         projectRoot: string,
+        symbols: DebugSymbolService,
     ): Promise<SourceLocation | undefined> {
         if (symbol.declaration) { return symbol.declaration; }
         let nonLabelMatch: SourceLocation | undefined;
-        for (const file of this.symbols.sourceFiles()) {
+        for (const file of symbols.sourceFiles()) {
             const sourcePath = resolveDebugSourcePath(file, projectRoot);
             const text = await this.readSourceText(sourcePath);
             if (text === undefined) { continue; }
@@ -212,20 +217,22 @@ export class DebugSourceSymbolLinkService implements SourceSymbolLinkService {
                 if (match) { nonLabelMatch = { ...match, file }; }
             }
         }
-        return nonLabelMatch ?? this.symbols.sourceAtExactAddress(symbol.address);
+        return nonLabelMatch ?? symbols.sourceAtExactAddress(symbol.address);
     }
 
-    private async scanDefinitionInSources(name: string, projectRoot: string): Promise<SourceLocation | undefined> {
-        const cacheKey = `${projectRoot}|${name}`;
+    private async scanDefinitionInSources(name: string, projectRoot: string, symbols: DebugSymbolService): Promise<SourceLocation | undefined> {
+        const revision = this.sourceRevision;
+        const cacheKey = `${revision}|${symbols.artifactVersion}|${projectRoot}|${name}`;
         if (this.definitionScanCache.has(cacheKey)) { return this.definitionScanCache.get(cacheKey); }
-        const result = await this.scanSources(name, projectRoot);
-        this.definitionScanCache.set(cacheKey, result);
+        const result = await this.scanSources(name, projectRoot, symbols);
+        if (revision === this.sourceRevision) { this.definitionScanCache.set(cacheKey, result); }
+        while (this.definitionScanCache.size > 512) { this.definitionScanCache.delete(this.definitionScanCache.keys().next().value!); }
         return result;
     }
 
-    private async scanSources(name: string, projectRoot: string): Promise<SourceLocation | undefined> {
+    private async scanSources(name: string, projectRoot: string, symbols: DebugSymbolService): Promise<SourceLocation | undefined> {
         const dotIndex = name.indexOf('.');
-        for (const file of this.symbols.sourceFiles()) {
+        for (const file of symbols.sourceFiles()) {
             const sourcePath = resolveDebugSourcePath(file, projectRoot);
             const text = await this.readSourceText(sourcePath);
             if (text === undefined) { continue; }
