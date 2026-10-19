@@ -37,7 +37,7 @@ test/core/
 .vscode-test/
 
 test/**/*.rom
-test/fixtures/cdbg/*.elf
+# Compact C debug ELF fixtures are tracked; ROMs are derived for tests.
 
 # Ignore build and cache artifacts
 .venv/

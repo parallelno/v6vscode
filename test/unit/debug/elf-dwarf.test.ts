@@ -2,18 +2,16 @@ import { expect } from 'chai';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { fixturePath, fixtureRom } from '../../helpers/fixture-paths';
 import { parseElf32, readULEB128, readSLEB128, ELFCLASS32, ELFDATA2LSB, SHN_ABS, SHT_SYMTAB } from '../../../src/debug/metadata/elf32-reader';
 import { parseDwarf4LineFiles, parseDwarf4LineSection } from '../../../src/debug/metadata/dwarf4-line-reader';
 import { parseDwarf4CompilationDirectories } from '../../../src/debug/metadata/dwarf4-info-reader';
 import { buildDebugIndex } from '../../../src/debug/metadata/debug-index';
 import { loadDebugArtifact } from '../../../src/debug/metadata/debug-artifact-loader';
 
-// Path to the companion ELF built by `make` in the test project
-const REPOSITORY_ROOT = path.resolve(__dirname, '..', '..', '..');
-const ELF_PATH = path.join(REPOSITORY_ROOT, 'temp', 'project', 'out', 'demo1.elf');
-const ELF_EXISTS = fs.existsSync(ELF_PATH);
-const C_ELF_PATH = path.join(REPOSITORY_ROOT, 'temp', 'project', 'out', 'demo2.elf');
-const C_ELF_EXISTS = fs.existsSync(C_ELF_PATH);
+const ELF_PATH = fixturePath('baseline', 'demo1.elf');
+const ROM_PATH = fixtureRom(ELF_PATH);
+const C_ELF_PATH = fixturePath('cdbg', 'probe-O0.elf');
 
 /** Find a line that maps to an exact (unrelocated) executable statement. */
 function findExecutableLine(index: ReturnType<typeof buildDebugIndex>, file: string): number {
@@ -154,10 +152,10 @@ describe('DebugIndex source paths', () => {
 });
 
 // ---------------------------------------------------------------------------
-// ELF / DWARF integration — runs only when demo1.elf is present
+// ELF / DWARF decoding against mandatory checked-in fixtures
 // ---------------------------------------------------------------------------
 
-(ELF_EXISTS ? describe : describe.skip)('parseElf32 against demo1.elf', () => {
+describe('parseElf32 against demo1.elf', () => {
     let elfBuf: Buffer;
     before(() => { elfBuf = fs.readFileSync(ELF_PATH); });
 
@@ -197,7 +195,7 @@ describe('DebugIndex source paths', () => {
     });
 });
 
-(ELF_EXISTS ? describe : describe.skip)('DWARF v4 line reader against demo1.elf', () => {
+describe('DWARF v4 line reader against demo1.elf', () => {
     let rows: ReturnType<typeof parseDwarf4LineSection>;
 
     before(() => {
@@ -220,8 +218,8 @@ describe('DebugIndex source paths', () => {
 
     it('includes source files from main and included assembly files', () => {
         const files = new Set(rows.map(row => row.file));
-        expect(files).to.include('src1/main.asm');
-        expect(files).to.include('src1/sub/rnd.asm');
+        expect(files).to.include('main.asm');
+        expect(files).to.include('sub/rnd.asm');
         const elf = parseElf32(fs.readFileSync(ELF_PATH));
         const debugLine = elf.sections.find(section => section.name === '.debug_line')!;
         expect(parseDwarf4LineFiles(debugLine.data)).to.include.members([...files]);
@@ -239,7 +237,7 @@ describe('DebugIndex source paths', () => {
     });
 });
 
-(ELF_EXISTS ? describe : describe.skip)('DebugIndex against demo1.elf', () => {
+describe('DebugIndex against demo1.elf', () => {
     let index: ReturnType<typeof buildDebugIndex>;
     let rows: ReturnType<typeof parseDwarf4LineSection>;
 
@@ -262,10 +260,10 @@ describe('DebugIndex source paths', () => {
         const dl = elf.sections.find(s => s.name === '.debug_line')!;
         const rows = parseDwarf4LineSection(dl.data, elf.addressSize);
         const stmtRow = rows.find(r => r.isStmt);
-        if (!stmtRow) { return; } // skip if no stmt rows
-        const loc = index.resolveAddress(stmtRow.address);
+        expect(stmtRow, 'mandatory fixture must have executable rows').to.exist;
+        const loc = index.resolveAddress(stmtRow!.address);
         expect(loc).to.exist;
-        expect(loc!.line).to.equal(stmtRow.line);
+        expect(loc!.line).to.equal(stmtRow!.line);
     });
 
     it('resolveBreakpoint slides to next stmt row for non-executable line', () => {
@@ -279,8 +277,8 @@ describe('DebugIndex source paths', () => {
     });
 
     it('resolves an absolute editor path against a DWARF-relative source path', () => {
-        const sourcePath = path.join(REPOSITORY_ROOT, 'temp', 'project', 'src1', 'main.asm');
-        const firstMainRow = rows.find(row => row.isStmt && row.file === 'src1/main.asm')!;
+        const sourcePath = fixturePath('baseline', 'main.asm');
+        const firstMainRow = rows.find(row => row.isStmt && row.file === 'main.asm')!;
         expect(index.resolveBreakpoint(sourcePath, firstMainRow.line)).to.deep.equal({
             address: firstMainRow.address,
             verifiedLine: firstMainRow.line,
@@ -324,14 +322,14 @@ describe('DebugIndex source paths', () => {
         expect(orderedIndex.allSymbols().map(symbol => symbol.name)).to.deep.equal(['reset', 'alpha', 'beta', 'zeta']);
     });
 
-    it('includes absolute STT_NOTYPE constants but excludes other untyped symbols', () => {
+    it('includes absolute constants and addressable untyped data labels', () => {
         const indexWithConstant = buildDebugIndex([], [
             { name: 'CONSTANT', value: 0x4000, size: 0, type: 0, binding: 0, section: SHN_ABS },
             { name: 'untypedLabel', value: 0x0100, size: 0, type: 0, binding: 0, section: 1 },
         ], '');
 
         expect(indexWithConstant.symbol('CONSTANT')).to.include({ name: 'CONSTANT', address: 0x4000, size: 0 });
-        expect(indexWithConstant.symbol('untypedLabel')).to.equal(undefined);
+        expect(indexWithConstant.symbol('untypedLabel')).to.include({ name: 'untypedLabel', address: 0x0100, absolute: false });
     });
 
     it('includes debug constants from the demo ELF', () => {
@@ -340,15 +338,15 @@ describe('DebugIndex source paths', () => {
     });
 });
 
-(ELF_EXISTS ? describe : describe.skip)('Debug artifact loader against demo1.elf', () => {
+describe('Debug artifact loader against demo1.elf', () => {
     it('resolves source breakpoints without mistaking a source filename for comp_dir', async () => {
-        const romPath = path.join(path.dirname(ELF_PATH), 'demo1.rom');
-        const sourcePath = path.join(path.dirname(path.dirname(ELF_PATH)), 'src1', 'main.asm');
+        const romPath = ROM_PATH;
+        const sourcePath = fixturePath('baseline', 'main.asm');
         const result = await loadDebugArtifact(ELF_PATH, romPath);
         const elf = parseElf32(fs.readFileSync(ELF_PATH));
         const debugLine = elf.sections.find(section => section.name === '.debug_line')!;
         const expected = parseDwarf4LineSection(debugLine.data, elf.addressSize)
-            .find(row => row.isStmt && row.file === 'src1/main.asm')!;
+            .find(row => row.isStmt && row.file === 'main.asm')!;
 
         expect(result.compDir).to.equal('');
         expect(result.index.resolveBreakpoint(sourcePath, expected.line)).to.deep.equal({
@@ -358,15 +356,15 @@ describe('DebugIndex source paths', () => {
     });
 
     it('maps constants to their DWARF declaration locations and file-table entries', async () => {
-        const romPath = path.join(path.dirname(ELF_PATH), 'demo1.rom');
+        const romPath = ROM_PATH;
         const result = await loadDebugArtifact(ELF_PATH, romPath);
 
-        expect(result.index.sourceFiles).to.include(path.join('src1', 'sub', 'rnd.asm'));
+        expect(result.index.sourceFiles).to.include(path.join('sub', 'rnd.asm'));
         expect(result.index.symbol('DISPLAY_ADDR')?.declaration).to.deep.equal({
-            file: path.join('src1', 'main.asm'), line: 12, column: 0, isStmt: false,
+            file: 'main.asm', line: 12, column: 0, isStmt: false,
         });
         expect(result.index.symbol('PALETTE_LEN')?.declaration).to.deep.equal({
-            file: path.join('src1', 'sub', 'palette.asm'), line: 4, column: 0, isStmt: false,
+            file: path.join('sub', 'palette.asm'), line: 4, column: 0, isStmt: false,
         });
     });
 
@@ -398,7 +396,7 @@ describe('DebugIndex source paths', () => {
 
     it('rejects an ELF companion whose text does not match the ROM', async () => {
         const mismatchedRom = path.join(os.tmpdir(), `v6-mismatch-${process.pid}.rom`);
-        const rom = fs.readFileSync(path.join(path.dirname(ELF_PATH), 'demo1.rom'));
+        const rom = fs.readFileSync(ROM_PATH);
         const changed = Buffer.from(rom);
         changed[0] ^= 0xFF;
         fs.writeFileSync(mismatchedRom, changed);
@@ -416,22 +414,21 @@ describe('DebugIndex source paths', () => {
     });
 });
 
-(C_ELF_EXISTS ? describe : describe.skip)('Debug artifact loader against demo2.elf', () => {
+describe('Debug artifact loader against the C probe ELF', () => {
     it('indexes C source paths without requiring unsupported local-variable metadata', async () => {
-        const projectRoot = path.dirname(path.dirname(C_ELF_PATH));
-        const sourcePath = path.join(projectRoot, 'src2', 'main.c');
-        const result = await loadDebugArtifact(C_ELF_PATH, path.join(path.dirname(C_ELF_PATH), 'demo2.rom'));
+        const projectRoot = path.dirname(C_ELF_PATH);
+        const sourcePath = path.join(projectRoot, 'probe.c');
+        const result = await loadDebugArtifact(C_ELF_PATH, fixtureRom(C_ELF_PATH));
 
-        expect(result.compDir).to.equal('');
-        expect(result.index.sourceFiles).to.include(sourcePath);
-        // Resolve any executable line in main.c rather than a hardcoded line,
+        expect(result.index.sourceFiles.some(file => file.endsWith('probe.c'))).to.equal(true);
+        // Resolve any executable line in probe.c rather than a hardcoded line,
         // since the fixture source changes as it evolves.
         const executableLine = findExecutableLine(result.index, sourcePath);
         expect(executableLine).to.be.greaterThan(0);
         const breakpoint = result.index.resolveBreakpoint(sourcePath, executableLine);
         expect(breakpoint).to.not.equal(undefined);
         expect(result.index.resolveAddress(breakpoint!.address)).to.include({
-            file: sourcePath,
+            file: result.index.sourceFiles.find(file => file.endsWith('probe.c')),
             line: breakpoint!.verifiedLine,
         });
     });

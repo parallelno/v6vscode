@@ -538,6 +538,7 @@
     "test:regression": "mocha --no-config --require ./test/register.js --timeout 5000 'test/regression/**/*.test.ts'",
     "test:feature:metadata": "powershell -NoProfile -ExecutionPolicy Bypass -File test/features/debug-metadata/run.ps1",
     "test:feature:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File test/features/debug-adapter/run.ps1",
+    "test:conformance": "mocha --no-config --require ./test/register.js --timeout 20000 'test/conformance/**/*.test.ts'",
     "test:all": "npm run test:unit && npm run test:regression",
     "ci": "npm run compile && npm run lint && npm run test:all",
     "vscode:prepublish": "npm run compile",

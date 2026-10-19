@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import * as path from 'path';
+import { fixturePath } from '../../helpers/fixture-paths';
 import * as fs from 'fs';
 import { parseElf32 } from '../../../src/debug/metadata/elf32-reader';
 import { DebugMetadataIndex } from '../../../src/debug/metadata/debug-metadata-index';
@@ -8,8 +8,7 @@ import { toDwarfRegisters, DWARF_REG } from '../../../src/debug/metadata/v6c-reg
 import { StopMemoryReader } from '../../../src/debug/metadata/stop-memory-reader';
 import { IpcCommand } from '../../../src/emulator/protocol/ipc-commands';
 
-const FIXTURE_O0 = path.resolve(__dirname, '..', '..', '..', 'test', 'fixtures', 'cdbg', 'probe-O0.elf');
-const FIXTURE_EXISTS = fs.existsSync(FIXTURE_O0);
+const FIXTURE_O0 = fixturePath('cdbg', 'probe-O0.elf');
 
 describe('v6c-register-map', () => {
     it('maps GET_REGS pairs to frozen DWARF numbers', () => {
@@ -138,10 +137,6 @@ describe('DebugStopContext unwind boundaries', () => {
 
 (describe)('DebugStopContext against real V6C ELF', () => {
     let metadata: DebugMetadataIndex;
-
-    before(function () {
-        if (!fs.existsSync(FIXTURE_O0)) { this.skip(); }
-    });
 
     before(() => {
         metadata = new DebugMetadataIndex(parseElf32(fs.readFileSync(FIXTURE_O0)));

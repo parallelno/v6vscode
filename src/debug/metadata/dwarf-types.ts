@@ -72,8 +72,11 @@ export class DwarfTypes {
 
         switch (die.tag) {
             case DW_TAG.base_type: {
-                const signed = DEFAULT_SIGNED[name] ?? this.inferSigned(name);
-                return { id: die.offset, kind: 'base', name, byteSize, signed, encoding: this.encodingName(die) };
+                const encoding = this.encodingName(die);
+                const signed = encoding === 'signed' || encoding === 'signed_char' ? true
+                    : encoding === 'unsigned' || encoding === 'unsigned_char' || encoding === 'boolean' || encoding === 'address' ? false
+                    : DEFAULT_SIGNED[name] ?? this.inferSigned(name);
+                return { id: die.offset, kind: 'base', name, byteSize, signed, encoding };
             }
             case DW_TAG.pointer_type:
             case DW_TAG.reference_type: {

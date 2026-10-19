@@ -158,4 +158,13 @@ describe('Unified debugger value presentation', () => {
         state.cExpressionService = { evaluateValue: () => new Promise(() => {}) };
         await assert.rejects(() => state.evaluateExpression(ASSEMBLER_HOVER_CONTEXT, 'instance', {}), /Hover evaluation timed out/);
     });
+    it('does not resolve delayed Variables requests to a new stop', async () => {
+        const { state, request, evaluate } = makeAdapter();
+        const old = (await evaluate('pool')).body.variablesReference;
+        state.stoppedGeneration++;
+        const next = (await evaluate('instance')).body.variablesReference;
+        assert.notStrictEqual(old, next);
+        assert.deepStrictEqual((await request('variables', { variablesReference: old })).body.variables, []);
+        assert.strictEqual((await request('variables', { variablesReference: next })).body.variables[1].value, '65535');
+    });
 });

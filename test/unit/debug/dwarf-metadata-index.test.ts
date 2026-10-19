@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import * as path from 'path';
+import { fixturePath, fixtureRom } from '../../helpers/fixture-paths';
 import * as fs from 'fs';
 import { parseElf32 } from '../../../src/debug/metadata/elf32-reader';
 import { DebugMetadataIndex } from '../../../src/debug/metadata/debug-metadata-index';
@@ -7,9 +7,9 @@ import { DwarfScopes } from '../../../src/debug/metadata/dwarf-scopes';
 import { DwarfError } from '../../../src/debug/metadata/dwarf-sections';
 import { loadDebugArtifact } from '../../../src/debug/metadata/debug-artifact-loader';
 
-const FIXTURE_O0 = path.resolve(__dirname, '..', '..', '..', 'test', 'fixtures', 'cdbg', 'probe-O0.elf');
-const FIXTURE_O1 = path.resolve(__dirname, '..', '..', '..', 'test', 'fixtures', 'cdbg', 'probe-O1.elf');
-const FIXTURE_O2 = path.resolve(__dirname, '..', '..', '..', 'test', 'fixtures', 'cdbg', 'probe-O2.elf');
+const FIXTURE_O0 = fixturePath('cdbg', 'probe-O0.elf');
+const FIXTURE_O1 = fixturePath('cdbg', 'probe-O1.elf');
+const FIXTURE_O2 = fixturePath('cdbg', 'probe-O2.elf');
 
 function loadIndex(file: string): DebugMetadataIndex {
     return new DebugMetadataIndex(parseElf32(fs.readFileSync(file)));
@@ -34,10 +34,6 @@ describe('DwarfScopes lexical visibility', () => {
     let o0: DebugMetadataIndex;
     let o1: DebugMetadataIndex;
     let o2: DebugMetadataIndex;
-
-    before(function () {
-        if (!fs.existsSync(FIXTURE_O0) || !fs.existsSync(FIXTURE_O1) || !fs.existsSync(FIXTURE_O2)) { this.skip(); }
-    });
 
     before(() => {
         o0 = loadIndex(FIXTURE_O0);
@@ -110,7 +106,7 @@ describe('DwarfScopes lexical visibility', () => {
 
     it('retains discontinuous source statement ranges at -O1 and -O2', async () => {
         for (const fixture of [FIXTURE_O1, FIXTURE_O2]) {
-            const artifact = await loadDebugArtifact(fixture, fixture.replace('.elf', '.rom'));
+            const artifact = await loadDebugArtifact(fixture, fixtureRom(fixture));
             const addresses = artifact.index.statementRows
                 .filter(row => row.file.endsWith('probe.c') && row.line === 22)
                 .map(row => row.address);

@@ -170,14 +170,27 @@ export function format(value: TypedValue): string {
     }
     if (type?.kind === 'base' && (type.encoding === 'signed_char' || type.name === 'char' || type.name === 'signed char')) {
         const character = numeric & 0xFF;
-        return `${signed(numeric, bytes.length)} '${escapeCharacter(character)}'`;
+        return `${scalarNumber(value)} '${escapeCharacter(character)}'`;
     }
     if (type?.kind === 'enum') {
-        const name = Array.from(type.enumerators ?? []).find(([, member]) => member === signed(numeric, bytes.length))?.[0];
-        return name ? `${name} (${signed(numeric, bytes.length)})` : String(signed(numeric, bytes.length));
+        const number = scalarNumber(value);
+        const name = Array.from(type.enumerators ?? []).find(([, member]) => member === number)?.[0];
+        return name ? `${name} (${number})` : String(number);
     }
     if (type?.encoding === 'address') { return hexAddress(numeric, type.byteSize); }
-    return String(type?.signed ? signed(numeric, bytes.length) : numeric);
+    return String(scalarNumber(value));
+}
+
+/** Interpret scalar storage consistently for expressions and presentation. */
+export function scalarNumber(value: TypedValue): number {
+    const type = value.type && unwrap(value.type);
+    const bytes = value.bytes?.slice(0, type?.byteSize || undefined);
+    const numeric = decode(bytes);
+    if (type?.kind === 'pointer' || type?.kind === 'reference') { return numeric; }
+    const isSigned = type?.encoding === 'signed' || type?.encoding === 'signed_char'
+        || (type?.encoding !== 'unsigned' && type?.encoding !== 'unsigned_char'
+            && (type?.signed || type?.name === 'char' || type?.name === 'signed char'));
+    return isSigned ? signed(numeric, bytes?.length ?? type?.byteSize ?? 2) : numeric;
 }
 
 /** Builds the DAP variable representation for a typed value. */

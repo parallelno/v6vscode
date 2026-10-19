@@ -46,6 +46,7 @@ The `.vscodeignore` file excludes `src/`, `test/`, `design/`, `temp/`, `docs/`, 
 npm test              # unit tests
 npm run test:unit     # unit tests only
 npm run test:regression  # regression suite
+npm run test:conformance # explicit live emulator memory/unwind check (V6EMUL required)
 npm run test:feature:metadata # real ELF/ROM consumer conformance
 npm run test:feature:debug    # gated real-emulator scenario
 npm run test:all      # unit + regression
@@ -53,3 +54,5 @@ npm run ci            # compile + lint + test:all
 ```
 
 `test:feature:debug` requires both `V6EMUL` and `V6C`. It compiles the C probe at `-O0`, `-O1`, and `-O2`, then verifies Extension Host startup, source breakpoints and stepping, optimization-aware relocation, inline frames, semantic Call Stack, and C frame scopes/Watch expressions against a real emulator. See `test/features/README.md` for prerequisites and deterministic `result.txt` rules.
+
+Unit tests use mandatory checked-in debug fixtures and derive ignored ROM files from ELF sections. They do not launch an emulator or depend on builds under `temp/project`. Fixture provenance, hashes and regeneration instructions are in `test/fixtures/README.md`. Missing mandatory fixtures fail rather than silently skip.

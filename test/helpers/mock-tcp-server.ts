@@ -39,21 +39,18 @@ export class MockTcpServer {
                         const payloadBuf = receiveBuffer.subarray(4, totalLen);
                         receiveBuffer = Buffer.from(receiveBuffer.subarray(totalLen));
 
-                        try {
+                        const respond = (value: unknown) => {
+                            if (socket.destroyed) { return; }
+                            const payload = Buffer.from(encode(value));
+                            const frame = Buffer.alloc(4 + payload.length);
+                            frame.writeUInt32LE(payload.length);
+                            payload.copy(frame, 4);
+                            socket.write(frame);
+                        };
+                        void Promise.resolve().then(async () => {
                             const request = decode(payloadBuf) as { cmd: number; data: unknown };
-                            const response = this.handler(request.cmd, request.data);
-                            const responseBuf = encode(response);
-                            const frame = Buffer.alloc(4 + responseBuf.byteLength);
-                            frame.writeUInt32LE(responseBuf.byteLength, 0);
-                            Buffer.from(responseBuf.buffer, responseBuf.byteOffset, responseBuf.byteLength).copy(frame, 4);
-                            socket.write(frame);
-                        } catch {
-                            const errResp = encode({ ok: false, error: 'handler error' });
-                            const frame = Buffer.alloc(4 + errResp.byteLength);
-                            frame.writeUInt32LE(errResp.byteLength, 0);
-                            Buffer.from(errResp.buffer, errResp.byteOffset, errResp.byteLength).copy(frame, 4);
-                            socket.write(frame);
-                        }
+                            return this.handler(request.cmd, request.data);
+                        }).then(respond, () => respond({ ok: false, error: 'handler error' }));
                     }
                 });
 

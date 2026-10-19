@@ -16,7 +16,7 @@ import { DwarfStrings, readUInt24, strxIndex } from './dwarf-strings';
 // ---------------------------------------------------------------------------
 
 export const DW_FORM = {
-    addr: 0x01, block2: 0x03, block4: 0x04, data2: 0x05, block1: 0x09,
+    addr: 0x01, block2: 0x03, block4: 0x04, data2: 0x05, block1: 0x0A,
     data1: 0x0B, data4: 0x06, data8: 0x07, string: 0x08, block: 0x09,
     data16: 0x1E, sdata: 0x0D, strp: 0x0E, udata: 0x0F, ref_addr: 0x10,
     ref1: 0x11, ref2: 0x12, ref4: 0x13, ref8: 0x14, ref_udata: 0x15,

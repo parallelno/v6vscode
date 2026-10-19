@@ -1,5 +1,5 @@
 import { TypeInfo } from '../metadata/dwarf-types';
-import { TypedValue, decode, scalarValue, unwrap } from './value-format';
+import { TypedValue, scalarNumber, scalarValue, unwrap } from './value-format';
 
 export type CExpressionResolver = (name: string) => number | undefined | Promise<number | undefined>;
 
@@ -110,7 +110,7 @@ export class CExpressionService {
                 const type = context.resolveType(expression.typeName);
                 if (!type) { throw new Error(`Unsupported cast type '${expression.typeName}'`); }
                 const operand = typedScalar(await this.evaluateTyped(expression.operand, context));
-                return { scalar: operand, type, typed: scalarValue(operand, type) };
+                return fromTypedValue(scalarValue(operand, type));
             }
         }
     }
@@ -384,14 +384,22 @@ function checked(value: number): number {
 
 interface TypedExpressionValue { scalar?: number; typed?: TypedValue; address?: number; type?: TypeInfo; }
 
-function typedScalarValue(value: number): TypedExpressionValue { return { scalar: checked(value), typed: scalarValue(value) }; }
+function typedScalarValue(value: number): TypedExpressionValue {
+    checked(value);
+    if (value < -0x80000000 || value > 0xFFFFFFFF) { throw new Error('Scalar result is outside the supported 32-bit range'); }
+    // Untyped results must not lose a sign or their high word before rendering.
+    const type: TypeInfo | undefined = value < 0 || value > 0xFFFF
+        ? { id: -300, kind: 'base', name: value < 0 ? 'int' : 'unsigned long', byteSize: 4, signed: value < 0 }
+        : undefined;
+    return { scalar: value, typed: scalarValue(value, type) };
+}
 function fromTypedValue(value: TypedValue, name?: string): TypedExpressionValue {
     if (value.availability !== 'available') { throw new Error(`Cannot use ${name ?? 'value'}: ${value.availability.replace('-', ' ')}`); }
-    return { typed: value, scalar: isScalar(value.type) ? decode(value.bytes) : undefined, address: value.address, type: value.type };
+    return { typed: value, scalar: isScalar(value.type) ? scalarNumber(value) : undefined, address: value.address, type: value.type };
 }
 function typedScalar(value: TypedExpressionValue): number {
     if (value.scalar !== undefined) { return value.scalar; }
-    if (value.typed && isScalar(value.typed.type)) { return decode(value.typed.bytes); }
+    if (value.typed && isScalar(value.typed.type)) { return scalarNumber(value.typed); }
     throw new Error('Expression requires an unsupported type');
 }
 function isScalar(type: TypeInfo | undefined): boolean {

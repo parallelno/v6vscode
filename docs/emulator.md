@@ -17,6 +17,12 @@ Launches the `v6emul` backend, communicates over TCP using length-prefixed Messa
 
 - **`ipc-client.ts`** — TCP client with `connect(port)`, `disconnect()`, `send(cmd, data)`, `sendRaw(cmd, data)`. Sequential request-response with a stable priority queue. Debug control and stop polling can overtake queued frame requests; the active request is never interrupted.
 
+### Transport failure and resource limits
+
+The ordered IPC protocol has no response correlation IDs. An on-wire timeout, socket close/error, truncated stream, oversized frame or malformed MessagePack invalidates the connection and rejects both active and queued requests. The client never sends the queued command on the failed stream or treats a late response as its result. A new connection is required; mutations are not automatically replayed.
+
+Concurrent connection attempts share one promise and disconnect cancels a pending connection. Request priority applies only before dispatch. Queue wait and on-wire wait each use the supplied timeout; expiring an unsent request does not invalidate a healthy active exchange. Default safety limits are 256 queued requests, 32 MiB queued request bytes and 16 MiB per response/request payload. Limits can be supplied to the client constructor for bounded test/consumer scenarios. The server must produce exactly one framed response per request; unsolicited extra bytes are rejected rather than cached for an unsent request.
+
 ## Lifecycle (`src/emulator/lifecycle/`)
 
 - **`emulator-lifecycle.ts`** — Shared owner for Run Project and debug-launch processes, the single emulator socket, and execution state. Debug launch chooses a free port and lends the same `IpcClient` to the DAP adapter and display panel. Closing the display does not terminate a debug-owned session. States: `stopped`, `launching`, `connected`, `running`; ownership is `run` or `debug`.

@@ -3,6 +3,9 @@ import { IpcCommand, IpcResponse, FrameRawResponse } from './ipc-commands';
 import { V6Error } from '../../platform/errors/v6-error';
 import { ErrorCode } from '../../platform/errors/error-codes';
 
+// Allows raw display frames, disk images, and bounded debug collections.
+export const MAX_IPC_PAYLOAD_BYTES = 16 * 1024 * 1024;
+
 const RAW_FRAME_HEADER_SIZE = 16;
 const RAW_FRAME_SCHEMA_VERSION = 1;
 const RAW_FRAME_KIND_FRAME = 1;
@@ -94,11 +97,14 @@ export function decodeFrameRaw(buffer: Buffer): FrameRawResponse {
  * Try to extract a complete frame from a buffer.
  * Returns the number of bytes consumed, or 0 if incomplete.
  */
-export function frameLength(buffer: Buffer): number {
+export function frameLength(buffer: Buffer, maxPayloadBytes = MAX_IPC_PAYLOAD_BYTES): number {
     if (buffer.length < 4) {
         return 0;
     }
     const payloadLen = buffer.readUInt32LE(0);
+    if (payloadLen > maxPayloadBytes) {
+        throw new V6Error(ErrorCode.IPC_DECODE_ERROR, 'IPC response exceeds payload limit');
+    }
     const total = 4 + payloadLen;
     return buffer.length >= total ? total : 0;
 }

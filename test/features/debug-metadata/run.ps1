@@ -1,31 +1,30 @@
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..\..\..')
-$elfPath = Join-Path $repoRoot 'temp\project\out\demo2.elf'
-$romPath = Join-Path $repoRoot 'temp\project\out\demo2.rom'
+$elfPath = Join-Path $repoRoot 'test\fixtures\baseline\demo1.elf'
 $resultPath = Join-Path $PSScriptRoot 'result.txt'
 
 Remove-Item $resultPath -ErrorAction SilentlyContinue
 
-if (-not (Test-Path $elfPath) -or -not (Test-Path $romPath)) {
-    throw 'Debug fixture is missing. Build temp/project before running metadata conformance.'
+if (-not (Test-Path $elfPath)) {
+    throw 'Mandatory baseline ELF fixture is missing. Restore test/fixtures/baseline/demo1.elf.'
 }
 
 Push-Location $repoRoot
 try {
     $script = @'
 const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
 const { loadDebugArtifact } = require('./src/debug/metadata/debug-artifact-loader');
 
 (async () => {
-    const elfPath = path.resolve('./temp/project/out/demo2.elf');
-    const romPath = path.resolve('./temp/project/out/demo2.rom');
-    const sourcePath = path.resolve('./temp/project/src2/main.c');
+    const { fixturePath, fixtureRom } = require('./src/test/fixture-paths');
+    const elfPath = fixturePath('baseline', 'demo1.elf');
+    const romPath = fixtureRom(elfPath);
+    const sourcePath = fixturePath('baseline', 'main.asm');
     const loaded = await loadDebugArtifact(elfPath, romPath);
-    const breakpoint = loaded.index.resolveBreakpoint(sourcePath, 43);
-    if (!breakpoint) throw new Error('source-line-43 did not resolve');
+    const breakpoint = loaded.index.resolveBreakpoint(sourcePath, 6);
+    if (!breakpoint) throw new Error('baseline main source line did not resolve');
     const location = loaded.index.resolveAddress(breakpoint.address);
     if (!location || location.line !== breakpoint.verifiedLine) {
         throw new Error('address-to-source round trip failed');

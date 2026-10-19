@@ -1,0 +1,17 @@
+{
+  "description": "Mandatory debug fixtures. Rebuild deliberately and update hashes using test/fixtures/update-debug-fixture-manifest.js.",
+  "producers": {
+    "baseline": "v6asm 2026.10.11-873d284",
+    "cdbg": "clang 18.1.0rc V6C, llvm revision 461274b81d8641eab64d494accddc81d7db8a09e"
+  },
+  "files": {
+    "baseline/main.asm": "409b08440ade0d58052d040dbb5c6199553767be3a9528c6b62cb0207e1ccf93",
+    "baseline/sub/rnd.asm": "03b529f9079ca1c162985da2ff4d06d1bffb38f2793fd04867e868620e291311",
+    "baseline/sub/palette.asm": "ea0629914d65b0cc9bf8e1380821502b8acc74ec9a294f538389ca7a15c602eb",
+    "baseline/demo1.elf": "159ebf9155d52e20847d1cc3dd5bb38ab27bdf1d42a777e33bde2f1c4c47d752",
+    "cdbg/probe.c": "5c288a3bde7aa77bbbe8a7b482d4b57e291f66da927f144f18f74f44a43987c1",
+    "cdbg/probe-O0.elf": "70dc577be3f4e9b4a7c368b0d1751b3a2dbf236251bbc0d5b3f7eb78e08778a3",
+    "cdbg/probe-O1.elf": "044f488075ee99783695dca888dd0098c5f019fc3a58f9828ba690b26b53f5f4",
+    "cdbg/probe-O2.elf": "044f488075ee99783695dca888dd0098c5f019fc3a58f9828ba690b26b53f5f4"
+  }
+}

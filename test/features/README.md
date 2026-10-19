@@ -17,12 +17,7 @@ Run:
 npm run test:feature:metadata
 ```
 
-The runner loads `temp/project/out/demo1.elf` and `demo1.rom`, validates their byte identity, and verifies source-to-address and address-to-source mapping. Rebuild the fixture first when source changes:
-
-```powershell
-Set-Location temp/project
-make
-```
+The runner uses the mandatory portable baseline ELF in `test/fixtures/baseline` and reconstructs its ROM from the load image. No local `temp/project` build is required. See `test/fixtures/README.md` for deliberate regeneration and pinned hashes.
 
 On success the runner writes `test/features/debug-metadata/result.txt`. The result contains stable scenario IDs and SHA-256 artifact hashes, without timestamps or machine-specific paths.
 
@@ -51,3 +46,7 @@ This scenario verifies Extension Host startup and a real C `add8 -> accumulate -
 - Do not include timestamps, temporary ports, or absolute paths.
 - Include producer/emulator versions when available, passed scenario IDs, and artifact hashes.
 - Delete stale result files before changing assertions or fixtures.
+
+## Direct live memory/unwind conformance
+
+Run `npm run test:conformance` with `V6EMUL` set. This separate suite fails explicitly when the emulator is missing. Ordinary unit tests never launch a backend based on ambient environment variables.

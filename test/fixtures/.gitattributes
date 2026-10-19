@@ -1,0 +1,5 @@
+# Stable source bytes for pinned fixture hashes across Windows/POSIX checkouts.
+*.asm text eol=lf
+*.c text eol=lf
+*.elf binary
+*.json text eol=lf

@@ -1,23 +1,24 @@
 import { expect } from 'chai';
 import * as path from 'path';
+import * as net from 'net';
+import { fixturePath, fixtureRom, repositoryRoot } from '../helpers/fixture-paths';
 import * as fs from 'fs';
 import { spawn, ChildProcess } from 'child_process';
-import { parseElf32 } from '../../../src/debug/metadata/elf32-reader';
-import { DebugMetadataIndex } from '../../../src/debug/metadata/debug-metadata-index';
-import { DebugStopContext } from '../../../src/debug/metadata/debug-stop-context';
-import { DWARF_REG } from '../../../src/debug/metadata/v6c-register-map';
-import { IpcClient } from '../../../src/emulator/client/ipc-client';
-import { IpcCommand } from '../../../src/emulator/protocol/ipc-commands';
-import { Logger } from '../../../src/platform/logging/logger';
+import { parseElf32 } from '../../src/debug/metadata/elf32-reader';
+import { DebugMetadataIndex } from '../../src/debug/metadata/debug-metadata-index';
+import { DebugStopContext } from '../../src/debug/metadata/debug-stop-context';
+import { DWARF_REG } from '../../src/debug/metadata/v6c-register-map';
+import { IpcClient } from '../../src/emulator/client/ipc-client';
+import { IpcCommand } from '../../src/emulator/protocol/ipc-commands';
+import { Logger } from '../../src/platform/logging/logger';
 
-const REPOSITORY_ROOT = path.resolve(__dirname, '..', '..', '..');
-const PROBE_ELF = path.join(REPOSITORY_ROOT, 'test', 'fixtures', 'cdbg', 'probe-O0.elf');
-const PROBE_ROM = path.join(REPOSITORY_ROOT, 'test', 'fixtures', 'cdbg', 'probe-O0.rom');
+const REPOSITORY_ROOT = repositoryRoot();
+const PROBE_ELF = fixturePath('cdbg', 'probe-O0.elf');
+const PROBE_ROM = fixtureRom(PROBE_ELF);
 const EMULATOR = process.env.V6EMUL;
-const CAN_RUN = !!EMULATOR && fs.existsSync(EMULATOR) && fs.existsSync(PROBE_ELF) && fs.existsSync(PROBE_ROM);
-const PORT = 39777; // arbitrary high port, avoids common clashes
+let port: number;
 
-(describe)('DebugStopContext real-emulator verification', function () {
+describe('DebugStopContext real-emulator verification', function () {
     this.timeout(20_000);
 
     let emulator: ChildProcess;
@@ -26,14 +27,18 @@ const PORT = 39777; // arbitrary high port, avoids common clashes
 
     before(function () {
         if (!EMULATOR || !fs.existsSync(EMULATOR) || !fs.existsSync(PROBE_ELF) || !fs.existsSync(PROBE_ROM)) {
-            this.skip();
+            throw new Error('Conformance requires V6EMUL pointing to a debugger-enabled emulator and mandatory C fixtures');
         }
     });
 
     before(async () => {
+        const reservation = net.createServer();
+        await new Promise<void>(resolve => reservation.listen(0, '127.0.0.1', resolve));
+        port = (reservation.address() as net.AddressInfo).port;
+        await new Promise<void>(resolve => reservation.close(() => resolve()));
         metadata = new DebugMetadataIndex(parseElf32(fs.readFileSync(PROBE_ELF)));
         emulator = spawn(EMULATOR!, [
-            '--serve', '--tcp-port', String(PORT),
+            '--serve', '--tcp-port', String(port),
             '--boot-rom', path.join(REPOSITORY_ROOT, 'res', 'boot', 'boots.bin'),
             '--speed', 'max',
         ], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -42,7 +47,7 @@ const PORT = 39777; // arbitrary high port, avoids common clashes
         client = new IpcClient(new Logger());
         const deadline = Date.now() + 8000;
         for (;;) {
-            try { await client.connect(PORT); break; } catch (error) {
+            try { await client.connect(port); break; } catch (error) {
                 if (Date.now() > deadline) { throw error; }
                 await new Promise(resolve => setTimeout(resolve, 50));
             }
