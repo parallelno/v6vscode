@@ -17,6 +17,7 @@ import { Logger } from '../../platform/logging/logger';
 import { PathService } from '../../platform/files/path-service';
 import { V6Error } from '../../platform/errors/v6-error';
 import { ErrorCode } from '../../platform/errors/error-codes';
+import type { OperationScope } from '../../platform/async/scoped-task-queue';
 
 const DEFAULT_TCP_PORT = 9876;
 const CONNECT_RETRY_DELAY_MS = 300;
@@ -41,7 +42,21 @@ export interface DebugLaunchRequest {
     bootRomPath: string;
     loadAddr?: string;
     speed?: string;
+    fddReadOnly?: boolean;
 }
+
+export interface SessionProgram {
+    readonly executable: string;
+    readonly fddReadOnly: boolean;
+}
+
+export interface StopContext extends OperationScope {
+    readonly owner: EmulatorSessionOwner;
+    readonly program: SessionProgram | undefined;
+    assertCurrent(): void;
+}
+
+export type StopParticipant = (context: StopContext) => Promise<void>;
 
 export class EmulatorLifecycle extends EventEmitter {
     private readonly locator: V6emulLocator;
@@ -55,6 +70,9 @@ export class EmulatorLifecycle extends EventEmitter {
     private _frameMode: EmulatorFrameMode = 'borderless';
     private _owner: EmulatorSessionOwner = null;
     private _serverInfo: GetServerInfoResponse | undefined;
+    private program: SessionProgram | undefined;
+    private readonly stopParticipants = new Set<StopParticipant>();
+    private stopInFlight: Promise<void> | undefined;
 
     constructor(
         locator: V6emulLocator,
@@ -101,12 +119,14 @@ export class EmulatorLifecycle extends EventEmitter {
     }
 
     async start(project: V6Project): Promise<void> {
+        if (this.stopInFlight) { await this.stopInFlight; }
         if (this._state !== 'stopped') {
             await this.stop();
         }
 
         this.setState('launching');
         this._owner = 'run';
+        this.recordLoadedProgram(project.run.executable, project.run.fddReadOnly ?? false);
 
         try {
             const emulatorPath = this.locator.resolve();
@@ -131,20 +151,7 @@ export class EmulatorLifecycle extends EventEmitter {
                 tcpPort: port,
             });
 
-            // Monitor process exit
-            this.emulatorProcess.spawnResult.exitPromise.then((code) => {
-                this.logger.info(`v6emul process exited with code ${code}`);
-                this.emulatorProcess = null;
-                this._serverInfo = undefined;
-                this.setState('stopped');
-                this.emit('exit', code);
-            }).catch((err) => {
-                this.logger.error(`v6emul process error: ${err.message}`);
-                this.emulatorProcess = null;
-                this._serverInfo = undefined;
-                this.setState('stopped');
-                this.emit('error', err);
-            });
+            this.monitorProcess(this.emulatorProcess);
 
             // Connect with retries (emulator needs time to start TCP server)
             await this.connectWithRetries(port);
@@ -202,6 +209,7 @@ export class EmulatorLifecycle extends EventEmitter {
         } catch (err) {
             this.logger.error(`v6emul start failed: ${err instanceof Error ? err.message : String(err)}`);
             this.cleanup();
+            this._owner = null;
             this.setState('stopped');
             throw err instanceof V6Error ? err : new V6Error(
                 ErrorCode.EMULATOR_LAUNCH_FAILED,
@@ -212,6 +220,7 @@ export class EmulatorLifecycle extends EventEmitter {
     }
 
     async startDebug(request: DebugLaunchRequest): Promise<{ client: IpcClient; process: EmulatorProcess; port: number }> {
+        if (this.stopInFlight) { await this.stopInFlight; }
         if (this._state !== 'stopped') {
             await this.stop();
         }
@@ -266,6 +275,7 @@ export class EmulatorLifecycle extends EventEmitter {
                 path: request.program,
                 autoBoot: true,
             });
+            this.recordLoadedProgram(request.program, request.fddReadOnly ?? false);
             this.logger.info(`v6emul: debug FDD mounted from "${request.program}"`);
             return;
         }
@@ -277,6 +287,7 @@ export class EmulatorLifecycle extends EventEmitter {
             addr,
             autorun: false,
         });
+        this.recordLoadedProgram(request.program, request.fddReadOnly ?? false);
         this.logger.info(`v6emul: debug ROM loaded at 0x${addr.toString(16)}`);
     }
 
@@ -310,31 +321,74 @@ export class EmulatorLifecycle extends EventEmitter {
         await this.stop();
     }
 
-    async stop(): Promise<void> {
-        if (this._state === 'stopped') {
-            return;
+    recordLoadedProgram(executable: string, fddReadOnly: boolean): void {
+        this.program = Object.freeze({ executable, fddReadOnly });
+    }
+
+    registerStopParticipant(participant: StopParticipant): { dispose(): void } {
+        this.stopParticipants.add(participant);
+        return { dispose: () => { this.stopParticipants.delete(participant); } };
+    }
+
+    /** Required participant failures abort normal stops; shutdown must still release resources. */
+    stop(reason: 'normal' | 'shutdown' = 'normal'): Promise<void> {
+        if (this.stopInFlight) { return this.stopInFlight; }
+        const result = Promise.resolve().then(() => this.stopNow(reason));
+        this.stopInFlight = result;
+        const clear = () => { if (this.stopInFlight === result) { this.stopInFlight = undefined; } };
+        void result.then(clear, clear);
+        return result;
+    }
+
+    async shutdown(): Promise<void> {
+        try { await this.stop('shutdown'); }
+        catch (error) {
+            // A normal stop may already have been in flight when shutdown began.
+            this.logger.error(`v6emul shutdown: ${error instanceof Error ? error.message : String(error)}`);
+            await this.stop('shutdown');
         }
+    }
 
+    private async stopNow(reason: 'normal' | 'shutdown'): Promise<void> {
+        if (this._state === 'stopped') { return; }
+        const process = this.emulatorProcess;
+        const owner = this._owner;
+        const program = this.program;
+        const epoch = this.client.connectionEpoch;
+        const context: StopContext = {
+            key: {}, owner, program,
+            assertCurrent: () => {
+                if (this.emulatorProcess !== process || this._owner !== owner || this.client.connectionEpoch !== epoch
+                    || this.program !== program || !this.client.connected) { throw new Error('Stop belongs to an inactive emulator connection'); }
+            },
+        };
         this.logger.info('v6emul: stopping...');
-
-        try {
-            if (this.client.connected) {
-                await this.client.send(IpcCommand.STOP).catch(() => {});
+        if (this.client.connected) {
+            await this.client.send(IpcCommand.STOP, undefined, 5000, 'high', context).catch(() => {});
+            this.setExecutionRunning(false);
+            try {
+                context.assertCurrent();
+                for (const participant of [...this.stopParticipants]) {
+                    await participant(context);
+                    context.assertCurrent();
+                }
+            } catch (error) {
+                this.logger.error(`v6emul stop participant: ${error instanceof Error ? error.message : String(error)}`);
+                if (reason !== 'shutdown') { throw error; }
+            }
+            if (this.emulatorProcess === process && this.client.connectionEpoch === epoch) {
                 await this.client.send(IpcCommand.EXIT).catch(() => {});
             }
-        } catch {
-            // Best-effort
         }
-
-        // Wait briefly for process to exit
-        if (this.emulatorProcess) {
-            const race = Promise.race([
-                this.emulatorProcess.spawnResult.exitPromise,
-                new Promise<void>((resolve) => setTimeout(resolve, 2000)),
-            ]);
-            await race;
+        if (process) {
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            try {
+                await Promise.race([process.spawnResult.exitPromise.catch(() => {}),
+                    new Promise<void>(resolve => { timer = setTimeout(resolve, 2000); })]);
+            } finally { clearTimeout(timer); }
         }
-
+        // A monitor/detach may already have cleared this session. Never clean up a replacement.
+        if (this.emulatorProcess !== process || this._owner !== owner || this.client.connectionEpoch !== epoch) { return; }
         this.cleanup();
         this._owner = null;
         this.setState('stopped');
@@ -346,6 +400,7 @@ export class EmulatorLifecycle extends EventEmitter {
         this.emulatorProcess = null;
         this._serverInfo = undefined;
         this._owner = null;
+        this.program = undefined;
         this.setState('stopped');
         this.logger.info('v6emul: disconnected');
     }
@@ -381,6 +436,7 @@ export class EmulatorLifecycle extends EventEmitter {
     }
 
     private cleanup(): void {
+        this.program = undefined;
         this._serverInfo = undefined;
         this.client.disconnect();
         if (this.emulatorProcess) {
@@ -401,6 +457,7 @@ export class EmulatorLifecycle extends EventEmitter {
             this.client.disconnect();
             this._serverInfo = undefined;
             this._owner = null;
+            this.program = undefined;
             this.setState('stopped');
             this.emit('exit', code);
         }).catch((err) => {
@@ -410,6 +467,7 @@ export class EmulatorLifecycle extends EventEmitter {
             this.client.disconnect();
             this._serverInfo = undefined;
             this._owner = null;
+            this.program = undefined;
             this.setState('stopped');
             this.emit('error', err);
         });

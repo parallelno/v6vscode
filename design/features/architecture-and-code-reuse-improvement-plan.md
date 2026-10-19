@@ -1,6 +1,6 @@
 # Architecture, Code Reuse, and Maintainability Improvement Plan
 
-**Status:** Approved for staged implementation; R01-R04 complete in stage 1; R05/R06 complete as a two-feature pilot in stage 2; R07 complete in stage 3. R08-R24 remain pending.
+**Status:** Approved for staged implementation; R01-R04 complete in stage 1; R05/R06 complete as a two-feature pilot in stage 2; R07 complete in stage 3; R08 complete in stage 4. R09-R24 remain pending.
 **Audit date:** 2026-10-18 (workspace session; some validation timestamps are 2026-10-19 UTC).
 **Owner:** v6vscode maintainers.
 **Repository:** `C:\Work\Programming\v6vscode`.
@@ -63,7 +63,17 @@ The duplicated ASM string/comment maskers now use one offset-preserving helper. 
 
 Verification: 676 unit tests, zero skips; 62 regressions; seven packaged Extension Host/emulator tests including the new CSP-restricted numeric ESM smoke and existing hover/value/stepping checks. CI/host/browser-shared compilation pass; lint remains at zero errors and the existing 66 warnings. Shared host/ESM literal vectors, explicit range/width policy checks and ASM offset tests pass.
 
-**Next stage:** R08 awaited stop participants, then R09 API/import-boundary gates as separate approved slices. R10-R24 remain separate roadmap work.
+Stage 3 commit: `7439dfc` — `Share numeric mechanics across host and browser and preserve ASM offsets`.
+
+## Implementation progress — stage 4 (R08)
+
+Removed runtime replacement of lifecycle.stop. Registered participants are awaited after CPU pause and before EXIT, with connection/program identity guards through FDD info/export/reset exchanges. Loaded program/read-only policy is recorded for run, debug and run reload, rather than looking up the current active project during stop. Concurrent stops coalesce; completed stops and participant disposal are idempotent. Start/restart waits for an in-progress stop. The run path now uses the same identity-guarded process monitor as debug so an old exit callback cannot clear its replacement.
+
+Failure policy is deliberate: required persistence failure rejects normal stop/restart before EXIT or cleanup, allowing retry; DAP termination/disconnect returns a failure response without destroying the retryable session. Extension deactivate awaits shutdown before disposing its store; host shutdown logs persistence errors and proceeds with teardown. Detach skips save/termination. Unexpected process loss cannot save an image after the stream is gone. Existing best-effort persistIfNeeded remains for compatibility; the registered participant uses the failure-propagating path. This does not add multi-drive automatic save, atomic file replacement, remote cancellation or a broad lifecycle coordinator.
+
+Verification: 688 unit tests, zero skips; 62 regressions; seven real Extension Host/emulator tests; two live conformance tests. Host/browser-shared and full test typechecks pass; lint retains the existing 66 warnings with zero errors. New stop tests perform real temporary-file writes through run/display/restart/shutdown and debug-loaded paths, exercise concurrent stops, read-only/detach, stale scopes, export/write failures and retry; DAP tests verify failure responses and retry. Existing cross-surface hover/value and stepping checks pass.
+
+**Next stage:** R09 minimum API audit and import-boundary/manifest gates. R10-R24 remain separate roadmap work.
 
 ## 1. Executive assessment
 

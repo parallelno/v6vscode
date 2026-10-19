@@ -274,4 +274,28 @@ describe('V6DebugAdapter stop records', () => {
         expect(messages.find(message => message.command === 'terminate')?.success).to.equal(true);
         expect(messages.some(message => message.event === 'terminated')).to.equal(true);
     });
+    for (const command of ['terminate', 'disconnect']) {
+        it(`reports save failure for ${command} and retains the session for retry`, async () => {
+            let fail = true;
+            const lifecycle = Object.assign(new EventEmitter(), {
+                owner: 'debug', connected: true,
+                stop: async () => { if (fail) { throw new Error('FDD save failed'); } },
+            });
+            const adapter = new V6DebugAdapter(lifecycle as any, {} as any,
+                { debug() {}, error() {} } as any, {} as any, () => ({} as any));
+            const messages: any[] = [];
+            adapter.onDidSendMessage(message => messages.push(message));
+            (adapter as any).client = { connected: true, send: async () => ({ ok: true }) };
+            adapter.handleMessage({ type: 'request', seq: 50, command, arguments: { terminateDebuggee: true } } as any);
+            await new Promise(resolve => setImmediate(resolve));
+            expect(messages.find(message => message.request_seq === 50)?.success).to.equal(false);
+            expect(messages.some(message => message.event === 'terminated')).to.equal(false);
+            expect((adapter as any).client).not.to.equal(null);
+            fail = false;
+            adapter.handleMessage({ type: 'request', seq: 51, command, arguments: { terminateDebuggee: true } } as any);
+            await new Promise(resolve => setImmediate(resolve));
+            expect(messages.find(message => message.request_seq === 51)?.success).to.equal(true);
+            adapter.dispose();
+        });
+    }
 });

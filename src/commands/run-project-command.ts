@@ -35,6 +35,7 @@ export class RunProjectCommand {
             if (this.lifecycle.running) {
                 // Emulator already running — reload executable without restart
                 await this.reloadExecutable(project);
+                this.lifecycle.recordLoadedProgram(project.run.executable, project.run.fddReadOnly ?? false);
             } else {
                 await this.lifecycle.start(project);
             }

@@ -90,6 +90,8 @@ import { ScriptService } from './debug/scripts/script-service';
 import { ScriptOverlayService } from './debug/scripts/script-overlay-service';
 import { CMD_ADD_SCRIPT, CMD_REFRESH_SCRIPTS, ScriptsPanel } from './debug/views/scripts-panel';
 
+let shutdownExtension: (() => Promise<void>) | undefined;
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     const store = new DisposableStore();
 
@@ -115,6 +117,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const launcher = new V6emulLauncher(processRunner, logger, serverOutput);
     const ipcClient = new IpcClient(logger);
     const lifecycle = new EmulatorLifecycle(locator, launcher, ipcClient, logger, pathService);
+    shutdownExtension = async () => {
+        try { await lifecycle.shutdown(); }
+        finally { store.dispose(); }
+    };
     const loadActiveProject = async () => {
         const project = activeProjectService.getActiveProject();
         return project ? projectRepository.load(project.uri) : undefined;
@@ -303,16 +309,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     store.add(vscode.commands.registerCommand(CMD_REFRESH_WATCHPOINTS, () => watchpoints.refresh()));
     store.add(vscode.commands.registerCommand(CMD_ADD_WATCHPOINT, () => watchpoints.add()));
 
-    // Persist FDD images before emulator stops
-    const onBeforeStop = async () => {
-        const project = activeProjectService.getActiveProject();
-        if (project) {
-            await fddPersistence.persistIfNeeded(
-                project.run.fddReadOnly ?? false,
-                project.run.executable,
-            );
-        }
-    };
+    store.add(lifecycle.registerStopParticipant(context => fddPersistence.persistOnStop(context)));
 
     // Commands
     const runProjectCmd = new RunProjectCommand(
@@ -363,13 +360,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand(CMD_RUN_PROJECT, () => runProjectCmd.execute())
     );
 
-    // Override lifecycle.stop to persist FDD before stopping
-    const originalStop = lifecycle.stop.bind(lifecycle);
-    lifecycle.stop = async () => {
-        await onBeforeStop();
-        return originalStop();
-    };
-
     context.subscriptions.push(store);
 
     // Debug adapter (Steps 3.5 / 3.8)
@@ -389,8 +379,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     logger.info('Vector-06c extension activated.');
 }
 
-export function deactivate(): void {
-    // Cleanup handled by DisposableStore via context.subscriptions.
+export async function deactivate(): Promise<void> {
+    const shutdown = shutdownExtension;
+    shutdownExtension = undefined;
+    await shutdown?.();
 }
 
 function isSourceLocation(value: unknown): value is SourceLocation {

@@ -41,6 +41,7 @@ describe('V6DebugConfigurationProvider', () => {
         expect(config?.debugArtifact).to.equal('project/demo.elf');
         expect(config).to.have.property('loadAddress', '0x100');
         expect(config).to.have.property('speed', '100%');
+        expect(config).to.have.property('fddReadOnly', false);
         expect(config).not.to.have.property('stopOnEntry');
     });
 

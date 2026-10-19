@@ -2,6 +2,8 @@ import * as fs from 'fs';
 import { IpcClient } from '../client/ipc-client';
 import { IpcCommand, GetFddInfoResponse, GetFddImageResponse } from '../protocol/ipc-commands';
 import { Logger } from '../../platform/logging/logger';
+import type { StopContext } from '../lifecycle/emulator-lifecycle';
+import type { OperationScope } from '../../platform/async/scoped-task-queue';
 
 /**
  * Persist modified FDD images back to disk when the emulator stops.
@@ -16,6 +18,14 @@ export class FddPersistence {
         private readonly client: IpcClient,
         private readonly logger: Logger,
     ) {}
+
+    /** Required owned-stop participant: failures propagate so a user can retry saving. */
+    async persistOnStop(context: StopContext): Promise<void> {
+        const program = context.program;
+        if (!context.owner || !program || program.fddReadOnly || !program.executable.toLowerCase().endsWith('.fdd')) { return; }
+        context.assertCurrent();
+        await this.persistDriveIfNeeded(0, program.executable, context);
+    }
 
     /**
      * Check and persist FDD images for the given project.
@@ -49,14 +59,17 @@ export class FddPersistence {
         }
     }
 
-    async persistDriveIfNeeded(driveIdx: number, filePath: string): Promise<boolean> {
+    async persistDriveIfNeeded(driveIdx: number, filePath: string, scope?: OperationScope): Promise<boolean> {
         if (!Number.isInteger(driveIdx) || driveIdx < 0 || driveIdx > 3) {
             throw new RangeError('Drive index must be in the range 0..3');
         }
+        scope?.assertCurrent();
         const infoResp = await this.client.send<GetFddInfoResponse>(
             IpcCommand.GET_FDD_INFO,
             { driveIdx },
+            5000, 'high', scope,
         );
+        scope?.assertCurrent();
 
         if (!infoResp.ok || !infoResp.data) {
             throw new Error(`drive ${driveIdx} info not available`);
@@ -77,7 +90,9 @@ export class FddPersistence {
         const imageResp = await this.client.send<GetFddImageResponse>(
             IpcCommand.GET_FDD_IMAGE,
             { driveIdx },
+            5000, 'high', scope,
         );
+        scope?.assertCurrent();
 
         if (!imageResp.ok || !imageResp.data) {
             throw new Error(`Failed to export drive ${driveIdx} image`);
@@ -87,7 +102,8 @@ export class FddPersistence {
         fs.writeFileSync(filePath, imageBuffer);
         this.logger.info(`fdd-persistence: drive ${driveIdx} saved to "${filePath}" (${imageBuffer.length} bytes)`);
 
-        const resetResponse = await this.client.send(IpcCommand.RESET_UPDATE_FDD, { driveIdx });
+        const resetResponse = await this.client.send(IpcCommand.RESET_UPDATE_FDD, { driveIdx }, 5000, 'high', scope);
+        scope?.assertCurrent();
         if (!resetResponse.ok) {
             throw new Error(`Failed to clear drive ${driveIdx} dirty state`);
         }

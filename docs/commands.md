@@ -82,4 +82,4 @@ When the emulator stops, if the loaded executable is a `.fdd` file:
 - If `fddReadOnly` is `true` → skip entirely, discard in-memory writes.
 - If `fddReadOnly` is `false` → `GET_FDD_INFO` checks if the drive is mounted and updated → `GET_FDD_IMAGE` exports the disk image → write to disk → `RESET_UPDATE_FDD`.
 
-This is wired into `EmulatorLifecycle.stop()` via an `onBeforeStop` hook in `extension.ts`.
+Persistence is an awaited lifecycle stop participant. Normal stop/restart and debug termination pause the CPU, save the session's loaded FDD, then exit. Concurrent stops share one shutdown. A save failure rejects normal stop so the disk can be saved/retried; extension deactivation logs the failure and still tears down the owned emulator. Detach does not save or terminate a borrowed session. Read-only policy and the target executable are captured when the program is loaded, not read from a later active-project selection. Unexpected process exits cannot be saved after the connection is lost.

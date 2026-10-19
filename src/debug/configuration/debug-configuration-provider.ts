@@ -82,6 +82,7 @@ export class V6DebugConfigurationProvider implements vscode.DebugConfigurationPr
             config.bootRom = project.run.bootRom ?? '';
             config.loadAddress = project.run.loadAddr;
             config.speed = project.run.speed;
+            config.fddReadOnly = project.run.fddReadOnly ?? false;
             delete config.stopOnEntry;
 
             if (project.run.debugArtifact) {

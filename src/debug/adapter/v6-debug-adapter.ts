@@ -366,6 +366,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                 bootRomPath,
                 loadAddr: args.loadAddress ? String(args.loadAddress) : undefined,
                 speed: args.speed ?? '100%',
+                fddReadOnly: args.fddReadOnly === true,
             };
             this.stopOnEntry = Boolean(args.stopOnEntry);
             const launch = await this.lifecycle.startDebug(this.launchRequest);
@@ -1724,14 +1725,24 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private async onDisconnect(req: any): Promise<void> {
         const terminateDebuggee = req.arguments?.terminateDebuggee ?? (this.emulatorProcess !== null);
         this.terminationRequested = true;
-        await this.cleanup(terminateDebuggee);
+        try { await this.cleanup(terminateDebuggee); }
+        catch (error) {
+            this.terminationRequested = false;
+            this.sendResponse(req, false, error instanceof Error ? error.message : String(error));
+            return;
+        }
         this.sendResponseBody(req, {});
         this.emitTerminated();
     }
 
     private async onTerminate(req: any): Promise<void> {
         this.terminationRequested = true;
-        await this.cleanup(true);
+        try { await this.cleanup(true); }
+        catch (error) {
+            this.terminationRequested = false;
+            this.sendResponse(req, false, error instanceof Error ? error.message : String(error));
+            return;
+        }
         this.sendResponseBody(req, {});
         this.emitTerminated();
     }
@@ -2101,6 +2112,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     }
 
     private async cleanup(terminateDebuggee: boolean): Promise<void> {
+        // A required save may fail. Do not discard the DAP session before it can be retried.
+        if (terminateDebuggee && this.lifecycle.owner === 'debug') { await this.lifecycle.stop(); }
         this.stopPoll();
         await this.cancelSourceStep();
         await this.releaseSourceStepBreakpoints();
@@ -2125,9 +2138,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                 await this.client.send(IpcCommand.EXIT, {}).catch(() => {});
             }
             if (this.lifecycle.owner === 'debug') {
-                if (terminateDebuggee) {
-                    await this.lifecycle.stop();
-                } else {
+                if (!terminateDebuggee) {
                     this.lifecycle.disconnect();
                 }
             } else {
