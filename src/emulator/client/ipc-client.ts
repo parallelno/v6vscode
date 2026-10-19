@@ -1,3 +1,5 @@
+import { TimerClock, systemTimerClock } from '../../platform/async/timer-clock';
+import type { OperationScope } from '../../platform/async/scoped-task-queue';
 import * as net from 'net';
 import { IpcCommand, IpcResponse } from '../protocol/ipc-commands';
 import { encodeRequest, decodeResponse, frameLength, MAX_IPC_PAYLOAD_BYTES } from '../protocol/ipc-codec';
@@ -31,6 +33,7 @@ interface PendingRequest {
     complete(frame: Buffer): void;
     reject(error: Error): void;
     timer?: ReturnType<typeof setTimeout>;
+    scope?: OperationScope;
 }
 
 /** One request at a time: an indeterminate stream must be abandoned, not reused. */
@@ -42,14 +45,17 @@ export class IpcClient {
     private readonly requestQueue: PendingRequest[] = [];
     private queuedBytes = 0;
     private nextSequence = 0;
+    private epoch = 0;
     private readonly limits: IpcClientLimits;
 
-    constructor(private readonly logger: Logger, limits: Partial<IpcClientLimits> = {}) {
+    constructor(private readonly logger: Logger, limits: Partial<IpcClientLimits> = {}, private readonly clock: TimerClock = systemTimerClock) {
         this.limits = { ...DEFAULT_LIMITS, ...limits };
         for (const value of Object.values(this.limits)) {
             if (!Number.isSafeInteger(value) || value <= 0) { throw new RangeError('IPC limits must be positive safe integers'); }
         }
     }
+
+    get connectionEpoch(): number { return this.epoch; }
 
     get connected(): boolean { return this.socket !== null && !this.socket.destroyed; }
 
@@ -61,7 +67,7 @@ export class IpcClient {
         let reject!: (error: Error) => void;
         const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
         const cleanup = () => {
-            clearTimeout(timer);
+            this.clock.cancel(timer);
             socket.removeAllListeners();
             // A cancelled connect/write can still report an asynchronous error.
             socket.on('error', () => {});
@@ -72,11 +78,12 @@ export class IpcClient {
             socket.destroy();
             reject(error);
         };
-        const timer = setTimeout(() => cancel(new V6Error(ErrorCode.IPC_CONNECTION_REFUSED,
+        const timer = this.clock.schedule(() => cancel(new V6Error(ErrorCode.IPC_CONNECTION_REFUSED,
             `Connection to ${host}:${port} timed out`)), CONNECT_TIMEOUT_MS);
         this.connecting = { promise, cancel };
         socket.once('connect', () => {
             cleanup();
+            this.epoch++;
             this.socket = socket;
             this.receiveBuffer = Buffer.alloc(0);
             this.setupListeners(socket);
@@ -96,23 +103,28 @@ export class IpcClient {
         this.failConnection(new V6Error(ErrorCode.IPC_CONNECTION_REFUSED, 'Disconnected'));
     }
 
-    send<T = unknown>(cmd: IpcCommand, data?: unknown, timeoutMs = DEFAULT_TIMEOUT_MS, priority: IpcPriority = 'normal'): Promise<IpcResponse<T>> {
-        return this.request(cmd, data, timeoutMs, priority, frame => decodeResponse(frame) as IpcResponse<T>);
+    send<T = unknown>(cmd: IpcCommand, data?: unknown, timeoutMs = DEFAULT_TIMEOUT_MS, priority: IpcPriority = 'normal', scope?: OperationScope): Promise<IpcResponse<T>> {
+        return this.request(cmd, data, timeoutMs, priority, frame => decodeResponse(frame) as IpcResponse<T>, scope);
     }
 
-    sendRaw(cmd: IpcCommand, data?: unknown, timeoutMs = DEFAULT_TIMEOUT_MS, priority: IpcPriority = 'normal'): Promise<Buffer> {
-        return this.request(cmd, data, timeoutMs, priority, frame => frame);
+    sendRaw(cmd: IpcCommand, data?: unknown, timeoutMs = DEFAULT_TIMEOUT_MS, priority: IpcPriority = 'normal', scope?: OperationScope): Promise<Buffer> {
+        return this.request(cmd, data, timeoutMs, priority, frame => frame, scope);
     }
 
-    private request<T>(cmd: IpcCommand, data: unknown, timeoutMs: number, priority: IpcPriority, decode: (frame: Buffer) => T): Promise<T> {
+    private request<T>(cmd: IpcCommand, data: unknown, timeoutMs: number, priority: IpcPriority, decode: (frame: Buffer) => T, scope?: OperationScope): Promise<T> {
         return new Promise<T>((resolve, reject) => {
+            scope?.assertCurrent();
             if (!this.connected) { throw new V6Error(ErrorCode.IPC_CONNECTION_REFUSED, 'Not connected'); }
             if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 0x7FFFFFFF) { throw new RangeError('Invalid IPC timeout'); }
             const frame = encodeRequest(cmd, data);
             if (frame.length - 4 > this.limits.maxPayloadBytes) { throw new RangeError('IPC request exceeds payload limit'); }
             const request: PendingRequest = {
                 frame, timeoutMs, priority, sequence: this.nextSequence++,
-                complete: raw => resolve(decode(raw)), reject,
+                scope, reject,
+                complete: raw => {
+                    const value = decode(raw); // A malformed wire response still fails the stream.
+                    try { scope?.assertCurrent(); resolve(value); } catch (error) { reject(error); }
+                },
             };
             if (!this.active) { this.executeWrite(request); return; }
             if (this.requestQueue.length >= this.limits.maxQueuedRequests || this.queuedBytes + frame.length > this.limits.maxQueuedBytes) {
@@ -120,7 +132,7 @@ export class IpcClient {
             }
             // Queue wait is bounded independently; expiring unsent work does not
             // invalidate the stream. The on-wire deadline starts at dispatch.
-            request.timer = setTimeout(() => {
+            request.timer = this.clock.schedule(() => {
                 const index = this.requestQueue.indexOf(request);
                 if (index < 0) { return; }
                 this.requestQueue.splice(index, 1);
@@ -134,11 +146,16 @@ export class IpcClient {
     }
 
     private executeWrite(request: PendingRequest): void {
+        this.clock.cancel(request.timer);
+        try { request.scope?.assertCurrent(); } catch (error) {
+            request.reject(error instanceof Error ? error : new Error(String(error)));
+            this.processNextInQueue();
+            return;
+        }
         const socket = this.socket;
         if (!socket || socket.destroyed) { request.reject(new V6Error(ErrorCode.IPC_CONNECTION_REFUSED, 'Not connected')); return; }
-        clearTimeout(request.timer);
         this.active = request;
-        request.timer = setTimeout(() => {
+        request.timer = this.clock.schedule(() => {
             if (this.socket === socket && this.active === request) {
                 this.failConnection(new V6Error(ErrorCode.IPC_TIMEOUT, `IPC request timed out after ${request.timeoutMs}ms`));
             }
@@ -170,7 +187,7 @@ export class IpcClient {
                 if (length !== this.receiveBuffer.length) { throw new V6Error(ErrorCode.IPC_DECODE_ERROR, 'Unexpected extra IPC response bytes'); }
                 const request = this.active;
                 request.complete(this.receiveBuffer); // Validate before advancing the queue.
-                clearTimeout(request.timer);
+                this.clock.cancel(request.timer);
                 this.active = undefined;
                 this.receiveBuffer = Buffer.alloc(0);
                 this.processNextInQueue();
@@ -193,6 +210,7 @@ export class IpcClient {
 
     /** Detach first, settle everything once, and never dispatch on a failed stream. */
     private failConnection(error: Error): void {
+        if (this.socket || this.connecting) { this.epoch++; }
         this.connecting?.cancel(error);
         const socket = this.socket;
         this.socket = null;
@@ -205,7 +223,7 @@ export class IpcClient {
         socket?.on('error', () => {});
         socket?.destroy();
         for (const request of pending ? [pending, ...queued] : queued) {
-            clearTimeout(request.timer);
+            this.clock.cancel(request.timer);
             request.reject(error);
         }
     }

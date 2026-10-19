@@ -1,55 +1,48 @@
 import { EventEmitter } from 'events';
-import { IpcClient } from '../../emulator/client/ipc-client';
-import { EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
+import { decodeProtocolData, requireProtocolOk } from '../../emulator/protocol/protocol-result';
+import { CommandTransport, SessionOperations, SessionOperation, SessionState } from '../../emulator/session/session-operations';
 import {
     MemoryEditInput,
-    MemoryEditRestoreResponse,
     MemoryEditSnapshot,
 } from '../../emulator/protocol/debug-models';
-import { GetServerInfoResponse, IpcCommand, IpcResponse } from '../../emulator/protocol/ipc-commands';
+import { GetServerInfoResponse, IpcCommand } from '../../emulator/protocol/ipc-commands';
 import { validateMemoryEditServer } from '../../emulator/protocol/ipc-server-info';
 import {
-    decodeMemoryEditList,
+    decodeMemoryEditList, decodeMemoryEditRestore,
     MemoryEditValidationLimits,
     validateMemoryEditInput,
 } from './memory-edit-codec';
 
 export class MemoryEditService extends EventEmitter {
     private entries: readonly MemoryEditSnapshot[] = [];
-    private queue: Promise<void> = Promise.resolve();
-    private generation = 0;
-    private readonly stateListener: () => void;
+    private readonly operations: SessionOperations<readonly MemoryEditSnapshot[]>;
 
     constructor(
-        private readonly lifecycle: EmulatorLifecycle,
-        private readonly client: IpcClient,
+        private readonly lifecycle: SessionState,
+        client: CommandTransport,
     ) {
         super();
-        this.stateListener = () => {
-            if (!this.lifecycle.connected) { this.reset(); }
-        };
-        this.lifecycle.on('stateChange', this.stateListener);
+        this.operations = new SessionOperations<readonly MemoryEditSnapshot[]>(lifecycle, client, () => this.reset());
     }
 
     get snapshot(): readonly MemoryEditSnapshot[] { return this.entries; }
-    get sessionGeneration(): number { return this.generation; }
+    get sessionGeneration(): number { return this.operations.generation; }
 
     get available(): boolean {
         try {
-            if (!this.lifecycle.connected || !this.lifecycle.serverInfo) { return false; }
-            validateMemoryEditServer(this.lifecycle.serverInfo);
+            this.requireAvailable();
             return true;
         } catch { return false; }
     }
 
     refresh(): Promise<readonly MemoryEditSnapshot[]> {
-        return this.enqueue(() => this.refreshNow());
+        return this.operations.refresh(scope => this.refreshNow(scope));
     }
 
     apply(globalAddr: number, enteredValue: number, currentValue?: number): Promise<MemoryEditSnapshot | undefined> {
-        return this.mutate(async () => {
+        return this.mutate(async scope => {
             const existing = this.find(globalAddr);
-            const request = this.validate({
+            const request = this.validate(scope, {
                 globalAddr,
                 enteredValue,
                 readonly: existing?.readonly ?? false,
@@ -57,8 +50,8 @@ export class MemoryEditService extends EventEmitter {
                 comment: existing?.comment ?? '',
             });
             if (!existing && request.enteredValue === currentValue) { return undefined; }
-            await this.sendMutation(IpcCommand.DEBUG_MEMORY_EDIT_ADD, request);
-            await this.refreshNow();
+            await this.sendMutation(scope, IpcCommand.DEBUG_MEMORY_EDIT_ADD, request);
+            await this.refreshNow(scope);
             return this.requireMatching(request);
         });
     }
@@ -80,73 +73,73 @@ export class MemoryEditService extends EventEmitter {
     }
 
     disableAll(): Promise<void> {
-        return this.mutate(async () => {
+        return this.mutate(async scope => {
             for (const entry of this.entries.filter(item => item.active)) {
-                await this.sendMutation(
+                await this.sendMutation(scope,
                     IpcCommand.DEBUG_MEMORY_EDIT_ADD,
-                    this.validate(inputFrom(entry, { active: false })),
+                    this.validate(scope, inputFrom(entry, { active: false })),
                 );
             }
-            await this.refreshNow();
+            await this.refreshNow(scope);
             if (this.entries.some(entry => entry.active)) { throw new Error('Not all memory edits were disabled'); }
         });
     }
 
     delete(globalAddr: number): Promise<void> {
-        return this.mutate(async () => {
+        return this.mutate(async scope => {
             this.requireEntry(globalAddr);
-            await this.sendMutation(IpcCommand.DEBUG_MEMORY_EDIT_DEL, { globalAddr });
-            await this.refreshNow();
+            await this.sendMutation(scope, IpcCommand.DEBUG_MEMORY_EDIT_DEL, { globalAddr });
+            await this.refreshNow(scope);
             if (this.find(globalAddr)) { throw new Error(`Memory edit ${globalAddr} was not deleted`); }
         });
     }
 
     deleteAll(): Promise<void> {
-        return this.mutate(async () => {
-            await this.sendMutation(IpcCommand.DEBUG_MEMORY_EDIT_DEL_ALL);
-            await this.refreshNow();
+        return this.mutate(async scope => {
+            await this.sendMutation(scope, IpcCommand.DEBUG_MEMORY_EDIT_DEL_ALL);
+            await this.refreshNow(scope);
             if (this.entries.length) { throw new Error('Not all memory edits were deleted'); }
         });
     }
 
     deleteAndRestore(globalAddr: number): Promise<void> {
-        return this.mutate(async () => {
+        return this.mutate(async scope => {
             const entry = this.requireEntry(globalAddr);
-            await this.restoreAndDelete(entry);
-            await this.refreshNow();
+            await this.restoreAndDelete(scope, entry);
+            await this.refreshNow(scope);
             if (this.find(globalAddr)) { throw new Error(`Memory edit ${globalAddr} was not deleted`); }
         });
     }
 
     deleteAndRestoreAll(): Promise<void> {
-        return this.mutate(async () => {
+        return this.mutate(async scope => {
             const entries = [...this.entries];
             try {
-                for (const entry of entries) { await this.restoreAndDelete(entry); }
+                for (const entry of entries) { await this.restoreAndDelete(scope, entry); }
             } finally {
-                await this.refreshNow();
+                await this.refreshNow(scope);
             }
             if (this.entries.length) { throw new Error('Not all memory edits were restored and deleted'); }
         });
     }
 
     restoreRetaining(globalAddr: number): Promise<MemoryEditSnapshot> {
-        return this.mutate(async () => {
+        return this.mutate(async scope => {
             const entry = this.requireEntry(globalAddr);
-            const response = await this.client.send<MemoryEditRestoreResponse>(
+            const response = await scope.send<unknown>(
                 IpcCommand.DEBUG_MEMORY_EDIT_RESTORE, { globalAddr }, 5000, 'high',
             );
-            const result = this.responseData(response, 'Unable to restore memory edit');
+            const result = decodeProtocolData(IpcCommand.DEBUG_MEMORY_EDIT_RESTORE, response, 'Unable to restore memory edit', decodeMemoryEditRestore);
             if (result.globalAddr !== globalAddr || result.restoredValue !== entry.originalValue || result.deleted !== true) {
                 throw new Error('Memory edit restore returned an invalid result');
             }
             try {
-                await this.sendMutation(
+                await this.sendMutation(scope,
                     IpcCommand.DEBUG_MEMORY_EDIT_ADD,
-                    this.validate(inputFrom(entry, { active: false })),
+                    this.validate(scope, inputFrom(entry, { active: false })),
                 );
             } finally {
-                await this.refreshNow();
+                await this.refreshNow(scope);
             }
             const restored = this.requireEntry(globalAddr);
             if (restored.active) { throw new Error('Restored memory edit is still active'); }
@@ -155,7 +148,7 @@ export class MemoryEditService extends EventEmitter {
     }
 
     dispose(): void {
-        this.lifecycle.removeListener('stateChange', this.stateListener);
+        this.operations.dispose();
         this.removeAllListeners();
     }
 
@@ -163,58 +156,47 @@ export class MemoryEditService extends EventEmitter {
         globalAddr: number,
         change: (entry: MemoryEditSnapshot) => MemoryEditInput,
     ): Promise<MemoryEditSnapshot> {
-        return this.mutate(async () => {
-            const request = this.validate(change(this.requireEntry(globalAddr)));
-            await this.sendMutation(IpcCommand.DEBUG_MEMORY_EDIT_ADD, request);
-            await this.refreshNow();
+        return this.mutate(async scope => {
+            const request = this.validate(scope, change(this.requireEntry(globalAddr)));
+            await this.sendMutation(scope, IpcCommand.DEBUG_MEMORY_EDIT_ADD, request);
+            await this.refreshNow(scope);
             return this.requireMatching(request);
         });
     }
 
-    private async refreshNow(): Promise<readonly MemoryEditSnapshot[]> {
-        this.requireAvailable();
-        const generation = this.generation;
-        const response = await this.client.send<unknown>(
+    private async refreshNow(scope: SessionOperation): Promise<readonly MemoryEditSnapshot[]> {
+        this.requireAvailable(scope);
+        scope.assertCurrent();
+        const response = await scope.send<unknown>(
             IpcCommand.DEBUG_MEMORY_EDIT_GET_ALL, undefined, 5000, 'normal',
         );
-        const entries = decodeMemoryEditList(this.responseData(response, 'Unable to list memory edits'), this.limits());
-        if (generation !== this.generation) { throw new Error('Memory edit response belongs to an inactive connection'); }
+        const entries = decodeProtocolData(IpcCommand.DEBUG_MEMORY_EDIT_GET_ALL, response, 'Unable to list memory edits', data => decodeMemoryEditList(data, this.limits(scope)));
+        scope.assertCurrent();
         this.entries = Object.freeze(entries.map(entry => Object.freeze(entry)));
         this.emit('change', this.entries);
         return this.entries;
     }
 
-    private mutate<T>(operation: () => Promise<T>): Promise<T> {
-        return this.enqueue(async () => {
-            this.requireAvailable();
-            return operation();
+    private mutate<T>(operation: (scope: SessionOperation) => Promise<T>): Promise<T> {
+        return this.operations.enqueue(async scope => {
+            this.requireAvailable(scope);
+            return operation(scope);
         });
     }
 
-    private enqueue<T>(operation: () => Promise<T>): Promise<T> {
-        const result = this.queue.then(operation);
-        this.queue = result.then(() => undefined, () => undefined);
-        return result;
+    private async sendMutation(scope: SessionOperation, command: IpcCommand, data?: unknown): Promise<void> {
+        const response = await scope.send(command, data, 5000, 'high');
+        requireProtocolOk(command, response, `Memory edit command ${command} failed`);
     }
 
-    private async sendMutation(command: IpcCommand, data?: unknown): Promise<void> {
-        const response = await this.client.send(command, data, 5000, 'high');
-        if (!response.ok) { throw new Error(protocolError(response, `Memory edit command ${command} failed`)); }
-    }
-
-    private async restoreAndDelete(entry: MemoryEditSnapshot): Promise<void> {
-        const response = await this.client.send<MemoryEditRestoreResponse>(
+    private async restoreAndDelete(scope: SessionOperation, entry: MemoryEditSnapshot): Promise<void> {
+        const response = await scope.send<unknown>(
             IpcCommand.DEBUG_MEMORY_EDIT_RESTORE, { globalAddr: entry.globalAddr }, 5000, 'high',
         );
-        const result = this.responseData(response, 'Unable to restore memory edit');
+        const result = decodeProtocolData(IpcCommand.DEBUG_MEMORY_EDIT_RESTORE, response, 'Unable to restore memory edit', decodeMemoryEditRestore);
         if (result.globalAddr !== entry.globalAddr || result.restoredValue !== entry.originalValue || result.deleted !== true) {
             throw new Error('Memory edit restore returned an invalid result');
         }
-    }
-
-    private responseData<T>(response: IpcResponse<T>, fallback: string): T {
-        if (!response.ok || response.data === undefined) { throw new Error(protocolError(response, fallback)); }
-        return response.data;
     }
 
     private find(globalAddr: number): MemoryEditSnapshot | undefined {
@@ -236,32 +218,27 @@ export class MemoryEditService extends EventEmitter {
         return entry;
     }
 
-    private validate(input: unknown): MemoryEditInput {
-        return validateMemoryEditInput(input, this.limits());
+    private validate(scope: SessionOperation, input: unknown): MemoryEditInput {
+        return validateMemoryEditInput(input, this.limits(scope));
     }
 
-    private limits(): MemoryEditValidationLimits {
-        const limits = this.requireAvailable().capabilities.memoryEditLimits!;
+    private limits(scope: SessionOperation): MemoryEditValidationLimits {
+        const limits = this.requireAvailable(scope).capabilities.memoryEditLimits!;
         return limits;
     }
 
-    private requireAvailable(): GetServerInfoResponse {
-        const info = this.lifecycle.serverInfo;
+    private requireAvailable(scope?: SessionOperation): GetServerInfoResponse {
+        scope?.assertCurrent();
+        const info = scope?.info ?? this.operations.capture().info;
         if (!this.lifecycle.connected || !info) { throw new Error('No active emulator session'); }
         validateMemoryEditServer(info);
         return info;
     }
 
     private reset(): void {
-        this.generation++;
         this.entries = [];
         this.emit('change', this.entries);
     }
-}
-
-function protocolError(response: IpcResponse, fallback: string): string {
-    const field = typeof response.details?.field === 'string' ? ` (${response.details.field})` : '';
-    return `${response.error ?? fallback}${field}`;
 }
 
 function inputFrom(entry: MemoryEditSnapshot, changes: Partial<MemoryEditInput>): MemoryEditInput {

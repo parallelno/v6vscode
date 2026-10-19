@@ -1,3 +1,4 @@
+import type { ErrorDiagnostic } from '../../shared/validation';
 import { CodePerfInput, CodePerfSnapshot } from '../../emulator/protocol/debug-models';
 
 export type PerformanceCandidate = Omit<CodePerfInput, 'addrStart' | 'addrEnd'> & {
@@ -30,7 +31,7 @@ export type PerformanceHostMessage =
         canMutate: boolean;
     }
     | { type: 'snapshot'; generation: number; entries: readonly PerformanceViewEntry[] }
-    | { type: 'operation'; operation: string; ok: boolean; message: string; field?: 'addrStart' | 'addrEnd' }
+    | { type: 'operation'; operation: string; ok: boolean; diagnostic?: ErrorDiagnostic; message: string; field?: 'addrStart' | 'addrEnd' }
     | { type: 'beginAdd' }
     | { type: 'dismissMenus' }
     | { type: 'restoredQuery'; value: string };

@@ -7,6 +7,7 @@ import { IpcCommand } from '../../../src/emulator/protocol/ipc-commands';
 import { Logger } from '../../../src/platform/logging/logger';
 import { V6Error } from '../../../src/platform/errors/v6-error';
 import { ErrorCode } from '../../../src/platform/errors/error-codes';
+import { TimerClock } from '../../../src/platform/async/timer-clock';
 
 function response(data: unknown): Buffer {
     const payload = Buffer.from(encode({ ok: true, data }));
@@ -18,6 +19,23 @@ function response(data: unknown): Buffer {
 
 const logger = { debug() {}, error() {} } as unknown as Logger;
 
+class ManualClock implements TimerClock {
+    private now = 0;
+    private sequence = 0;
+    readonly tasks = new Map<ReturnType<typeof setTimeout>, { at: number; callback: () => void }>();
+    schedule(callback: () => void, delayMs: number): ReturnType<typeof setTimeout> {
+        const timer = ++this.sequence as unknown as ReturnType<typeof setTimeout>;
+        this.tasks.set(timer, { at: this.now + delayMs, callback });
+        return timer;
+    }
+    cancel(timer: ReturnType<typeof setTimeout> | undefined): void { if (timer !== undefined) { this.tasks.delete(timer); } }
+    advance(delayMs: number): void {
+        this.now += delayMs;
+        for (const [timer, task] of [...this.tasks]) {
+            if (task.at <= this.now && this.tasks.delete(timer)) { task.callback(); }
+        }
+    }
+}
 describe('IPC ordered-stream safety', () => {
     let server: net.Server;
     let client: IpcClient;
@@ -252,5 +270,78 @@ describe('IPC ordered-stream safety', () => {
         socket.write = (() => { throw new Error('synthetic synchronous failure'); }) as typeof socket.write;
         await assert.rejects(client.send(IpcCommand.PING), /write failed/);
         assert.strictEqual(client.connected, false);
+    });
+    it('rechecks a queued operation scope at dispatch and leaves unrelated requests usable', async () => {
+        const socket = await connect();
+        const received = once(socket, 'data');
+        let current = true;
+        const scope = { key: {}, assertCurrent() { if (!current) { throw new Error('stale operation'); } } };
+        const first = client.send(IpcCommand.PING);
+        const stale = assert.rejects(client.send(IpcCommand.STOP, {}, 1000, 'high', scope), /stale operation/);
+        const next = client.send(IpcCommand.RUN);
+        await received;
+        current = false;
+        const nextReceived = once(socket, 'data');
+        socket.write(response({ first: true }));
+        await first;
+        await stale;
+        await nextReceived;
+        socket.write(response({ next: true }));
+        assert.strictEqual((await next).ok, true);
+        assert.strictEqual(client.connected, true);
+    });
+
+    it('discards a stale active result but consumes its frame before dispatching the next command', async () => {
+        const socket = await connect();
+        const received = once(socket, 'data');
+        let current = true;
+        const scope = { key: {}, assertCurrent() { if (!current) { throw new Error('stale operation'); } } };
+        const stale = assert.rejects(client.send(IpcCommand.PING, {}, 1000, 'normal', scope), /stale operation/);
+        const next = client.send(IpcCommand.RUN);
+        await received;
+        current = false;
+        const nextReceived = once(socket, 'data');
+        socket.write(response({ old: true }));
+        await stale;
+        await nextReceived;
+        socket.write(response({ next: true }));
+        assert.deepStrictEqual((await next).data, { next: true });
+        assert.strictEqual(client.connected, true);
+    });
+
+    it('changes the connection epoch on disconnect and reconnect', async () => {
+        await connect();
+        const first = client.connectionEpoch;
+        client.disconnect();
+        assert.ok(client.connectionEpoch > first);
+        const disconnected = client.connectionEpoch;
+        await connect();
+        assert.ok(client.connectionEpoch > disconnected);
+    });
+    it('uses injected deadlines to separate queue expiry from on-wire timeout deterministically', async () => {
+        const clock = new ManualClock();
+        client = new IpcClient(logger, {}, clock);
+        const socket = await connect();
+        assert.strictEqual(clock.tasks.size, 0, 'connect deadline was cancelled');
+        const received = once(socket, 'data');
+        const first = client.send(IpcCommand.PING, {}, 100);
+        const queueExpired = assert.rejects(client.send(IpcCommand.STOP, {}, 20), /queue wait timed out/);
+        await received;
+        clock.advance(20);
+        await queueExpired;
+        assert.strictEqual(client.connected, true);
+        socket.write(response({ first: true }));
+        await first;
+        assert.strictEqual(clock.tasks.size, 0);
+        const activeReceived = once(socket, 'data');
+        const timedOut = assert.rejects(client.send(IpcCommand.RUN, {}, 100), /request timed out/);
+        const queued = assert.rejects(client.send(IpcCommand.STOP, {}, 1000), /request timed out/);
+        await activeReceived;
+        clock.advance(99);
+        assert.strictEqual(client.connected, true);
+        clock.advance(1);
+        await Promise.all([timedOut, queued]);
+        assert.strictEqual(client.connected, false);
+        assert.strictEqual(clock.tasks.size, 0);
     });
 });

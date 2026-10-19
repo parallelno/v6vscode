@@ -1,6 +1,8 @@
 import * as crypto from 'crypto';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { errorDiagnostic, diagnosticField } from '../../emulator/protocol/protocol-result';
+import { ValidationError } from '../../shared/validation';
 import { EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
 import { Logger } from '../../platform/logging/logger';
 import { ActiveProjectService } from '../../project/active/active-project-service';
@@ -20,6 +22,7 @@ const WORKSPACE_STATE_KEY = 'v6.performance.query';
 
 export class PerformancePanel implements vscode.Disposable {
     private panel: vscode.WebviewPanel | undefined;
+    private disposed = false;
     private pollTimer: ReturnType<typeof setInterval> | undefined;
     private readonly addressExpressions = new EntryExpressionStore<CodePerfSnapshot, 'addrStart' | 'addrEnd'>(
         ['addrStart', 'addrEnd'],
@@ -76,6 +79,8 @@ export class PerformancePanel implements vscode.Disposable {
     }
 
     dispose(): void {
+        if (this.disposed) { return; }
+        this.disposed = true;
         this.stopPolling();
         this.lifecycle.removeListener('stateChange', this.stateListener);
         this.service.removeListener('change', this.changeListener);
@@ -95,15 +100,17 @@ export class PerformancePanel implements vscode.Disposable {
                     break;
                 case 'refresh': if (this.current(message)) { await this.refresh(); } break;
                 case 'add': if (this.current(message)) {
-                    await this.runOperation('add', async () => {
+                    await this.runOperation('add', async current => {
                         const added = await this.service.add(this.resolveCandidate(message.input));
+                        if (!current()) { return; }
                         this.addressExpressions.set(added.id, message.input);
                         this.postSnapshot();
                     });
                 } break;
                 case 'edit': if (this.current(message) && validId(message.id)) {
-                    await this.runOperation('edit', async () => {
+                    await this.runOperation('edit', async current => {
                         const edited = await this.service.edit(message.id, this.resolveCandidate(message.input));
+                        if (!current()) { return; }
                         this.addressExpressions.set(edited.id, message.input);
                         this.postSnapshot();
                     });
@@ -132,6 +139,7 @@ export class PerformancePanel implements vscode.Disposable {
     }
 
     private async syncSession(): Promise<void> {
+        const current = this.currentContinuation();
         if (!this.lifecycle.connected) {
             this.stopPolling();
             this.post({ type: 'state', state: 'noSession', message: 'No active emulator session', canMutate: false });
@@ -150,31 +158,39 @@ export class PerformancePanel implements vscode.Disposable {
         this.post({ type: 'state', state: 'loading', message: 'Synchronizing performance tests...', canMutate: false });
         try {
             await this.loadSymbols();
+            if (!current()) { return; }
             await this.service.refresh();
+            if (!current()) { return; }
             this.postReadyState();
             this.startPolling();
         } catch (error) {
+            if (!current()) { return; }
             this.report('refresh', error);
         }
     }
 
-    private async runOperation<T>(operation: string, callback: () => Promise<T>): Promise<void> {
+    private async runOperation<T>(operation: string, callback: (current: () => boolean) => Promise<T>): Promise<void> {
+        const current = this.currentContinuation();
+        if (!current()) { return; }
         this.post({ type: 'state', state: 'loading', message: 'Applying change...', canMutate: false });
         try {
-            await callback();
+            await callback(current);
+            if (!current()) { return; }
             this.post({ type: 'operation', operation, ok: true, message: '' });
             this.postReadyState();
         } catch (error) {
+            if (!current()) { return; }
             this.report(operation, error);
         }
     }
 
     private async deleteAll(): Promise<void> {
+        const current = this.currentContinuation();
         const count = this.service.snapshot.length;
         const confirmed = await vscode.window.showWarningMessage(
             `Delete all ${count} performance ${count === 1 ? 'test' : 'tests'}?`, { modal: true }, 'Delete All',
         );
-        if (confirmed === 'Delete All') {
+        if (current() && confirmed === 'Delete All') {
             await this.runOperation('deleteAll', () => this.service.deleteAll());
         }
     }
@@ -204,12 +220,21 @@ export class PerformancePanel implements vscode.Disposable {
     private startPolling(): void {
         this.stopPolling();
         if (this.panel?.visible) {
-            this.pollTimer = setInterval(() => void this.service.refresh().catch(error => this.report('refresh', error)), 1000);
+            this.pollTimer = setInterval(() => {
+                const current = this.currentContinuation();
+                void this.service.refresh().catch(error => { if (current()) { this.report('refresh', error); } });
+            }, 1000);
         }
     }
 
     private stopPolling(): void {
         if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = undefined; }
+    }
+
+    private currentContinuation(): () => boolean {
+        const generation = this.service.sessionGeneration;
+        const panel = this.panel;
+        return () => !this.disposed && this.panel === panel && generation === this.service.sessionGeneration;
     }
 
     private postReadyState(): void {
@@ -238,12 +263,12 @@ export class PerformancePanel implements vscode.Disposable {
 
     private resolveAddress(value: string | number, label: string): number {
         if (typeof value === 'number') { return value; }
-        if (typeof value !== 'string') { throw new Error(`${label}: Expression must be a string`); }
-        if (value.length > 256) { throw new Error(`${label}: Expression exceeds 256 characters`); }
+        if (typeof value !== 'string') { throw new ValidationError(label === 'Start address' ? 'addrStart' : 'addrEnd', `${label}: Expression must be a string`); }
+        if (value.length > 256) { throw new ValidationError(label === 'Start address' ? 'addrStart' : 'addrEnd', `${label}: Expression exceeds 256 characters`); }
         try {
             return evaluateSymbolExpression(value, name => this.symbols.requireSymbolAddress(name));
         } catch (error) {
-            throw new Error(`${label}: ${error instanceof Error ? error.message : String(error)}`);
+            throw new ValidationError(label === 'Start address' ? 'addrStart' : 'addrEnd', `${label}: ${error instanceof Error ? error.message : String(error)}`, 'expression', error);
         }
     }
 
@@ -264,7 +289,8 @@ export class PerformancePanel implements vscode.Disposable {
     private report(operation: string, error: unknown): void {
         const message = error instanceof Error ? error.message : String(error);
         this.logger.error(`performance: ${message}`);
-        this.post({ type: 'operation', operation, ok: false, message, field: performanceErrorField(message) });
+        this.post({ type: 'operation', operation, ok: false,
+            diagnostic: errorDiagnostic(error), message, field: performanceErrorField(error) });
         this.post({ type: 'state', state: 'error', message, canMutate: false });
     }
 
@@ -287,8 +313,7 @@ export class PerformancePanel implements vscode.Disposable {
 
 function validId(value: number): boolean { return Number.isSafeInteger(value) && value >= 0 && value <= 0x7FFFFFFF; }
 function formatAddress(value: number): string { return `0x${value.toString(16).toUpperCase().padStart(4, '0')}`; }
-function performanceErrorField(message: string): 'addrStart' | 'addrEnd' | undefined {
-    if (/^(Start address|addrStart)[: ]/.test(message)) { return 'addrStart'; }
-    if (/^(End address|addrEnd)[: ]/.test(message)) { return 'addrEnd'; }
-    return undefined;
+function performanceErrorField(error: unknown): 'addrStart' | 'addrEnd' | undefined {
+    const field = diagnosticField(error);
+    return field === 'addrStart' || field === 'addrEnd' ? field : undefined;
 }

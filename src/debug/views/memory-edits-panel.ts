@@ -1,5 +1,6 @@
 import * as crypto from 'crypto';
 import * as vscode from 'vscode';
+import { errorDiagnostic } from '../../emulator/protocol/protocol-result';
 import { EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
 import { globalAddressMemoryLocation, memorySpaceLabel } from '../../emulator/memory/memory-space';
 import { Logger } from '../../platform/logging/logger';
@@ -15,6 +16,7 @@ const WORKSPACE_STATE_KEY = 'v6.memoryEdits.query';
 
 export class MemoryEditsPanel implements vscode.Disposable {
     private panel: vscode.WebviewPanel | undefined;
+    private disposed = false;
     private pollTimer: ReturnType<typeof setInterval> | undefined;
     private readonly stateListener: () => void;
     private readonly changeListener: () => void;
@@ -64,6 +66,8 @@ export class MemoryEditsPanel implements vscode.Disposable {
     add(): void { this.post({ type: 'beginAdd' }); }
 
     dispose(): void {
+        if (this.disposed) { return; }
+        this.disposed = true;
         this.stopPolling();
         this.lifecycle.removeListener('stateChange', this.stateListener);
         this.service.removeListener('change', this.changeListener);
@@ -127,6 +131,7 @@ export class MemoryEditsPanel implements vscode.Disposable {
     }
 
     private async syncSession(): Promise<void> {
+        const current = this.currentContinuation();
         if (!this.lifecycle.connected) {
             this.stopPolling();
             this.post({
@@ -151,19 +156,25 @@ export class MemoryEditsPanel implements vscode.Disposable {
         });
         try {
             await this.service.refresh();
+            if (!current()) { return; }
             this.postReadyState();
             this.startPolling();
         } catch (error) {
+            if (!current()) { return; }
             this.report('refresh', error);
         }
     }
 
-    private async runOperation<T>(operation: string, callback: () => Promise<T>): Promise<void> {
+    private async runOperation<T>(operation: string, callback: (current: () => boolean) => Promise<T>): Promise<void> {
+        const current = this.currentContinuation();
+        if (!current()) { return; }
         try {
-            await callback();
+            await callback(current);
+            if (!current()) { return; }
             this.post({ type: 'operation', operation, ok: true, message: '' });
             this.postReadyState();
         } catch (error) {
+            if (!current()) { return; }
             this.report(operation, error);
         }
     }
@@ -174,23 +185,25 @@ export class MemoryEditsPanel implements vscode.Disposable {
     }
 
     private async deleteAll(): Promise<void> {
+        const current = this.currentContinuation();
         const confirmed = await vscode.window.showWarningMessage(
             'Delete all memory edits?',
             { modal: true },
             'Delete All',
         );
-        if (confirmed === 'Delete All') {
+        if (current() && confirmed === 'Delete All') {
             await this.runOperation('deleteAll', () => this.service.deleteAll());
         }
     }
 
     private async deleteAndRestoreAll(): Promise<void> {
+        const current = this.currentContinuation();
         const confirmed = await vscode.window.showWarningMessage(
             'Restore original values and delete all memory edits?',
             { modal: true },
             'Delete and Restore All',
         );
-        if (confirmed === 'Delete and Restore All') {
+        if (current() && confirmed === 'Delete and Restore All') {
             await this.runOperation('deleteAndRestoreAll', () => this.service.deleteAndRestoreAll());
         }
     }
@@ -215,12 +228,21 @@ export class MemoryEditsPanel implements vscode.Disposable {
     private startPolling(): void {
         this.stopPolling();
         if (this.panel?.visible) {
-            this.pollTimer = setInterval(() => void this.service.refresh().catch(error => this.report('refresh', error)), 1000);
+            this.pollTimer = setInterval(() => {
+                const current = this.currentContinuation();
+                void this.service.refresh().catch(error => { if (current()) { this.report('refresh', error); } });
+            }, 1000);
         }
     }
 
     private stopPolling(): void {
         if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = undefined; }
+    }
+
+    private currentContinuation(): () => boolean {
+        const generation = this.service.sessionGeneration;
+        const panel = this.panel;
+        return () => !this.disposed && this.panel === panel && generation === this.service.sessionGeneration;
     }
 
     private postReadyState(): void {
@@ -242,7 +264,8 @@ export class MemoryEditsPanel implements vscode.Disposable {
     private report(operation: string, error: unknown): void {
         const message = error instanceof Error ? error.message : String(error);
         this.logger.error(`memory-edits: ${message}`);
-        this.post({ type: 'operation', operation, ok: false, message });
+        this.post({ type: 'operation', operation, ok: false,
+            diagnostic: errorDiagnostic(error), message });
         this.post({
             type: 'state', state: 'error', message,
             canMutate: this.service.available,

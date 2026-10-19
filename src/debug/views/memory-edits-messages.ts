@@ -1,3 +1,4 @@
+import type { ErrorDiagnostic } from '../../shared/validation';
 import { MemoryEditSnapshot } from '../../emulator/protocol/debug-models';
 
 export type MemoryEditValueField = 'originalValue' | 'enteredValue' | 'currentValue';
@@ -29,6 +30,6 @@ export type MemoryEditsHostMessage =
         canRestore: boolean;
     }
     | { type: 'snapshot'; generation: number; entries: readonly MemoryEditSnapshot[] }
-    | { type: 'operation'; operation: string; ok: boolean; message: string }
+    | { type: 'operation'; operation: string; ok: boolean; diagnostic?: ErrorDiagnostic; message: string }
     | { type: 'beginAdd' }
     | { type: 'restoredQuery'; value: string };

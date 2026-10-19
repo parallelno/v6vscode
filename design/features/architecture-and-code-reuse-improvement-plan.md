@@ -1,6 +1,6 @@
 # Architecture, Code Reuse, and Maintainability Improvement Plan
 
-**Status:** Approved for staged implementation; R01-R04 implemented and verified in stage 1. R05-R24 remain pending.
+**Status:** Approved for staged implementation; R01-R04 implemented and verified in stage 1; R05/R06 implemented as a two-feature pilot in stage 2. R07-R24 remain pending.
 **Audit date:** 2026-10-18 (workspace session; some validation timestamps are 2026-10-19 UTC).
 **Owner:** v6vscode maintainers.
 **Repository:** `C:\Work\Programming\v6vscode`.
@@ -38,7 +38,24 @@ Stage 1 verification: 627 unit tests passing with no skips after deleting genera
 
 Limitations remain explicit: full C mixed signed/unsigned promotion rules are not implemented by this correction; scalar expression results beyond the supported 32-bit representation now fail instead of silently truncating. Transport failure requires reconnect/restart; no higher-level automatic recovery or session coordinator is added here. Default resource caps are documented and constructor-overridable. Browser assets/UI are unchanged. No new regressions were observed in the executed checks.
 
-**Next stage:** R05 checked protocol results/errors and primitive validation, followed by R06 scope-bound queues/session ports. No broad lifecycle, UI or parser consolidation is included in stage 1. Stage 1 is approved for commit; later stages remain separately reviewable. No push or PR submission is authorized.
+**Stage 1 commit:** `b2894cd` — `Harden IPC ordering, typed values, handle identity, and test fixtures`. No broad lifecycle, UI or parser consolidation was included. Subsequent approved stages remain separately reviewable; no push or PR submission is authorized.
+
+## Implementation progress — stage 2
+
+R05/R06 are implemented in **Performance and Memory Edits** first. Their feature-specific acknowledgement, restore, running-state and reconciliation policies remain local; the other debug tools are not silently migrated.
+
+| Task | Status | Implemented result |
+|---|---|---|
+| R05 | Complete (two-feature pilot) | Browser-safe primitive validators and `ValidationError`; checked IPC envelopes/data with `ProtocolError` retaining command, kind, code, details, field/reason and decoder cause. Both codecs/services use the shared implementation. Serializable diagnostics reach both panel message contracts; Performance address errors use structured fields rather than guessing from message prose. |
+| R06 | Complete (two-feature pilot) | Narrow session observation, command transport and timer-clock ports; composed per-scope transaction queues and keyed single-flight refreshes. Connection identity is captured at submission and checked at execution, IPC dispatch, response completion and snapshot publication. Replacement sessions have independent queue/refresh keys; stale work is not replayed. Disposal invalidates pending work and detaches listeners idempotently. |
+
+Production transport exposes a monotonic connection epoch and rechecks an optional operation scope immediately before sending queued commands. A stale active result is consumed and rejected without assigning it to a newer request or unnecessarily failing an otherwise healthy stream. Injectable deadlines retain separate queue-wait/on-wire behavior and have a manual-clock test. Panel continuations, confirmations and address-expression updates are guarded against replacement sessions/panels; stale results do not publish success/errors into the replacement UI.
+
+Stage 2 verification: **669 unit tests with zero skips**, 62 regressions, six real Extension Host/emulator tests, and two live conformance tests (existing DWARF unwind plus real Performance/Memory Edits add/update/delete/restore transactions). Host and full test compilation pass; 59 focused compiled shared/service/panel/transport tests pass. CI passes; lint remains at zero errors and the pre-existing 66 warnings. The existing ASM hover/Watch/Globals/struct-pool integration continues to pass.
+
+Intentional behavior changes: concurrent Memory Edits refreshes now coalesce within a session; malformed replies surface structured protocol failures; disconnected/disposed/old-session operations reject rather than crossing into a new session. No layout, public command, project JSON or IPC schema changes. No automatic mutation retry or rollback of already-sent commands is introduced. A pending operation settles when its guarded continuation or bounded transport deadline runs; invalidation is not remote cancellation. Custom transports must provide connection identity and honor the supplied dispatch scope. Shared artifact/symbol ownership remains for R11; browser build/panel-shell consolidation remains for R15/R16.
+
+**Next stage:** R07 pure numeric/byte/hex and ASM lexical helpers, characterized across existing consumers before extraction. R08 stop participants and R09 API/import-boundary gates follow as separate approved slices.
 
 ## 1. Executive assessment
 

@@ -1,4 +1,8 @@
-import { MemoryEditInput, MemoryEditSnapshot } from '../../emulator/protocol/debug-models';
+import {
+    expectRecord as object, expectInteger as integer, expectBoolean as boolean,
+    expectUtf8String as utf8String, expectFields as exactFields, expectArray, ValidationError,
+} from '../../shared/validation';
+import { MemoryEditInput, MemoryEditSnapshot, MemoryEditRestoreResponse } from '../../emulator/protocol/debug-models';
 
 export interface MemoryEditValidationLimits {
     globalAddressExclusive: number;
@@ -16,8 +20,8 @@ export function validateMemoryEditInput(
 ): MemoryEditInput {
     const record = object(value, 'memory edit');
     const allowed = new Set(['globalAddr', 'enteredValue', 'readonly', 'active', 'comment']);
-    const unknown = Object.keys(record).find(field => !allowed.has(field));
-    if (unknown) { throw new Error(`Unknown memory edit field: ${unknown}`); }
+    exactFields(record, allowed, 'memory edit', false);
+
     return {
         globalAddr: integer(record.globalAddr, 'globalAddr', 0, limits.globalAddressExclusive - 1),
         enteredValue: integer(record.enteredValue, 'enteredValue', 0, 0xFF),
@@ -51,39 +55,27 @@ export function decodeMemoryEditList(
     limits: MemoryEditValidationLimits = DEFAULT_MEMORY_EDIT_LIMITS,
 ): MemoryEditSnapshot[] {
     const root = object(value, 'memory edit response');
-    if (!Array.isArray(root.edits)) { throw new Error('Memory edit response edits must be an array'); }
-    const entries = root.edits.map(entry => decodeMemoryEditSnapshot(entry, limits));
+    const entries = expectArray(root.edits, 'Memory edit response edits').map((entry, index) => {
+        try { return decodeMemoryEditSnapshot(entry, limits); }
+        catch (error) {
+            if (error instanceof ValidationError) { throw new ValidationError(`edits[${index}].${error.field}`, error.message, error.reason, error); }
+            throw error;
+        }
+    });
     for (let index = 1; index < entries.length; index++) {
         if (entries[index - 1].globalAddr >= entries[index].globalAddr) {
-            throw new Error('Memory edit snapshots must be ordered by unique global address');
+            throw new ValidationError('edits', 'Memory edit snapshots must be ordered by unique global address', 'order');
         }
     }
     return entries;
 }
 
-function object(value: unknown, name: string): Record<string, unknown> {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-        throw new Error(`${name} must be an object`);
-    }
-    return value as Record<string, unknown>;
-}
-
-function integer(value: unknown, name: string, min: number, max: number): number {
-    if (!Number.isSafeInteger(value) || (value as number) < min || (value as number) > max) {
-        throw new Error(`${name} must be an integer in ${min}..${max}`);
-    }
-    return value as number;
-}
-
-function boolean(value: unknown, name: string): boolean {
-    if (typeof value !== 'boolean') { throw new Error(`${name} must be a boolean`); }
-    return value;
-}
-
-function utf8String(value: unknown, name: string, maxBytes: number): string {
-    if (typeof value !== 'string') { throw new Error(`${name} must be a string`); }
-    if (Buffer.byteLength(value, 'utf8') > maxBytes) {
-        throw new Error(`${name} exceeds ${maxBytes} UTF-8 bytes`);
-    }
-    return value;
+export function decodeMemoryEditRestore(value: unknown): MemoryEditRestoreResponse {
+    const record = object(value, 'memory edit restore');
+    if (record.deleted !== true) { throw new ValidationError('deleted', 'Memory edit restore returned an invalid result: deleted must be true', 'value'); }
+    return {
+        globalAddr: integer(record.globalAddr, 'globalAddr', 0, Number.MAX_SAFE_INTEGER),
+        restoredValue: integer(record.restoredValue, 'restoredValue', 0, 0xFF),
+        deleted: true,
+    };
 }

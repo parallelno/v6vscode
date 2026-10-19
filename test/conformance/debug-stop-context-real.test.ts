@@ -1,4 +1,9 @@
 import { expect } from 'chai';
+import { EventEmitter } from 'events';
+import { PerformanceService } from '../../src/debug/performance/performance-service';
+import { MemoryEditService } from '../../src/debug/memory-edits/memory-edit-service';
+import { SessionState } from '../../src/emulator/session/session-operations';
+import { getServerInfo } from '../../src/emulator/protocol/ipc-server-info';
 import * as path from 'path';
 import * as net from 'net';
 import { fixturePath, fixtureRom, repositoryRoot } from '../helpers/fixture-paths';
@@ -101,5 +106,34 @@ describe('DebugStopContext real-emulator verification', function () {
         expect(frames[0].registers[DWARF_REG.PC]).to.equal(regs.pc);
 
         await client.send(IpcCommand.DEBUG_BREAKPOINT_DEL, { addr: breakpointAddress });
+    });
+    it('uses shared validation and scoped transactions for real performance and memory-edit mutations', async () => {
+        await client.send(IpcCommand.STOP);
+        const state: SessionState = Object.assign(new EventEmitter(), {
+            connected: true, running: false, serverInfo: await getServerInfo(client),
+        });
+        const performance = new PerformanceService(state, client);
+        const edits = new MemoryEditService(state, client);
+        let id: number | undefined;
+        try {
+            const added = await performance.add({ name: 'scope conformance', addrStart: 0x100, addrEnd: 0x110, active: true });
+            id = added.id;
+            expect(performance.snapshot.some(entry => entry.id === id)).to.equal(true);
+            await performance.setActivity(id, false);
+            expect(performance.snapshot.find(entry => entry.id === id)?.active).to.equal(false);
+            const edit = await edits.apply(0x5000, 0x42);
+            expect(edit?.enteredValue).to.equal(0x42);
+            await edits.setActivity(0x5000, false);
+            expect(edits.snapshot.find(entry => entry.globalAddr === 0x5000)?.active).to.equal(false);
+            await edits.deleteAndRestore(0x5000);
+            expect(edits.snapshot).to.deep.equal([]);
+            await performance.delete(id);
+            expect(performance.snapshot.some(entry => entry.id === id)).to.equal(false);
+            id = undefined;
+        } finally {
+            if (id !== undefined) { await performance.delete(id).catch(() => {}); }
+            await edits.deleteAll().catch(() => {});
+            performance.dispose(); edits.dispose();
+        }
     });
 });

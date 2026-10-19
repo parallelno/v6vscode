@@ -1,31 +1,25 @@
 import { EventEmitter } from 'events';
-import { IpcClient } from '../../emulator/client/ipc-client';
-import { EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
+import { decodeProtocolData, requireProtocolOk, ProtocolError } from '../../emulator/protocol/protocol-result';
+import { CommandTransport, SessionOperations, SessionOperation, SessionState } from '../../emulator/session/session-operations';
 import { CodePerfInput, CodePerfLimits, CodePerfSnapshot } from '../../emulator/protocol/debug-models';
-import { GetServerInfoResponse, IpcCommand, IpcResponse } from '../../emulator/protocol/ipc-commands';
+import { GetServerInfoResponse, IpcCommand } from '../../emulator/protocol/ipc-commands';
 import { validatePerformanceServer } from '../../emulator/protocol/ipc-server-info';
 import { decodeCodePerfSnapshot, decodeCodePerfSnapshots, validateCodePerfInput } from './performance-codec';
 
 export class PerformanceService extends EventEmitter {
     private entries: readonly CodePerfSnapshot[] = [];
-    private queue: Promise<void> = Promise.resolve();
-    private refreshInFlight: Promise<readonly CodePerfSnapshot[]> | undefined;
-    private generation = 0;
-    private readonly stateListener: () => void;
+    private readonly operations: SessionOperations<readonly CodePerfSnapshot[]>;
 
     constructor(
-        private readonly lifecycle: EmulatorLifecycle,
-        private readonly client: IpcClient,
+        private readonly lifecycle: SessionState,
+        client: CommandTransport,
     ) {
         super();
-        this.stateListener = () => {
-            if (!this.lifecycle.connected) { this.reset(); }
-        };
-        this.lifecycle.on('stateChange', this.stateListener);
+        this.operations = new SessionOperations<readonly CodePerfSnapshot[]>(lifecycle, client, () => this.reset());
     }
 
     get snapshot(): readonly CodePerfSnapshot[] { return this.entries; }
-    get sessionGeneration(): number { return this.generation; }
+    get sessionGeneration(): number { return this.operations.generation; }
 
     get available(): boolean {
         try {
@@ -35,55 +29,46 @@ export class PerformanceService extends EventEmitter {
     }
 
     refresh(): Promise<readonly CodePerfSnapshot[]> {
-        if (this.refreshInFlight) { return this.refreshInFlight; }
-        const refresh = this.enqueue(() => this.refreshNow());
-        this.refreshInFlight = refresh;
-        void refresh.then(
-            () => { if (this.refreshInFlight === refresh) { this.refreshInFlight = undefined; } },
-            () => { if (this.refreshInFlight === refresh) { this.refreshInFlight = undefined; } },
-        );
-        return refresh;
+        return this.operations.refresh(scope => this.refreshNow(scope));
     }
 
     add(input: CodePerfInput): Promise<CodePerfSnapshot> {
-        return this.mutate(async () => {
+        return this.mutate(async scope => {
             try {
-                const request = this.validate(input);
-                const response = await this.client.send<unknown>(
+                const request = this.validate(scope, input);
+                const response = await scope.send<unknown>(
                     IpcCommand.DEBUG_CODE_PERF_ADD, request, 5000, 'high',
                 );
-                const created = decodeCodePerfSnapshot(
-                    this.responseData(response, 'Unable to add performance test'), this.limits(),
-                );
+                const created = decodeProtocolData(IpcCommand.DEBUG_CODE_PERF_ADD, response, 'Unable to add performance test',
+                    data => decodeCodePerfSnapshot(data, this.limits(scope)));
                 if (!matches(created, request) || created.averageClockCycles !== 0 || created.testCount !== 0) {
                     throw new Error('Added performance test does not match the acknowledged input');
                 }
-                await this.refreshNow();
+                await this.refreshNow(scope);
                 return this.requireEntry(created.id);
             } catch (error) {
-                return this.reconcileFailure(error);
+                return this.reconcileFailure(scope, error);
             }
         });
     }
 
     edit(id: number, input: CodePerfInput): Promise<CodePerfSnapshot> {
-        return this.mutate(async () => {
+        return this.mutate(async scope => {
             try {
                 const existing = this.requireEntry(id);
-                const request = this.validate(input);
-                const response = await this.client.send<unknown>(
+                const request = this.validate(scope, input);
+                const response = await scope.send<unknown>(
                     IpcCommand.DEBUG_CODE_PERF_EDIT, { id: existing.id, ...request }, 5000, 'high',
                 );
-                const edited = decodeCodePerfSnapshot(
-                    this.responseData(response, 'Unable to edit performance test'), this.limits(),
-                );
+                const edited = decodeProtocolData(IpcCommand.DEBUG_CODE_PERF_EDIT, response, 'Unable to edit performance test',
+                    data => decodeCodePerfSnapshot(data, this.limits(scope)));
                 if (edited.id !== id || !matches(edited, request)) {
                     throw new Error(`Edited performance test ${id} does not match the acknowledged input`);
                 }
-                await this.refreshNow();
+                await this.refreshNow(scope);
                 return this.requireMatching(id, request);
             } catch (error) {
-                return this.reconcileFailure(error);
+                return this.reconcileFailure(scope, error);
             }
         });
     }
@@ -93,111 +78,101 @@ export class PerformanceService extends EventEmitter {
     }
 
     setActivity(id: number, active: boolean): Promise<CodePerfSnapshot> {
-        return this.mutate(async () => {
+        return this.mutate(async scope => {
             try {
                 const entry = this.requireEntry(id);
-                const request = this.validate(inputFrom(entry, { active }));
-                const response = await this.client.send<unknown>(
+                const request = this.validate(scope, inputFrom(entry, { active }));
+                const response = await scope.send<unknown>(
                     IpcCommand.DEBUG_CODE_PERF_EDIT, { id: entry.id, ...request }, 5000, 'high',
                 );
-                const edited = decodeCodePerfSnapshot(
-                    this.responseData(response, 'Unable to change performance test activity'), this.limits(),
-                );
+                const edited = decodeProtocolData(IpcCommand.DEBUG_CODE_PERF_EDIT, response, 'Unable to change performance test activity',
+                    data => decodeCodePerfSnapshot(data, this.limits(scope)));
                 if (edited.id !== id || !matches(edited, request)) {
                     throw new Error(`Performance test ${id} activity was not acknowledged`);
                 }
-                await this.refreshNow();
+                await this.refreshNow(scope);
                 return this.requireMatching(id, request);
             } catch (error) {
-                return this.reconcileFailure(error);
+                return this.reconcileFailure(scope, error);
             }
         });
     }
 
     disableAll(): Promise<void> {
-        return this.mutate(async () => {
+        return this.mutate(async scope => {
             try {
                 for (const entry of this.entries.filter(item => item.active)) {
-                    const request = this.validate(inputFrom(entry, { active: false }));
-                    const response = await this.client.send<unknown>(
+                    const request = this.validate(scope, inputFrom(entry, { active: false }));
+                    const response = await scope.send<unknown>(
                         IpcCommand.DEBUG_CODE_PERF_EDIT, { id: entry.id, ...request }, 5000, 'high',
                     );
-                    const edited = decodeCodePerfSnapshot(
-                        this.responseData(response, `Unable to disable performance test ${entry.id}`), this.limits(),
-                    );
+                    const edited = decodeProtocolData(IpcCommand.DEBUG_CODE_PERF_EDIT, response, `Unable to disable performance test ${entry.id}`,
+                        data => decodeCodePerfSnapshot(data, this.limits(scope)));
                     if (edited.id !== entry.id || !matches(edited, request)) {
                         throw new Error(`Disabled performance test ${entry.id} was not acknowledged`);
                     }
                 }
             } finally {
-                await this.refreshNow();
+                await this.refreshNow(scope);
             }
             if (this.entries.some(entry => entry.active)) { throw new Error('Not all performance tests were disabled'); }
         });
     }
 
     delete(id: number): Promise<void> {
-        return this.mutate(async () => {
+        return this.mutate(async scope => {
             this.requireEntry(id);
-            await this.sendMutation(IpcCommand.DEBUG_CODE_PERF_DEL, { id });
-            await this.refreshNow();
+            await this.sendMutation(scope, IpcCommand.DEBUG_CODE_PERF_DEL, { id });
+            await this.refreshNow(scope);
             if (this.find(id)) { throw new Error(`Performance test ${id} was not deleted`); }
         });
     }
 
     deleteAll(): Promise<void> {
-        return this.mutate(async () => {
-            await this.sendMutation(IpcCommand.DEBUG_CODE_PERF_DEL_ALL, {});
-            await this.refreshNow();
+        return this.mutate(async scope => {
+            await this.sendMutation(scope, IpcCommand.DEBUG_CODE_PERF_DEL_ALL, {});
+            await this.refreshNow(scope);
             if (this.entries.length) { throw new Error('Not all performance tests were deleted'); }
         });
     }
 
     dispose(): void {
-        this.lifecycle.removeListener('stateChange', this.stateListener);
+        this.operations.dispose();
         this.removeAllListeners();
     }
 
-    private async refreshNow(): Promise<readonly CodePerfSnapshot[]> {
-        const limits = this.limits();
-        const generation = this.generation;
-        const response = await this.client.send<unknown>(
+    private async refreshNow(scope: SessionOperation): Promise<readonly CodePerfSnapshot[]> {
+        const limits = this.limits(scope);
+        scope.assertCurrent();
+        const response = await scope.send<unknown>(
             IpcCommand.DEBUG_CODE_PERF_GET_ALL, {}, 5000, 'normal',
         );
-        if (generation !== this.generation) { throw new Error('Performance response belongs to an inactive connection'); }
-        const entries = decodeCodePerfSnapshots(
-            this.responseData(response, 'Unable to list performance tests'), limits,
-        );
+        scope.assertCurrent();
+        const entries = decodeProtocolData(IpcCommand.DEBUG_CODE_PERF_GET_ALL, response, 'Unable to list performance tests',
+            data => decodeCodePerfSnapshots(data, limits));
         this.entries = Object.freeze(entries.map(entry => Object.freeze(entry)));
         this.emit('change', this.entries);
         return this.entries;
     }
 
-    private mutate<T>(operation: () => Promise<T>): Promise<T> {
-        return this.enqueue(async () => {
-            this.requireAvailable();
-            return operation();
+    private mutate<T>(operation: (scope: SessionOperation) => Promise<T>): Promise<T> {
+        return this.operations.enqueue(async scope => {
+            this.requireAvailable(scope);
+            return operation(scope);
         });
     }
 
-    private enqueue<T>(operation: () => Promise<T>): Promise<T> {
-        const result = this.queue.then(operation);
-        this.queue = result.then(() => undefined, () => undefined);
-        return result;
+    private async sendMutation(scope: SessionOperation, command: IpcCommand, data?: unknown): Promise<void> {
+        const response = await scope.send(command, data, 5000, 'high');
+        requireProtocolOk(command, response, `Performance command ${command} failed`);
     }
 
-    private async sendMutation(command: IpcCommand, data?: unknown): Promise<void> {
-        const response = await this.client.send(command, data, 5000, 'high');
-        if (!response.ok) { throw new Error(protocolError(response, `Performance command ${command} failed`)); }
-    }
-
-    private responseData<T>(response: IpcResponse<T>, fallback: string): T {
-        if (!response.ok || response.data === undefined) { throw new Error(protocolError(response, fallback)); }
-        return response.data;
-    }
-
-    private async reconcileFailure(error: unknown): Promise<never> {
-        try { await this.refreshNow(); } catch { /* Preserve the original mutation failure. */ }
+    private async reconcileFailure(scope: SessionOperation, error: unknown): Promise<never> {
+        try { await this.refreshNow(scope); } catch { /* Preserve the original mutation failure. */ }
+        if (error instanceof ProtocolError && error.field === 'collection') {
+            if (error.reason === 'capacity') { error.message += ': deleting a record can free capacity'; }
+            if (error.reason === 'id_exhausted') { error.message += ': no further IDs can be allocated during this collection lifetime'; }
+        }
         throw error;
     }
 
@@ -217,39 +192,26 @@ export class PerformanceService extends EventEmitter {
         return entry;
     }
 
-    private validate(input: unknown): CodePerfInput {
-        return validateCodePerfInput(input, this.limits());
+    private validate(scope: SessionOperation, input: unknown): CodePerfInput {
+        return validateCodePerfInput(input, this.limits(scope));
     }
 
-    private limits(): CodePerfLimits {
-        return this.requireAvailable().capabilities.codePerfLimits!;
+    private limits(scope: SessionOperation): CodePerfLimits {
+        return this.requireAvailable(scope).capabilities.codePerfLimits!;
     }
 
-    private requireAvailable(): GetServerInfoResponse {
-        const info = this.lifecycle.serverInfo;
+    private requireAvailable(scope?: SessionOperation): GetServerInfoResponse {
+        scope?.assertCurrent();
+        const info = scope?.info ?? this.operations.capture().info;
         if (!this.lifecycle.connected || !info) { throw new Error('No active emulator session'); }
         validatePerformanceServer(info);
         return info;
     }
 
     private reset(): void {
-        this.generation++;
         this.entries = Object.freeze([]);
         this.emit('change', this.entries);
     }
-}
-
-function protocolError(response: IpcResponse, fallback: string): string {
-    const base = response.error ?? fallback;
-    if (response.details?.field === 'collection' && response.details?.reason === 'capacity') {
-        return `${base}: deleting a record can free capacity`;
-    }
-    if (response.details?.field === 'collection' && response.details?.reason === 'id_exhausted') {
-        return `${base}: no further IDs can be allocated during this collection lifetime`;
-    }
-    const field = typeof response.details?.field === 'string' ? ` (${response.details.field})` : '';
-    const reason = typeof response.details?.reason === 'string' ? `: ${response.details.reason}` : '';
-    return `${base}${field}${reason}`;
 }
 
 function inputFrom(entry: CodePerfSnapshot, changes: Partial<CodePerfInput>): CodePerfInput {
