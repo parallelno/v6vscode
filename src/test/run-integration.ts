@@ -35,6 +35,9 @@ async function main(): Promise<void> {
     const integrationWorkspace = path.join(extensionRoot, 'temp', 'integration-debug-workspace');
     await prepareIntegrationWorkspace(extensionRoot, integrationWorkspace);
     const packaged = process.argv.includes('--packaged');
+    const minimum = process.argv.includes('--minimum');
+    const manifest = JSON.parse(await fs.readFile(path.join(extensionRoot, 'package.json'), 'utf8'));
+    const minimumVersion = String(manifest.engines.vscode).replace(/^\^/, '');
     const packagedRoot = path.join(extensionRoot, 'temp', 'packaged-extension');
     if (packaged) {
         await extractVsix(
@@ -47,14 +50,16 @@ async function main(): Promise<void> {
         : extensionRoot;
 
     await runTests({
+        version: minimum ? minimumVersion : process.env.V6_VSCODE_VERSION,
         extensionDevelopmentPath,
         extensionTestsPath: path.join(extensionRoot, 'out', 'test', 'integration', 'index'),
         extensionTestsEnv: {
+            V6_EXPECT_MINIMUM: minimum ? minimumVersion : undefined,
             V6_EXPECT_PACKAGED: packaged ? 'true' : 'false',
             V6_EXTENSION_ROOT: extensionRoot,
             V6_DEBUG_INTEGRATION_WORKSPACE: integrationWorkspace,
         },
-        launchArgs: [integrationWorkspace],
+        launchArgs: [integrationWorkspace, '--skip-welcome', '--skip-release-notes', '--disable-workspace-trust'],
     });
 }
 

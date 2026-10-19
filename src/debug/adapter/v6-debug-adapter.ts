@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import { IpcClient } from '../../emulator/client/ipc-client';
 import { EmulatorProcess } from '../../emulator/launcher/v6emul-launcher';
 import { DebugLaunchRequest, EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
-import { EmulatorPanel } from '../../emulator/panel/emulator-panel';
+import type { EmulatorPanel } from '../../emulator/panel/emulator-panel';
 import {
     DebugResetRequest,
     IpcCommand,
@@ -32,7 +32,7 @@ import { PathService } from '../../platform/files/path-service';
 import { getServerInfo, supportsStopRecords, validateDebuggerServer } from '../../emulator/protocol/ipc-server-info';
 import { WatchpointService } from '../watchpoints/watchpoint-service';
 import { evaluateSymbolExpression, validateSymbolExpression } from '../utilities/symbol-expression';
-import { WatchpointsProvider } from '../views/watchpoints-provider';
+import type { WatchpointsProvider } from '../views/watchpoints-provider';
 import { DapHandleStore } from './dap-handle-store';
 import { ScopeService, SemanticScope, SemanticScopeKind } from './scope-service';
 import {

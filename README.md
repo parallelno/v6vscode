@@ -30,6 +30,8 @@
 
 ## Prerequisites
 
+VS Code **1.90.0 or later** is required (selected debug stack-frame APIs).
+
 The extension no longer bundles any binary. The following tools must be installed separately:
 
 | Tool | Purpose | Download |

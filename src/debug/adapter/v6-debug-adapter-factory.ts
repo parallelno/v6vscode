@@ -1,12 +1,12 @@
 import * as vscode from 'vscode';
 import { EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
-import { EmulatorPanel } from '../../emulator/panel/emulator-panel';
+import type { EmulatorPanel } from '../../emulator/panel/emulator-panel';
 import { Logger } from '../../platform/logging/logger';
 import { PathService } from '../../platform/files/path-service';
 import { V6DebugAdapter } from './v6-debug-adapter';
 import { V6_DEBUG_TYPE } from '../configuration/debug-configuration-provider';
 import { WatchpointService } from '../watchpoints/watchpoint-service';
-import { WatchpointsProvider } from '../views/watchpoints-provider';
+import type { WatchpointsProvider } from '../views/watchpoints-provider';
 
 export const CMD_DEBUG_RESET = 'v6.debug.reset';
 export const CMD_DEBUG_RELOAD_ROM = 'v6.debug.reloadRom';

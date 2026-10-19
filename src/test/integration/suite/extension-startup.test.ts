@@ -10,6 +10,9 @@ suite('Language presentation startup', () => {
 
         await extension.activate();
         assert.strictEqual(extension.isActive, true);
+        if (process.env.V6_EXPECT_MINIMUM) { assert.strictEqual(vscode.version, process.env.V6_EXPECT_MINIMUM); }
+        assert.strictEqual(typeof vscode.DebugStackFrame, 'function');
+        assert.strictEqual(typeof vscode.debug.onDidChangeActiveStackItem, 'function');
 
         await vscode.workspace.fs.stat(vscode.Uri.joinPath(
             extension.extensionUri,

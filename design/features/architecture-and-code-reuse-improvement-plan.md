@@ -1,6 +1,6 @@
 # Architecture, Code Reuse, and Maintainability Improvement Plan
 
-**Status:** Approved for staged implementation; R01-R04 complete in stage 1; R05/R06 complete as a two-feature pilot in stage 2; R07 complete in stage 3; R08 complete in stage 4. R09-R24 remain pending.
+**Status:** Approved for staged implementation; R01-R04 complete in stage 1; R05/R06 complete as a two-feature pilot in stage 2; R07 complete in stage 3; R08 complete in stage 4; R09 complete in stage 5. R10-R24 remain pending.
 **Audit date:** 2026-10-18 (workspace session; some validation timestamps are 2026-10-19 UTC).
 **Owner:** v6vscode maintainers.
 **Repository:** `C:\Work\Programming\v6vscode`.
@@ -73,7 +73,17 @@ Failure policy is deliberate: required persistence failure rejects normal stop/r
 
 Verification: 688 unit tests, zero skips; 62 regressions; seven real Extension Host/emulator tests; two live conformance tests. Host/browser-shared and full test typechecks pass; lint retains the existing 66 warnings with zero errors. New stop tests perform real temporary-file writes through run/display/restart/shutdown and debug-loaded paths, exercise concurrent stops, read-only/detach, stale scopes, export/write failures and retry; DAP tests verify failure responses and retry. Existing cross-surface hover/value and stepping checks pass.
 
-**Next stage:** R09 minimum API audit and import-boundary/manifest gates. R10-R24 remain separate roadmap work.
+Stage 4 commit: `682fe12` — `Await scoped stop participants and preserve retryable FDD saves`.
+
+## Implementation progress — stage 5 (R09)
+
+Corrected the declared VS Code floor from 1.85 to **1.90.0**. Stable 1.85-1.89 declarations do not expose the selected-stack APIs used by hover; 1.90 does. Pinned @types/vscode to exactly 1.90.0 and aligned the lockfile so compile checks cannot silently use newer APIs. Added an explicit minimum-version integration command and version assertion, alongside current/package smoke; documented evidence and execution in `C:\Work\Programming\v6vscode\docs\architecture-verification.md`.
+
+TypeScript-AST gates now distinguish type-only versus runtime imports/exports/require/dynamic-import edges, prohibit new core-to-panel dependencies, reject runtime VS Code in pure metadata/codecs/utilities/shared code, and keep shared modules inside the browser-safe dependency boundary. Four existing adapter-to-panel references are explicitly type-only and named as temporary exceptions for R14/R18. Manifest tests check command/menu/settings/debugger/view IDs, duplicate contributions, engine/type/lock agreement and browser resource build/package rules. No new production dependency or core-to-view runtime edge was introduced.
+
+Verification: 692 unit tests, zero skips; 62 regressions; two live conformance tests; full host/test/browser-shared compilation and CI pass; zero lint errors with the pre-existing 66 warnings. Seven real Extension Host/emulator tests pass on 1.90.0 from source, seven pass from the packaged VSIX on current stable, and all seven pass from the packaged VSIX on 1.90.0. The package smoke executes numeric ESM under webview CSP and retains existing ASM value/hover and C breakpoint/stepping coverage. No new regressions were observed in these checks. Network/cache prerequisites and broader future browser checking remain explicit.
+
+**Next stage:** R10 session coordinator, incrementally reusing the scoped operations and awaited stop participants; R11 artifact ownership and later stages remain separate roadmap work. R01-R09 short-term groundwork is complete.
 
 ## 1. Executive assessment
 
