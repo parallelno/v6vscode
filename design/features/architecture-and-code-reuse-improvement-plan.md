@@ -187,7 +187,15 @@ Baseline v4 compilation-directory/absolute-constant projections now consume Dwar
 
 Verification: 753 unit tests, zero skips; 62 regressions; eight minimum-version integration tests; CI/full test typecheck pass with 26 existing warnings and zero errors. New form/projection/malformed-boundary tests and real O0/O1/O2 v5 fixtures pass. Differential execution against the saved old decoder over committed v4 ELF fixtures found four supported projections equal and two newly supported declaration projections (old decoder rejected exprloc). Existing ASM hover/struct-pool and C stepping integration tests pass. Corrected one synthetic test's invalid declared unit length rather than preserving an out-of-unit read.
 
-**Next stage:** R20 bounded expression mechanics and explicit dialect policies.
+Stage 15 commit: `93a5167` — `Unify DWARF DIE decoding with independent baseline projections`.
+
+## Implementation progress — stage 16 (R20)
+
+One bounded lexer/precedence parser/AST and checked integer arithmetic implementation now serves address and C-value policies. Address identifiers retain assembler punctuation, explicit hex formats and address/constant lookup; only unary +/- and +,-,* are accepted. C retains typed casts/member/index/dereference, logical short-circuit and value-domain interpretation. The former independent recursive address parser/arithmetic implementation was removed. Dialect contracts and existing unsupported C-promotion limits are documented in docs/expression-dialects.md. Address expressions now have explicit 4096-character/512-token/64-parenthesis limits instead of unbounded recursive input.
+
+Verification: 759 unit tests, zero skips; 62 regressions; three live conformance tests; CI/full test typecheck pass with the existing 26 warnings and zero errors. Shared AST/precedence vectors, assembler-versus-C symbol meaning, rejected address-only operations, short-circuiting and bounds are covered; existing expression/hover/value tests pass. No new expression syntax or complete C arithmetic claim.
+
+**Next stage:** R21 warning ratchet, narrow core ports and executable typed event contracts.
 
 ## 1. Executive assessment
 
