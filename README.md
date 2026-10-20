@@ -105,6 +105,7 @@ npm run package          # produces v6vscode-<version>.vsix
 npm test                 # unit tests
 npm run test:unit        # unit tests only
 npm run test:regression  # regression suite
+npm run verify:release  # fail-closed packaged current/minimum + live gates; requires V6EMUL
 ```
 
 ## Documentation

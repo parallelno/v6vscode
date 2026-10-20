@@ -29,6 +29,12 @@ Live debugger tests require `V6EMUL`; startup/resource smoke runs without it.
 Network access is needed for uncached VS Code downloads. These explicit lanes
 are not silently part of `npm run ci`.
 
+The release lane is **`npm run verify:release`**: unlike standalone smoke, it
+requires V6EMUL, cleans stale output, runs CI/typecheck/package, tests the shipped
+VSIX on current and minimum VS Code with zero pending tests, then runs mandatory
+live conformance. See [shared owners and release setup](architecture-owners.md)
+for the trusted self-hosted workflow prerequisites and report/approval contract.
+
 ## Import and manifest checks
 
 The TypeScript-AST test scans production imports/exports and literal

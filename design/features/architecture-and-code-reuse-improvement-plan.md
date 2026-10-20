@@ -213,7 +213,17 @@ Measured Scripts/Performance unchanged snapshot churn and migrated both to a sha
 
 Verification: two host-free core tests, 761 unit tests, zero skips; 62 regressions; eight packaged current-version tests and nine minimum-version integration tests including the new browser profile; CI/full test typecheck pass with nine bounded warnings and zero errors. This is a measured keyed-list pilot, not completion of arbitrary large-list virtualization or large-artifact offload. No new framework/dependency.
 
-**Next stage:** R23 mandatory release/package/minimum/conformance gates and shared-owner documentation.
+Stage 18 commit: `251793c` — `Measure UI queue and artifact costs and reuse unchanged keyed rows`.
+
+## Implementation progress — stage 19 (R23)
+
+Added fail-closed npm run verify:release: validates real V6EMUL/npm prerequisites, removes stale compiled output, runs deterministic CI/full test typecheck, packages shipped resources, executes current/minimum packaged VS Code with no pending integration tests, then mandatory live conformance. A machine-readable report records each exit/duration; no publish/tag/push is performed. Deterministic Windows workflow and explicitly dispatched trusted self-hosted Windows/v6emul release-verification workflow are included. Remote runner provisioning, repository variable and protection/approval setup remain operator prerequisites, not falsely claimed configured by local code.
+
+Documented shared-service owner/invariants and release setup in docs/architecture-owners.md. Updated verification/developer entry points; gate tests assert required stage order/prerequisites and no continue-on-error. Standalone smoke remains usable without the emulator; the release lane cannot silently use that weaker behavior.
+
+Verification: full clean-output release command passed locally: two host-free core tests, 763 unit tests, zero skips; 62 regressions; nine packaged current and nine packaged minimum-version integration tests with zero pending; three live conformance tests. Strict host/shared/browser-UI builds, all browser entry points, full test typecheck and nine-warning per-file lint ratchet pass. Report: temp/release-verification.json (generated, not committed).
+
+**Next stage:** R24 verified dormant UI/facade cleanup with retained active contracts.
 
 ## 1. Executive assessment
 

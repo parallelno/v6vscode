@@ -9,7 +9,11 @@ export async function run(): Promise<void> {
     mocha.addFile(path.resolve(__dirname, 'suite', 'asm-value-presentation.test.js'));
 
     await new Promise<void>((resolve, reject) => {
-        mocha.run(failures => {
+        const runner = mocha.run(failures => {
+            if (process.env.V6_REQUIRE_LIVE === 'true' && runner.stats?.pending) {
+                reject(new Error(`Release integration cannot skip ${runner.stats.pending} test(s). Check V6EMUL.`));
+                return;
+            }
             if (failures === 0) {
                 resolve();
             } else {

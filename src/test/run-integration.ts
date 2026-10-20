@@ -54,6 +54,7 @@ async function main(): Promise<void> {
         extensionDevelopmentPath,
         extensionTestsPath: path.join(extensionRoot, 'out', 'test', 'integration', 'index'),
         extensionTestsEnv: {
+            V6_REQUIRE_LIVE: process.env.V6_REQUIRE_LIVE,
             V6_EXPECT_MINIMUM: minimum ? minimumVersion : undefined,
             V6_EXPECT_PACKAGED: packaged ? 'true' : 'false',
             V6_EXTENSION_ROOT: extensionRoot,
