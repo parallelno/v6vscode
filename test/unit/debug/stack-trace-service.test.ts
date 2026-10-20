@@ -2,6 +2,32 @@ import * as assert from 'assert';
 import { StackTraceService } from '../../../src/debug/adapter/stack-trace-service';
 
 describe('StackTraceService', () => {
+    it('coalesces overlapping captures so frame handles cannot be reset underneath scopes', async () => {
+        const service = new StackTraceService();
+        let finish!: (frames: unknown[]) => void;
+        let reads = 0;
+        const context = { unwind: () => { reads++; return new Promise(resolve => { finish = resolve; }); } };
+        const first = service.capture(1, context as any, () => 'main', () => [], frame => frame.pc);
+        const second = service.capture(1, context as any, () => 'main', () => [], frame => frame.pc);
+        assert.strictEqual(first, second);
+        finish([{ index: 0, pc: 0x100, sp: 0x7000, registers: {} }]);
+        await Promise.all([first, second]);
+        assert.strictEqual(reads, 1);
+        const frame = service.page(0, 1).frames[0];
+        assert.strictEqual(service.frame(1, frame.id), frame);
+    });
+
+    it('cannot republish an in-flight stack capture after stop invalidation', async () => {
+        const service = new StackTraceService();
+        let finish!: (frames: unknown[]) => void;
+        const context = { unwind: () => new Promise(resolve => { finish = resolve; }) };
+        const rejected = assert.rejects(service.capture(1, context as any, () => 'main', () => [], frame => frame.pc), /inactive stop/);
+        service.clear();
+        finish([{ index: 0, pc: 0x100, sp: 0x7000, registers: {} }]);
+        await rejected;
+        assert.deepStrictEqual(service.page(0, 1).frames, []);
+    });
+
     it('projects verified frames with stable IDs and DAP pagination', async () => {
         const service = new StackTraceService();
         const context = {

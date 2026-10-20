@@ -8,7 +8,7 @@ import { parseMemoryEditQuery } from '../../../src/debug/views/memory-edits-quer
 import { parseHardwareByte } from '../../../src/debug/hardware-statistics/hardware-statistics-format';
 import { parseHexQuery } from '../../../src/debug/views/hex-viewer-query';
 import { evaluateSymbolExpression } from '../../../src/debug/utilities/symbol-expression';
-import { hexAddress } from '../../../src/debug/adapter/value-format';
+import { hexAddress } from '../../../src/debug/values/value-format';
 
 const literals: Array<[string, number | undefined]> = [
     ['42', 42], ['  $2a ', 42], ['0X2A', 42], ['2aH', 42], ['010', 10], ['FFh', 255],

@@ -25,20 +25,6 @@ export interface TypedValue {
     availability: 'available' | 'optimized-out' | 'inactive' | 'unsupported' | 'unreadable';
 }
 
-export interface DapVariable {
-    name: string;
-    value: string;
-    type?: string;
-    memoryReference?: string;
-    variablesReference: number;
-    namedVariables?: number;
-    indexedVariables?: number;
-}
-
-export interface DapVariableValue extends DapVariable {
-    valueData: TypedValue;
-}
-
 // ---------------------------------------------------------------------------
 // Decoding and character/address helpers
 // ---------------------------------------------------------------------------
@@ -80,20 +66,8 @@ export function unwrap(type: TypeInfo): TypeInfo {
 }
 
 // ---------------------------------------------------------------------------
-// DAP presentation
+// Aggregate value mechanics
 // ---------------------------------------------------------------------------
-
-/** Child counts for an expandable value (pointer targets, array elements, members). */
-export function childCounts(value: TypedValue): Pick<DapVariable, 'namedVariables' | 'indexedVariables'> {
-    if (value.availability !== 'available' || !value.type) { return {}; }
-    const type = unwrap(value.type);
-    if (type.kind === 'pointer' || type.kind === 'reference') {
-        return type.of && type.of.byteSize > 0 ? { namedVariables: 1 } : {};
-    }
-    if (type.kind === 'array' && type.count !== undefined) { return { indexedVariables: type.count }; }
-    if ((type.kind === 'structure' || type.kind === 'union') && type.members) { return { namedVariables: type.members.length }; }
-    return {};
-}
 
 /** Base address for child reads; pointer indirection reads the pointee address. */
 export function childAddress(value: TypedValue, type: TypeInfo): number | undefined {
@@ -193,17 +167,3 @@ export function scalarNumber(value: TypedValue): number {
             && (type?.signed || type?.name === 'char' || type?.name === 'signed char'));
     return isSigned ? signed(numeric, bytes?.length ?? type?.byteSize ?? 2) : numeric;
 }
-
-/** Builds the DAP variable representation for a typed value. */
-export function dapVariableValue(value: TypedValue, name = ''): DapVariableValue {
-    return {
-        name,
-        value: format(value),
-        type: value.type?.name,
-        memoryReference: value.address === undefined ? undefined : hexAddress(value.address),
-        variablesReference: 0,
-        ...childCounts(value),
-        valueData: value,
-    };
-}
-

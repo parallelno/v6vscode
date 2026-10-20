@@ -1,6 +1,6 @@
 # Architecture, Code Reuse, and Maintainability Improvement Plan
 
-**Status:** Approved for staged implementation; R01-R04 complete in stage 1; R05/R06 complete as a two-feature pilot in stage 2; R07 complete in stage 3; R08 complete in stage 4; R09 complete in stage 5; R10 complete in stage 6; R11 complete in stage 7. R12-R24 remain pending.
+**Status:** Approved for staged implementation; R01-R04 complete in stage 1; R05/R06 complete as a two-feature pilot in stage 2; R07 complete in stage 3; R08 complete in stage 4; R09 complete in stage 5; R10 complete in stage 6; R11 complete in stage 7; R12 complete in stage 8; R13 complete in stage 9. R14-R24 remain pending.
 **Audit date:** 2026-10-18 (workspace session; some validation timestamps are 2026-10-19 UTC).
 **Owner:** v6vscode maintainers.
 **Repository:** `C:\Work\Programming\v6vscode`.
@@ -115,7 +115,19 @@ Hex Viewer and watchpoint preview derive support from one documented protocol-v2
 
 Verification: 715 unit tests, zero skips; 62 regressions; seven minimum-version Extension Host/emulator tests and three live conformance tests. CI, host/browser-shared and full test typechecks pass with zero lint errors and the existing 66 warnings. Shared malformed envelope/address/length/byte vectors, capability/bank bounds, atomic cache publication and reconnect/stop invalidation tests pass. Existing live unwind/typed values, hover/struct pools and stepping remain green.
 
-**Next stage:** R13 typed-value domain ownership and shared evaluation API. R14-R24 remain separate roadmap work.
+Stage 8 commit: `7e31a70` — `Validate memory exchanges through one scoped backend`. The preceding shim cleanup is `b90dece` — `Remove temporary emulator lifecycle compatibility shim`.
+
+## Implementation progress — stage 9 (R13)
+
+Moved typed values, formatting/scalar semantics, bounded C expression parsing/evaluation, symbol fallback and evaluation-context identifiers into the value domain. ValueReader owns DWARF locations, bounded typed memory reads and named children. ValueEvaluationService resolves typed variables before registers and ELF fallback, substitutes known assembler constants, resolves cast types and guards stale evaluation contexts. Watch/Console/native and language-owned hover use this single API. DAP projection/child counts/handles remain in the adapter; editor Markdown/navigation remains in its provider. Language/value import checks prohibit dependencies on DAP helpers. All imports were migrated directly; no compatibility re-export modules were introduced.
+
+Validation exposed an intermittent C scope failure under overlapping stack requests. Deterministic regressions demonstrate duplicate asynchronous captures resetting the same generation's handles, and stale unwind results republishing after clear. Stack captures now coalesce per stop/context and reject invalidated completion. This focused correctness fix does not claim completion of R14's broader execution/breakpoint extraction.
+
+Verification: 722 unit tests, zero skips; 62 regressions; 28 focused compiled tests; seven packaged current-version and seven packaged minimum-version Extension Host/emulator tests; three live conformance tests. CI and host/browser-shared/full test compilation pass; lint retains the existing 66 warnings with zero errors. Direct domain API tests cover presenter-independent results, signed values, resolution precedence, ELF constant/function/memory distinctions, stale reads and bounded children; existing hover/Watch/Console/Globals/struct-pool and C stepping parity remains green.
+
+No UI layout, commands or IPC schemas changed. Full C mixed signed/unsigned promotion remains deferred as previously documented; hover timeout still discards late read-only results rather than cancelling backend work. Value byte/child budgets remain explicit; no shared mutable stop/live cache is introduced.
+
+**Next stage:** R14 breakpoint/execution coordination and typed DAP facade, then R15 broader checked browser build/migration. R16-R24 remain separate roadmap work.
 
 ## 1. Executive assessment
 

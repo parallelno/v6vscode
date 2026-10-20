@@ -5,7 +5,7 @@ import {
     substituteKnownSymbols,
     SYMBOL_NAME_PATTERN,
     uniqueSymbolValue,
-} from '../../../src/debug/adapter/symbol-fallback';
+} from '../../../src/debug/values/symbol-fallback';
 
 describe('Symbol expression fallback', () => {
     it('substitutes dotted symbols that resolve to exactly one address', () => {

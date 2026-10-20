@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { CExpressionContext, CExpressionService, ExpressionValue } from '../../../src/debug/adapter/c-expression-service';
+import { CExpressionContext, CExpressionService, ExpressionValue } from '../../../src/debug/values/c-expression-service';
 import { TypeInfo } from '../../../src/debug/metadata/dwarf-types';
 
 describe('CExpressionService', () => {

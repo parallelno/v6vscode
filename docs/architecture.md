@@ -26,6 +26,23 @@ Composition root. Creates platform and project services, registers commands, pus
 
 `SessionCoordinator` is the shared process/socket owner for ordinary runs and debug launches. `V6DebugAdapter` borrows the lifecycle's `IpcClient`; `EmulatorPanel` renders frames through that same client. `IpcClient` serializes requests and orders queued work by priority, with debugger control above telemetry and display frames.
 
+## Memory and typed values
+
+`MemoryBackend` owns checked GET_MEM exchanges: supported layout, bank/range bounds,
+echoed address, exact length and lossless byte validation. Live `MemoryService`
+keeps its visible cache; `StopMemoryReader` is a separate stopped-generation
+adapter with a 256-byte value budget. Preview size is a UI budget, not a backend
+capability. Protocol-v2 command availability selects the shared memory profile.
+
+`src/debug/values/` owns typed values, scalar interpretation, aggregate summaries,
+DWARF reads/children, symbol fallback and bounded C expression evaluation.
+`ValueEvaluationService` is the shared typed API for Watch, Console and hover.
+It returns domain values, not DAP handles or Markdown. The DAP value presenter
+owns response fields/child counts and the adapter owns wire handles; the editor
+provider owns hover Markdown and definition links. Import-boundary tests prevent
+language/value modules from depending on DAP helpers. No old-path re-export shims
+remain for the moved modules.
+
 ```mermaid
 flowchart LR
 	DAP[V6 Debug Adapter] --> Lifecycle[Emulator Lifecycle]

@@ -27,24 +27,44 @@ export class StackTraceService {
     private generation = -1;
     private frames: readonly DapFrameContext[] = [];
     private readonly handles = new DapHandleStore<DapFrameContext>();
+    private revision = 0;
+    private pending: { generation: number; context: DebugStopContext; result: Promise<void> } | undefined;
 
     clear(): void {
+        this.revision++;
+        this.pending = undefined;
         this.generation = -1;
         this.frames = [];
         this.handles.clear();
     }
 
-    async capture(
+    capture(
         generation: number,
         context: DebugStopContext,
         resolveName: (pc: number) => string | undefined,
         resolveInlineNames: (pc: number) => readonly { id: number; name: string; source?: { file: string; line: number; column: number } }[],
         resolveDisplayPc: (frame: PhysicalFrame) => number,
     ): Promise<void> {
-        if (this.generation === generation) { return; }
+        if (this.generation === generation) { return Promise.resolve(); }
+        if (this.pending?.generation === generation && this.pending.context === context) { return this.pending.result; }
+        const revision = ++this.revision;
+        const result = this.captureNow(generation, context, resolveName, resolveInlineNames, resolveDisplayPc, revision);
+        this.pending = { generation, context, result };
+        const clear = () => { if (this.pending?.result === result) { this.pending = undefined; } };
+        void result.then(clear, clear);
+        return result;
+    }
 
+    private async captureNow(
+        generation: number,
+        context: DebugStopContext,
+        resolveName: (pc: number) => string | undefined,
+        resolveInlineNames: (pc: number) => readonly { id: number; name: string; source?: { file: string; line: number; column: number } }[],
+        resolveDisplayPc: (frame: PhysicalFrame) => number,
+        revision: number,
+    ): Promise<void> {
         const physicalFrames = await context.unwind();
-        this.generation = generation;
+        if (revision !== this.revision) { throw new Error('Stack capture belongs to an inactive stop'); }
         const frames: DapFrameContext[] = [];
         for (const physicalFrame of physicalFrames) {
             for (const inlineFrame of resolveInlineNames(physicalFrame.pc)) {
@@ -71,6 +91,7 @@ export class StackTraceService {
         for (const frame of frames) {
             this.handles.set(generation, frame.id, frame);
         }
+        this.generation = generation;
     }
 
     page(startFrame: number | undefined, levels: number | undefined): StackTracePage {

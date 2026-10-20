@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import * as vscode from 'vscode';
-import { ASSEMBLER_HOVER_CONTEXT } from '../../../src/debug/adapter/evaluation-context';
+import { ASSEMBLER_HOVER_CONTEXT } from '../../../src/debug/values/evaluation-context';
 import {
     findLabelDefinition,
     findSymbolTokens,

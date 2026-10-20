@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { V6DebugAdapter } from '../../../src/debug/adapter/v6-debug-adapter';
-import { ASSEMBLER_HOVER_CONTEXT } from '../../../src/debug/adapter/evaluation-context';
+import { ASSEMBLER_HOVER_CONTEXT } from '../../../src/debug/values/evaluation-context';
 import { TypeInfo } from '../../../src/debug/metadata/dwarf-types';
 import { STT_FUNC } from '../../../src/debug/metadata/elf32-reader';
 
@@ -155,7 +155,7 @@ describe('Unified debugger value presentation', () => {
 
     it('bounds language-owned ASM hover latency as well as native hover latency', async () => {
         const { state } = makeAdapter();
-        state.cExpressionService = { evaluateValue: () => new Promise(() => {}) };
+        state.valueEvaluationService = { evaluate: () => new Promise(() => {}) };
         await assert.rejects(() => state.evaluateExpression(ASSEMBLER_HOVER_CONTEXT, 'instance', {}), /Hover evaluation timed out/);
     });
     it('does not resolve delayed Variables requests to a new stop', async () => {

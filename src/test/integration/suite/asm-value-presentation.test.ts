@@ -4,7 +4,7 @@ import * as path from 'path';
 import { suite, test } from 'mocha';
 import * as vscode from 'vscode';
 import { loadDebugArtifact } from '../../../debug/metadata/debug-artifact-loader';
-import { ASSEMBLER_HOVER_CONTEXT } from '../../../debug/adapter/evaluation-context';
+import { ASSEMBLER_HOVER_CONTEXT } from '../../../debug/values/evaluation-context';
 
 suite('ASM value presentation', () => {
     test('shares typed values between editor hover, Watch, Globals, and struct pools in the real emulator', async function () {

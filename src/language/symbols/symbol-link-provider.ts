@@ -5,9 +5,9 @@ import { ActiveProjectService } from '../../project/active/active-project-servic
 import { DebugSymbolService } from '../../debug/metadata/debug-symbol-service';
 import { SourceLocation } from '../../debug/metadata/debug-index';
 import { resolveDebugSourcePath } from '../../debug/metadata/debug-source-path';
-import { format, scalarValue } from '../../debug/adapter/value-format';
-import { labelAddressTypeInfo } from '../../debug/adapter/symbol-fallback';
-import { ASSEMBLER_HOVER_CONTEXT } from '../../debug/adapter/evaluation-context';
+import { format, scalarValue } from '../../debug/values/value-format';
+import { labelAddressTypeInfo } from '../../debug/values/symbol-fallback';
+import { ASSEMBLER_HOVER_CONTEXT } from '../../debug/values/evaluation-context';
 import {
     findLabelDefinition,
     findSymbolTokens,

@@ -1,7 +1,7 @@
 import * as assert from 'assert';
-import { CExpressionService, CExpressionContext } from '../../../src/debug/adapter/c-expression-service';
+import { CExpressionService, CExpressionContext } from '../../../src/debug/values/c-expression-service';
 import { DapHandleStore } from '../../../src/debug/adapter/dap-handle-store';
-import { scalarValue, format } from '../../../src/debug/adapter/value-format';
+import { scalarValue, format } from '../../../src/debug/values/value-format';
 import { DwarfTypes, TypeInfo } from '../../../src/debug/metadata/dwarf-types';
 import { DwarfReader, DW_FORM, DW_AT, blockAttribute, stringAttribute } from '../../../src/debug/metadata/dwarf-reader';
 import { DwarfStrings } from '../../../src/debug/metadata/dwarf-strings';

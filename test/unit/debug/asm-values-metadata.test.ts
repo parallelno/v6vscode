@@ -2,9 +2,9 @@ import * as assert from 'assert';
 import * as path from 'path';
 import { loadDebugArtifact } from '../../../src/debug/metadata/debug-artifact-loader';
 import { VariableService } from '../../../src/debug/adapter/variable-service';
-import { CExpressionService } from '../../../src/debug/adapter/c-expression-service';
+import { CExpressionService } from '../../../src/debug/values/c-expression-service';
 import { ScopeService } from '../../../src/debug/adapter/scope-service';
-import { format } from '../../../src/debug/adapter/value-format';
+import { format } from '../../../src/debug/values/value-format';
 
 describe('Assembler typed value metadata fixture', () => {
     it('uses real assembler DWARF word types for individual structs and pools', async () => {

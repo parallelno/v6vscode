@@ -70,7 +70,7 @@ describe('Architecture and extension manifest contracts', () => {
             if (relative.startsWith('test/')) { continue; }
             const source = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
             const core = /^(shared\/|emulator\/(?!panel\/)|debug\/(?!views\/))/.test(relative);
-            const pure = /^(shared\/|debug\/metadata\/|debug\/utilities\/)/.test(relative) || /-codec\.ts$/.test(relative);
+            const pure = /^(shared\/|debug\/metadata\/|debug\/utilities\/|debug\/values\/)/.test(relative) || /-codec\.ts$/.test(relative);
             for (const edge of edges(source)) {
                 const resolved = edge.target.startsWith('.')
                     ? path.relative(src, path.resolve(path.dirname(file), edge.target)).replace(/\\/g, '/') : edge.target;
@@ -80,6 +80,9 @@ describe('Architecture and extension manifest contracts', () => {
                     else { seen.add(key); }
                 }
                 if (pure && edge.target === 'vscode' && !edge.typeOnly) { failures.push(`${relative}: runtime vscode import`); }
+                if ((relative.startsWith('debug/values/') || relative.startsWith('language/')) && resolved.startsWith('debug/adapter/')) {
+                    failures.push(`${relative}: domain/language depends on DAP adapter: ${resolved}`);
+                }
                 if (relative.startsWith('shared/') && !edge.target.startsWith('.')) { failures.push(`${relative}: non-browser dependency ${edge.target}`); }
                 if (relative.startsWith('shared/') && edge.target.startsWith('.') && !resolved.startsWith('shared/')) {
                     failures.push(`${relative}: shared dependency escapes browser-safe boundary: ${resolved}`);

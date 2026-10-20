@@ -65,8 +65,8 @@ describe('V6DebugAdapter', () => {
             {} as any,
             () => ({} as any),
         );
-        (adapter as any).cExpressionService = {
-            evaluateValue: () => new Promise(() => {}),
+        (adapter as any).valueEvaluationService = {
+            evaluate: () => new Promise(() => {}),
         };
         const started = Date.now();
 

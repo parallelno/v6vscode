@@ -1,6 +1,7 @@
+import { dapVariableValue } from '../../../src/debug/adapter/dap-value-presenter';
 import * as assert from 'assert';
 import { TypeInfo } from '../../../src/debug/metadata/dwarf-types';
-import { dapVariableValue, format, scalarValue } from '../../../src/debug/adapter/value-format';
+import { format, scalarValue } from '../../../src/debug/values/value-format';
 import { VariableService } from '../../../src/debug/adapter/variable-service';
 
 const byte: TypeInfo = { id: 1, kind: 'base', name: 'byte', byteSize: 1, signed: false };
