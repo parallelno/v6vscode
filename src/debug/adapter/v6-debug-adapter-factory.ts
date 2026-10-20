@@ -1,12 +1,11 @@
 import * as vscode from 'vscode';
 import { SessionCoordinator } from '../../emulator/session/session-coordinator';
-import type { EmulatorPanel } from '../../emulator/panel/emulator-panel';
+import type { DebugDisplay, WatchpointFeedback } from './debug-ui-ports';
 import { Logger } from '../../platform/logging/logger';
 import { PathService } from '../../platform/files/path-service';
 import { V6DebugAdapter } from './v6-debug-adapter';
 import { V6_DEBUG_TYPE } from '../configuration/debug-configuration-provider';
 import { WatchpointService } from '../watchpoints/watchpoint-service';
-import type { WatchpointsProvider } from '../views/watchpoints-provider';
 
 export const CMD_DEBUG_RESET = 'v6.debug.reset';
 export const CMD_DEBUG_RELOAD_ROM = 'v6.debug.reloadRom';
@@ -22,12 +21,12 @@ export class V6DebugAdapterFactory implements vscode.DebugAdapterDescriptorFacto
 
     constructor(
         private readonly lifecycle: SessionCoordinator,
-        private readonly emulatorPanel: EmulatorPanel,
+        private readonly emulatorPanel: DebugDisplay,
         private readonly logger: Logger,
         private readonly pathService: PathService,
         private readonly getConfiguration: (s: string) => vscode.WorkspaceConfiguration,
         private readonly watchpointService: WatchpointService,
-        private readonly watchpointsProvider: WatchpointsProvider,
+        private readonly watchpointsProvider: WatchpointFeedback,
     ) {}
 
     createDebugAdapterDescriptor(
@@ -85,13 +84,13 @@ export class V6DebugAdapterFactory implements vscode.DebugAdapterDescriptorFacto
 export function registerDebugAdapter(
     context: vscode.ExtensionContext,
     lifecycle: SessionCoordinator,
-    emulatorPanel: EmulatorPanel,
+    emulatorPanel: DebugDisplay,
     logger: Logger,
     pathService: PathService,
     getConfiguration: (s: string) => vscode.WorkspaceConfiguration,
     configProvider: vscode.DebugConfigurationProvider,
     watchpointService: WatchpointService,
-    watchpointsProvider: WatchpointsProvider,
+    watchpointsProvider: WatchpointFeedback,
 ): void {
     const factory = new V6DebugAdapterFactory(
         lifecycle, emulatorPanel, logger, pathService, getConfiguration, watchpointService, watchpointsProvider,

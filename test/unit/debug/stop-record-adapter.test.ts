@@ -88,18 +88,6 @@ describe('V6DebugAdapter stop records', () => {
     it('emits a logpoint and resumes without a stopped event', async () => {
         const { adapter, messages } = makeAdapter();
         const commands: IpcCommand[] = [];
-        (adapter as any).bpAddrToId.set(0x1234, 7);
-        (adapter as any).breakpointsByAddress.set(0x1234, {
-            id: 7,
-            address: 0x1234,
-            logMessage: {
-                text: 'B={B}, C={C}',
-                segments: [
-                    { literal: 'B=' }, { expression: 'B' },
-                    { literal: ', C=' }, { expression: 'C' },
-                ],
-            },
-        });
         (adapter as any).client = {
             send: async (command: IpcCommand) => {
                 commands.push(command);
@@ -110,6 +98,8 @@ describe('V6DebugAdapter stop records', () => {
             },
         };
 
+        (adapter as any).debugIndex = { resolveBreakpoint: () => ({ address: 0x1234, verifiedLine: 1 }) };
+        await (adapter as any).breakpoints.setSource({ source: { path: 'test.asm' }, breakpoints: [{ line: 1, logMessage: 'B={B}, C={C}' }] });
         await (adapter as any).onStop({
             sequence: 4,
             reason: 'breakpoint',
@@ -127,7 +117,7 @@ describe('V6DebugAdapter stop records', () => {
         const { adapter, messages, executionStates } = makeAdapter();
         const commands: IpcCommand[] = [];
         (adapter as any).stopRecordsSupported = true;
-        (adapter as any).lastStopSequence = 4;
+        (adapter as any).execution.lastStopSequence = 4;
         (adapter as any).client = {
             send: async (command: IpcCommand) => {
                 commands.push(command);
@@ -169,8 +159,8 @@ describe('V6DebugAdapter stop records', () => {
     it('reports a manual pause when the stop-record sequence does not advance', async () => {
         const { adapter, messages, executionStates } = makeAdapter();
         (adapter as any).stopRecordsSupported = true;
-        (adapter as any).lastStopSequence = 4;
-        (adapter as any).pendingPause = true;
+        (adapter as any).execution.lastStopSequence = 4;
+        (adapter as any).execution.pendingPause = true;
         (adapter as any).client = {
             send: async (command: IpcCommand) => {
                 if (command === IpcCommand.IS_RUNNING) {

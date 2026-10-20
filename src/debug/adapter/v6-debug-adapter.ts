@@ -1,22 +1,17 @@
+import { DapRequest, DapResponse, DapEvent, dapRequest } from './dap-protocol';
+import { ExecutionController } from '../session/execution-controller';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import type { SessionLease } from '../../emulator/session/session-coordinator';
 import type { CommandSender } from '../../emulator/session/session-operations';
 import { EmulatorProcess } from '../../emulator/launcher/v6emul-launcher';
 import { DebugLaunchRequest, SessionCoordinator } from '../../emulator/session/session-coordinator';
-import type { EmulatorPanel } from '../../emulator/panel/emulator-panel';
+import type { DebugDisplay, WatchpointFeedback } from './debug-ui-ports';
 import {
-    DebugResetRequest,
     IpcCommand,
     GetRegsResponse,
-    IsRunningResponse,
 } from '../../emulator/protocol/ipc-commands';
 import {
-    BreakpointOperand,
-    BreakpointEntry,
-    DebugCondition,
-    makeBreakpointAdd,
-    decodeStopRecord,
     GetStepOverAddrResponse,
     GetStackSampleResponse,
     StopRecord,
@@ -31,18 +26,17 @@ import { Logger } from '../../platform/logging/logger';
 import { PathService } from '../../platform/files/path-service';
 import { supportsStopRecords } from '../../emulator/protocol/ipc-server-info';
 import { WatchpointService } from '../watchpoints/watchpoint-service';
-import { evaluateSymbolExpression, validateSymbolExpression } from '../utilities/symbol-expression';
-import type { WatchpointsProvider } from '../views/watchpoints-provider';
+import { evaluateSymbolExpression } from '../utilities/symbol-expression';
 import { DapHandleStore } from './dap-handle-store';
 import { ScopeService, SemanticScope, SemanticScopeKind } from './scope-service';
 import { DapFrameContext, StackTraceService } from './stack-trace-service';
 import { VariableService } from './variable-service';
 import { hexAddress, TypedValue } from '../values/value-format';
 import { dapVariableValue } from './dap-value-presenter';
-import { ValueEvaluationService, ValueEvaluationContext, BYTE_REGISTER_EXPRESSIONS } from '../values/value-evaluation-service';
+import { ValueEvaluationService, ValueEvaluationContext } from '../values/value-evaluation-service';
 import { isAssemblerSource, isHoverEvaluation } from '../values/evaluation-context';
 import { toDwarfRegisters } from '../metadata/v6c-register-map';
-import { StepBreakpointStore } from './step-breakpoint-store';
+import { BreakpointCoordinator } from '../session/breakpoint-coordinator';
 import { memoryCapabilities } from '../../emulator/memory/memory-backend';
 import { LogicalLocationIndex } from './logical-location-index';
 import { SourceStepService, SourceStepState } from './source-step-service';
@@ -53,7 +47,6 @@ import { SourceStepService, SourceStepState } from './source-step-service';
 
 const THREAD_ID = 1;
 const THREAD_NAME = 'V6 CPU';
-const POLL_INTERVAL_MS = 20;
 const HOVER_EVALUATION_TIMEOUT_MS = 100;
 const SOURCE_STEP_LIMITS = { maxInstructions: 10000, maxElapsedMs: 5000, maxCandidates: 64 };
 
@@ -78,38 +71,6 @@ interface VariableHandle {
 
 type ScopeHandle = MachineScopeHandle | SemanticScopeHandle;
 type VariablesHandle = ScopeHandle | VariableHandle;
-
-const BYTE_BREAKPOINT_OPERANDS = new Set<BreakpointOperand>(['A', 'F', 'B', 'C', 'D', 'E', 'H', 'L']);
-const WORD_BREAKPOINT_OPERANDS = new Set<BreakpointOperand>(['BC', 'DE', 'HL', 'SP']);
-const BREAKPOINT_OPERANDS = new Set<BreakpointOperand>([
-    'A', 'F', 'B', 'C', 'D', 'E', 'H', 'L', 'BC', 'DE', 'HL', 'SP',
-]);
-const CONDITION_OPERATORS: ReadonlyArray<readonly [string, DebugCondition]> = [
-    ['==', 'EQU'], ['!=', 'NOT_EQU'], ['<=', 'LESS_EQU'], ['>=', 'GREATER_EQU'],
-    ['<', 'LESS'], ['>', 'GREATER'],
-];
-
-interface ParsedBreakpointCondition {
-    operand: BreakpointOperand;
-    condition: DebugCondition;
-    value: number;
-    text: string;
-}
-
-type LogMessageSegment = { literal: string } | { expression: string };
-
-interface ParsedLogMessage {
-    text: string;
-    segments: readonly LogMessageSegment[];
-}
-
-interface AdapterBreakpoint {
-    id: number;
-    address: number;
-    condition?: ParsedBreakpointCondition;
-    hitCondition?: number;
-    logMessage?: ParsedLogMessage;
-}
 
 interface InlineFrameSource {
     file: string;
@@ -148,8 +109,8 @@ function flag(f: number, bit: number): string { return (f >> bit & 1) ? '1' : '0
  *   - continue, pause, stepIn, next (step-over via GET_STEP_OVER_ADDR)
  *   - threads, stackTrace, scopes, variables (registers + flags + raw stack)
  *   - setInstructionBreakpoints (direct address, working backend protocol)
- *   - setBreakpoints (returned as unverified — ELF/DWARF not yet consumed)
- *   - evaluate (register names and hex literals)
+ *   - source/instruction breakpoints delegated to the breakpoint coordinator
+ *   - typed expressions, verified stack frames and source/instruction stepping
  *   - authoritative stop-record polling with IS_RUNNING fallback
  */
 export class V6DebugAdapter implements vscode.DebugAdapter {
@@ -171,12 +132,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
     // Session state
     private initialized = false;
-    private sessionState: 'idle' | 'running' | 'paused' | 'disconnected' = 'idle';
     private stopReason: StopReason = 'entry';
-    private pendingPause = false;
-    private pendingStep = false;
     private pendingStepOverAddr: number | undefined;
-    private stepBreakpointError: string | undefined;
     private sourceStep = this.createSourceStepService(SOURCE_STEP_LIMITS);
     private createSourceStepService(limits: typeof SOURCE_STEP_LIMITS): SourceStepService {
         return new SourceStepService(limits, Date.now, async () => {
@@ -185,39 +142,17 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     }
     private sourceStepAddresses: number[] = [];
     private sourceStepFilters: readonly string[] = [];
-    private readonly stepBreakpoints = new StepBreakpointStore({
-        add: async address => {
-            const response = await this.client?.send(
-                IpcCommand.DEBUG_BREAKPOINT_ADD,
-                makeBreakpointAdd(address, '__dap_next', { autoDelete: true }),
-            );
-            this.stepBreakpointError = response?.error;
-            return response?.ok === true;
-        },
-        remove: async address => {
-            await this.client?.send(IpcCommand.DEBUG_BREAKPOINT_DEL, { addr: address }).catch(() => {});
-        },
-    });
+    private readonly breakpoints = new BreakpointCoordinator(() => this.client,
+        () => ({ index: this.debugIndex, metadataError: this.debugMetadataError, registers: this.cachedRegs }),
+        message => this.logger.warn(message));
     private terminationEmitted = false;
     private terminationRequested = false;
     private launchRequest: DebugLaunchRequest | null = null;
     private stopOnEntry = false;
     private stopRecordsSupported = false;
-    private lastStopSequence: number | undefined;
     private lastExceptionRecord: StopRecord | undefined;
 
-    // IS_RUNNING poll
-    private pollTimer: NodeJS.Timeout | null = null;
-    private pollingActive = false;
-
     // Breakpoint tracking: DAP breakpoint ID → CPU address
-    private nextBpId = 1;
-    private bpAddrToId = new Map<number, number>();
-    private bpIdToAddr = new Map<number, number>();
-    private breakpointsByAddress = new Map<number, AdapterBreakpoint>();
-    private sourceBpAddresses = new Map<string, Set<number>>();
-    private instructionBpAddresses = new Set<number>();
-    private serverBreakpointIds = new Map<number, number>();
     private watchpointIdToDapId = new Map<number, number>();
     private dapWatchpointIds = new Set<number>();
 
@@ -233,14 +168,36 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // whether it represents a scope, a Watch result, or an aggregate child.
     private readonly variablesHandles = new DapHandleStore<VariablesHandle>();
 
+    private readonly execution = new ExecutionController(() => {
+        const client = this.client;
+        const lease = this.sessionLease;
+        if (!client) { throw new Error('No active emulator session'); }
+        return { client, records: this.stopRecordsSupported, assertCurrent: () => {
+            if (client !== this.client || lease !== this.sessionLease) { throw new Error('Control belongs to an inactive session'); }
+            lease?.assertCurrent();
+        } };
+    }, {
+        prepare: async () => {
+            await this.cancelSourceStep(); await this.releaseSourceStepBreakpoints();
+            if (this.pendingStepOverAddr !== undefined) { await this.breakpoints.releaseTemporary(this.pendingStepOverAddr); this.pendingStepOverAddr = undefined; }
+        },
+        synchronize: () => this.syncServerBreakpoints(),
+        invalidate: () => { this.watchpointsProvider?.showStop([]); this.clearUnavailableSourceIndicator(); this.cachedRegs = null; this.invalidateStopContext(); },
+        running: value => this.lifecycle.setExecutionRunning(value, this.sessionLease),
+        continued: () => this.sendEvent('continued', { threadId: THREAD_ID, allThreadsContinued: true }),
+        stopped: record => this.onStop(record),
+        refresh: () => this.refreshRegs(),
+        clearException: () => { this.lastExceptionRecord = undefined; },
+    });
+
     constructor(
         private readonly lifecycle: SessionCoordinator,
-        private readonly emulatorPanel: EmulatorPanel,
+        private readonly emulatorPanel: DebugDisplay,
         private readonly logger: Logger,
         private readonly pathService: PathService,
         private readonly getConfiguration: (s: string) => vscode.WorkspaceConfiguration,
         private readonly watchpointService?: WatchpointService,
-        private readonly watchpointsProvider?: WatchpointsProvider,
+        private readonly watchpointsProvider?: WatchpointFeedback,
     ) {}
 
     // -----------------------------------------------------------------------
@@ -248,10 +205,11 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // -----------------------------------------------------------------------
 
     handleMessage(message: vscode.DebugProtocolMessage): void {
-        const msg = message as any;
-        if (msg.type === 'request') {
+        const msg = dapRequest(message);
+        if (msg) {
             this.dispatchRequest(msg).catch(err => {
                 this.logger.error(`v6-debug: unhandled error in ${msg.command}: ${err}`);
+                this.sendResponse(msg, false, err instanceof Error ? err.message : String(err));
             });
         }
     }
@@ -265,7 +223,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // Request dispatch
     // -----------------------------------------------------------------------
 
-    private async dispatchRequest(req: any): Promise<void> {
+    private async dispatchRequest(req: DapRequest): Promise<void> {
         switch (req.command) {
             case 'initialize':           await this.onInitialize(req); break;
             case 'launch':               await this.onLaunch(req); break;
@@ -298,7 +256,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // initialize
     // -----------------------------------------------------------------------
 
-    private async onInitialize(req: any): Promise<void> {
+    private async onInitialize(req: DapRequest): Promise<void> {
         this.initialized = true;
         this.sendResponseBody(req, {
             supportsConfigurationDoneRequest: true,
@@ -324,7 +282,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // launch
     // -----------------------------------------------------------------------
 
-    private async onLaunch(req: any): Promise<void> {
+    private async onLaunch(req: DapRequest): Promise<void> {
         const args = req.arguments ?? {};
         try {
             this.debugIndex = null;
@@ -390,7 +348,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
             // Keep paused until configurationDone
             lease.assertCurrent();
-            this.sessionState = 'paused';
+            this.execution.state = 'paused';
             try {
                 this.emulatorPanel.reveal();
             } catch (panelError: any) {
@@ -415,7 +373,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // attach
     // -----------------------------------------------------------------------
 
-    private async onAttach(req: any): Promise<void> {
+    private async onAttach(req: DapRequest): Promise<void> {
         const args = req.arguments ?? {};
         try {
             const port = Number(args.port ?? 9876);
@@ -425,7 +383,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             this.client = lease;
             this.stopRecordsSupported = this.lifecycle.serverInfo !== undefined && supportsStopRecords(this.lifecycle.serverInfo);
             this.publishDynamicCapabilities();
-            this.sessionState = 'paused';
+            this.execution.state = 'paused';
 
             this.sendResponseBody(req, {});
             this.sendEvent('initialized');
@@ -438,7 +396,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // configurationDone — breakpoints have been sent; start or remain paused
     // -----------------------------------------------------------------------
 
-    private async onConfigurationDone(req: any): Promise<void> {
+    private async onConfigurationDone(req: DapRequest): Promise<void> {
         try {
             if (this.launchRequest) {
                 await this.lifecycle.loadDebugProgram(this.launchRequest, this.sessionLease);
@@ -463,7 +421,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // threads
     // -----------------------------------------------------------------------
 
-    private async onThreads(req: any): Promise<void> {
+    private async onThreads(req: DapRequest): Promise<void> {
         this.sendResponseBody(req, {
             threads: [{ id: THREAD_ID, name: THREAD_NAME }],
         });
@@ -473,7 +431,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // stackTrace
     // -----------------------------------------------------------------------
 
-    private async onStackTrace(req: any): Promise<void> {
+    private async onStackTrace(req: DapRequest): Promise<void> {
         if (this.stopContext) {
             await this.stackTraceService.capture(
                 this.stoppedGeneration,
@@ -594,7 +552,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // scopes
     // -----------------------------------------------------------------------
 
-    private async onScopes(req: any): Promise<void> {
+    private async onScopes(req: DapRequest): Promise<void> {
         const frameId = req.arguments?.frameId ?? 0;
         const frame = this.stopContext
             ? this.stackTraceService.frame(this.stoppedGeneration, frameId)
@@ -638,7 +596,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // variables
     // -----------------------------------------------------------------------
 
-    private async onVariables(req: any): Promise<void> {
+    private async onVariables(req: DapRequest): Promise<void> {
         const ref = req.arguments?.variablesReference ?? 0;
         const handle = this.variablesHandles.get(this.stoppedGeneration, ref);
         if (!handle) {
@@ -768,51 +726,33 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // continue
     // -----------------------------------------------------------------------
 
-    private async onContinue(req: any): Promise<void> {
+    private async onContinue(req: DapRequest): Promise<void> {
         await this.cancelSourceStep();
-        this.sendResponseBody(req, { allThreadsContinued: true });
         await this.run();
+        this.sendResponseBody(req, { allThreadsContinued: true });
     }
 
-    private async run(): Promise<void> {
-        if (!this.client) { return; }
-        await this.syncServerBreakpoints();
-        await this.captureStopBaseline();
-        this.watchpointsProvider?.showStop([]);
-        this.clearUnavailableSourceIndicator();
-        this.cachedRegs = null;
-        this.invalidateStopContext();
-        this.pendingPause = false;
-        this.pendingStep = false;
-        this.sessionState = 'running';
-        await this.client.send(IpcCommand.RUN, undefined, 5000, 'critical');
-        this.lifecycle.setExecutionRunning(true, this.sessionLease);
-        this.sendEvent('continued', { threadId: THREAD_ID, allThreadsContinued: true });
-        this.startPoll();
-    }
+    private async run(): Promise<void> { if (this.client) { await this.execution.run(); } }
 
     // -----------------------------------------------------------------------
     // pause
     // -----------------------------------------------------------------------
 
-    private async onPause(req: any): Promise<void> {
+    private async onPause(req: DapRequest): Promise<void> {
         await this.cancelSourceStep();
-        this.pendingPause = true;
-        await this.client?.send(IpcCommand.STOP, undefined, 5000, 'critical');
-        this.lifecycle.setExecutionRunning(false, this.sessionLease);
+        await this.execution.pause();
         this.sendResponseBody(req, {});
-        // Poll will detect the stop and emit StoppedEvent
     }
 
     // -----------------------------------------------------------------------
     // next (step over)
     // -----------------------------------------------------------------------
 
-    private async onNext(req: any): Promise<void> {
+    private async onNext(req: DapRequest): Promise<void> {
         if (!this.client) { this.sendResponseBody(req, {}); return; }
         if (await this.startSourceStep('over', req)) { return; }
 
-        this.pendingStep = true;
+        this.execution.pendingStep = true;
         this.cachedRegs = null;
         this.invalidateStopContext();
 
@@ -823,9 +763,9 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
             if (soAddr > 0 && soAddr !== 0xFFFF) {
                 // Set a temporary auto-delete breakpoint at the step-over address
-                if (!await this.stepBreakpoints.acquire(soAddr)) {
-                    this.pendingStep = false;
-                    this.sendResponse(req, false, this.stepBreakpointError ?? 'Unable to set the temporary step-over breakpoint');
+                if (!await this.breakpoints.acquireTemporary(soAddr)) {
+                    this.execution.pendingStep = false;
+                    this.sendResponse(req, false, this.breakpoints.temporaryError ?? 'Unable to set the temporary step-over breakpoint');
                     return;
                 }
                 this.pendingStepOverAddr = soAddr;
@@ -837,7 +777,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                 await this.singleStep();
             }
         } catch (error) {
-            this.pendingStep = false;
+            this.execution.pendingStep = false;
             this.sendResponse(req, false, error instanceof Error ? error.message : String(error));
         }
     }
@@ -846,19 +786,19 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // stepIn
     // -----------------------------------------------------------------------
 
-    private async onStepIn(req: any): Promise<void> {
+    private async onStepIn(req: DapRequest): Promise<void> {
         if (await this.startSourceStep('into', req)) { return; }
         this.sendResponseBody(req, {});
-        this.pendingStep = true;
+        this.execution.pendingStep = true;
         this.cachedRegs = null;
         this.invalidateStopContext();
         await this.singleStep();
     }
 
-    private async onStepOut(req: any): Promise<void> {
+    private async onStepOut(req: DapRequest): Promise<void> {
         // DAP StepOutArguments has no frameId. VS Code steps out from the stopped
         // top frame; retain the optional ID for custom clients and focused tests.
-        const frame = this.stackTraceService.frame(this.stoppedGeneration, req.arguments?.frameId)
+        const frame = this.stackTraceService.frame(this.stoppedGeneration, req.arguments?.frameId ?? -1)
             ?? this.stackTraceService.page(0, 1).frames[0];
         if (frame?.inlineDieIdentity !== undefined && await this.startInlineStepOut(frame, req)) {
             return;
@@ -868,17 +808,17 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             return;
         }
         await this.cancelSourceStep();
-        if (!await this.stepBreakpoints.acquire(frame.physicalFrame.returnPc)) {
-            this.sendResponse(req, false, this.stepBreakpointError ?? 'Unable to set the temporary step-out breakpoint');
+        if (!await this.breakpoints.acquireTemporary(frame.physicalFrame.returnPc)) {
+            this.sendResponse(req, false, this.breakpoints.temporaryError ?? 'Unable to set the temporary step-out breakpoint');
             return;
         }
         this.sourceStepAddresses = [frame.physicalFrame.returnPc];
-        this.pendingStep = true;
+        this.execution.pendingStep = true;
         this.sendResponseBody(req, {});
         await this.run();
     }
 
-    private async startInlineStepOut(frame: DapFrameContext, req: any): Promise<boolean> {
+    private async startInlineStepOut(frame: DapFrameContext, req: DapRequest): Promise<boolean> {
         if (!this.debugIndex || !this.debugMetadata || !this.cachedRegs || frame.physicalFrame.index !== 0) {
             return false;
         }
@@ -905,15 +845,16 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             this.sendResponse(req, false, 'Source step exceeded the instruction budget');
             return true;
         }
+        this.sourceStepAddresses = [];
         for (const address of candidates) {
-            if (!await this.stepBreakpoints.acquire(address)) {
+            if (!await this.breakpoints.acquireTemporary(address)) {
                 await this.cancelSourceStep();
-                this.sendResponse(req, false, this.stepBreakpointError ?? 'Unable to set an inline step-out breakpoint');
+                this.sendResponse(req, false, this.breakpoints.temporaryError ?? 'Unable to set an inline step-out breakpoint');
                 return true;
             }
+            this.sourceStepAddresses.push(address);
         }
-        this.sourceStepAddresses = candidates;
-        this.pendingStep = true;
+        this.execution.pendingStep = true;
         this.sendResponseBody(req, {});
         if (candidates.length === 0) {
             await this.singleStep();
@@ -923,7 +864,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         return true;
     }
 
-    private async startSourceStep(kind: 'into' | 'over', req: any): Promise<boolean> {
+    private async startSourceStep(kind: 'into' | 'over', req: DapRequest): Promise<boolean> {
         if (req.arguments?.granularity === 'instruction' || !this.debugIndex || !this.debugMetadata || !this.cachedRegs) {
             return false;
         }
@@ -950,15 +891,16 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             this.sendResponse(req, false, 'Source step exceeded the instruction budget');
             return true;
         }
+        this.sourceStepAddresses = [];
         for (const address of candidates) {
-            if (!await this.stepBreakpoints.acquire(address)) {
+            if (!await this.breakpoints.acquireTemporary(address)) {
                 await this.cancelSourceStep();
-                this.sendResponse(req, false, this.stepBreakpointError ?? 'Unable to set a source step breakpoint');
+                this.sendResponse(req, false, this.breakpoints.temporaryError ?? 'Unable to set a source step breakpoint');
                 return true;
             }
+            this.sourceStepAddresses.push(address);
         }
-        this.sourceStepAddresses = candidates;
-        this.pendingStep = true;
+        this.execution.pendingStep = true;
         this.sendResponseBody(req, {});
         if (candidates.length === 0) {
             await this.singleStep();
@@ -976,415 +918,24 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private async releaseSourceStepBreakpoints(): Promise<void> {
         const addresses = this.sourceStepAddresses;
         this.sourceStepAddresses = [];
-        await Promise.all(addresses.map(address => this.stepBreakpoints.release(address)));
+        await Promise.all(addresses.map(address => this.breakpoints.releaseTemporary(address)));
     }
 
-    private async singleStep(): Promise<void> {
-        if (!this.client) { return; }
-        await this.captureStopBaseline();
-        this.sessionState = 'running';
-        this.lifecycle.setExecutionRunning(true, this.sessionLease);
-        this.sendEvent('continued', { threadId: THREAD_ID, allThreadsContinued: true });
-        await this.client.send(IpcCommand.EXECUTE_INSTR, undefined, 5000, 'critical');
-        // EXECUTE_INSTR keeps the emulator paused — read stop state immediately
-        this.sessionState = 'paused';
-        this.lifecycle.setExecutionRunning(false, this.sessionLease);
-        const record = this.stopRecordsSupported ? await this.readStopRecord() : undefined;
-        if (record && record.sequence !== this.lastStopSequence) {
-            this.lastStopSequence = record.sequence;
-            await this.onStop(record);
-        } else if (!this.stopRecordsSupported) {
-            await this.onStop();
-        }
-    }
+    private async singleStep(): Promise<void> { if (this.client) { await this.execution.singleStep(); } }
 
     // -----------------------------------------------------------------------
     // setBreakpoints — source breakpoints (Step 3.11 full impl requires ELF/DWARF)
     // -----------------------------------------------------------------------
 
-    private parseBreakpointConfiguration(requested: any, allowLogpoint: boolean): Omit<AdapterBreakpoint, 'id' | 'address'> {
-        const conditionText = String(requested.condition ?? '').trim();
-        const hitText = String(requested.hitCondition ?? '').trim();
-        const logMessageText = String(requested.logMessage ?? '');
-        if (logMessageText && !allowLogpoint) {
-            throw new Error('Logpoints are supported only for source breakpoints.');
-        }
-        const logMessage = logMessageText ? this.parseLogMessage(logMessageText) : undefined;
-
-        let condition: ParsedBreakpointCondition | undefined;
-        if (conditionText) {
-            const match = /^([A-Za-z]+)\s*(==|!=|<=|>=|<|>)\s*(.+)$/.exec(conditionText);
-            if (!match) {
-                throw new Error('Unsupported breakpoint condition. Expected: REGISTER comparison value.');
-            }
-            const operand = match[1].toUpperCase() as BreakpointOperand;
-            if (!BREAKPOINT_OPERANDS.has(operand)) {
-                throw new Error(`Unsupported breakpoint register: ${match[1].toUpperCase()}.`);
-            }
-            const operator = CONDITION_OPERATORS.find(([text]) => text === match[2])?.[1];
-            if (!operator) {
-                throw new Error('Unsupported breakpoint comparison operator.');
-            }
-            const value = evaluateSymbolExpression(match[3], name => {
-                const symbol = this.debugIndex?.symbol(name);
-                if (!symbol) { throw new Error(`Unknown symbol: ${name}`); }
-                return symbol.address;
-            });
-            const max = BYTE_BREAKPOINT_OPERANDS.has(operand) ? 0xFF
-                : WORD_BREAKPOINT_OPERANDS.has(operand) ? 0xFFFF : Number.MAX_SAFE_INTEGER;
-            if (value < 0 || value > max) {
-                throw new Error(`Breakpoint value ${hex4(value)} does not fit register ${operand}.`);
-            }
-            condition = { operand, condition: operator, value, text: `${operand} ${match[2]} ${match[3].trim()}` };
-        }
-
-        let hitCondition: number | undefined;
-        if (hitText) {
-            if (!/^[1-9][0-9]*$/.test(hitText)) {
-                throw new Error('Hit condition must be a positive decimal integer.');
-            }
-            hitCondition = Number(hitText);
-            if (!Number.isSafeInteger(hitCondition)) {
-                throw new Error('Hit condition is outside the safe integer range.');
-            }
-        }
-        return { condition, hitCondition, ...(logMessage ? { logMessage } : {}) };
+    private async onSetBreakpoints(req: DapRequest): Promise<void> {
+        this.sendResponseBody(req, { breakpoints: await this.breakpoints.setSource(req.arguments ?? {}) });
     }
 
-    private parseLogMessage(logMessage: string): ParsedLogMessage {
-        const segments: LogMessageSegment[] = [];
-        let literal = '';
-        const appendLiteral = () => {
-            if (literal) { segments.push({ literal }); literal = ''; }
-        };
-        for (let index = 0; index < logMessage.length; index++) {
-            const char = logMessage[index];
-            if (char === '{' && logMessage[index + 1] === '{') { literal += '{'; index++; continue; }
-            if (char === '}' && logMessage[index + 1] === '}') { literal += '}'; index++; continue; }
-            if (char === '}') { throw new Error("Log message contains an unmatched '}'."); }
-            if (char !== '{') { literal += char; continue; }
-            const end = logMessage.indexOf('}', index + 1);
-            if (end < 0) { throw new Error("Log message contains an unmatched '{'."); }
-            const expression = logMessage.slice(index + 1, end).trim();
-            if (!expression) { throw new Error('Log message contains an empty expression.'); }
-            const error = validateSymbolExpression(expression);
-            if (error) { throw new Error(`Unsupported logpoint expression: ${expression}.`); }
-            appendLiteral();
-            segments.push({ expression });
-            index = end;
-        }
-        appendLiteral();
-        return { text: logMessage, segments };
+    private async onSetInstructionBreakpoints(req: DapRequest): Promise<void> {
+        this.sendResponseBody(req, { breakpoints: await this.breakpoints.setInstructions(req.arguments ?? {}) });
     }
 
-    private formatLogMessage(logMessage: ParsedLogMessage): string {
-        const registers = this.cachedRegs;
-        const values: Record<string, number> = registers ? {
-            A: (registers.af >> 8) & 0xFF, F: registers.af & 0xFF,
-            B: (registers.bc >> 8) & 0xFF, C: registers.bc & 0xFF,
-            D: (registers.de >> 8) & 0xFF, E: registers.de & 0xFF,
-            H: (registers.hl >> 8) & 0xFF, L: registers.hl & 0xFF,
-            PSW: registers.af, BC: registers.bc, DE: registers.de, HL: registers.hl,
-            SP: registers.sp, PC: registers.pc, CC: registers.cc,
-        } : {};
-        let output = '';
-        for (const segment of logMessage.segments) {
-            if ('literal' in segment) { output += segment.literal; continue; }
-            const expression = segment.expression;
-            const value = evaluateSymbolExpression(expression, name => {
-                const register = values[name.toUpperCase()];
-                if (register !== undefined) { return register; }
-                const symbol = this.debugIndex?.symbol(name);
-                if (!symbol) { throw new Error(`Unknown symbol: ${name}`); }
-                return symbol.address;
-            });
-            output += BYTE_REGISTER_EXPRESSIONS.has(expression.toUpperCase()) ? hex2(value) : hex4(value);
-        }
-        return output.endsWith('\n') ? output : `${output}\n`;
-    }
-
-    private sameBackendConfiguration(
-        first: Pick<AdapterBreakpoint, 'condition' | 'hitCondition'>,
-        second: Pick<AdapterBreakpoint, 'condition' | 'hitCondition'>,
-    ): boolean {
-        return first.hitCondition === second.hitCondition
-            && first.condition?.operand === second.condition?.operand
-            && first.condition?.condition === second.condition?.condition
-            && first.condition?.value === second.condition?.value;
-    }
-
-    private sameBreakpointConfiguration(
-        first: Pick<AdapterBreakpoint, 'condition' | 'hitCondition' | 'logMessage'>,
-        second: Pick<AdapterBreakpoint, 'condition' | 'hitCondition' | 'logMessage'>,
-    ): boolean {
-        return this.sameBackendConfiguration(first, second)
-            && first.logMessage?.text === second.logMessage?.text;
-    }
-
-    private hasOtherSourceReference(address: number, sourceKey: string): boolean {
-        return [...this.sourceBpAddresses.entries()]
-            .some(([key, addresses]) => key !== sourceKey && addresses.has(address));
-    }
-
-    private breakpointMessage(breakpoint: AdapterBreakpoint): string {
-        const details = [`CPU address: ${hex4(breakpoint.address)}`];
-        if (breakpoint.condition) { details.push(`condition: ${breakpoint.condition.text}`); }
-        if (breakpoint.hitCondition) { details.push(`hit count: ${breakpoint.hitCondition}`); }
-        if (breakpoint.logMessage) { details.push('logpoint'); }
-        return details.join('; ');
-    }
-
-    private makeBreakpointRequest(breakpoint: AdapterBreakpoint): ReturnType<typeof makeBreakpointAdd> {
-        return makeBreakpointAdd(breakpoint.address, `dap:${breakpoint.id}`, {
-            operand: breakpoint.condition?.operand,
-            condition: breakpoint.condition?.condition,
-            value: breakpoint.condition?.value,
-            counter: breakpoint.hitCondition,
-        });
-    }
-
-    private async onSetBreakpoints(req: any): Promise<void> {
-        const args = req.arguments ?? {};
-        const source: string = args.source?.path ?? args.source?.name ?? '';
-        const sourceBreakpoints: any[] = args.breakpoints ?? [];
-
-        if (!this.debugIndex) {
-            const breakpoints = sourceBreakpoints.map((_bp: any) => ({
-                id: this.nextBpId++,
-                verified: false,
-                message: this.debugMetadataError,
-                line: _bp.line,
-            }));
-            this.sendResponseBody(req, { breakpoints });
-            return;
-        }
-
-        if (!source) {
-            const breakpoints = sourceBreakpoints.map((_bp: any) => ({
-                id: this.nextBpId++,
-                verified: false,
-                message: 'The breakpoint request did not include a source file path.',
-                line: _bp.line,
-            }));
-            this.sendResponseBody(req, { breakpoints });
-            return;
-        }
-
-        if (!this.client) { this.sendResponseBody(req, { breakpoints: [] }); return; }
-
-        const sourceKey = process.platform === 'win32'
-            ? path.normalize(source).toLowerCase()
-            : path.normalize(source);
-        const resolvedBreakpoints = sourceBreakpoints.map(bp => ({
-            requested: bp,
-            resolved: this.debugIndex!.resolveBreakpoint(source, bp.line),
-        }));
-        const previousAddresses = this.sourceBpAddresses.get(sourceKey) ?? new Set<number>();
-        const desiredAddresses = new Set<number>();
-        const requestedConfigurations = new Map<number, Omit<AdapterBreakpoint, 'id' | 'address'>>();
-
-        const result: any[] = [];
-        for (const { requested: bp, resolved } of resolvedBreakpoints) {
-            if (!resolved) {
-                result.push({
-                    id: this.nextBpId++,
-                    verified: false,
-                    message: `No executable code at line ${bp.line}`,
-                    line: bp.line,
-                });
-                continue;
-            }
-            desiredAddresses.add(resolved.address);
-            let configuration: Omit<AdapterBreakpoint, 'id' | 'address'>;
-            try {
-                configuration = this.parseBreakpointConfiguration(bp, true);
-            } catch (error) {
-                result.push({ id: this.nextBpId++, verified: false, message: String(error instanceof Error ? error.message : error), line: bp.line });
-                continue;
-            }
-
-            const priorRequest = requestedConfigurations.get(resolved.address);
-            if (priorRequest && !this.sameBreakpointConfiguration(priorRequest, configuration)) {
-                const existing = this.breakpointsByAddress.get(resolved.address);
-                result.push({
-                    id: existing?.id ?? this.nextBpId++,
-                    verified: false,
-                    message: `Breakpoint address ${hex4(resolved.address)} already has a different configuration.`,
-                    line: bp.line,
-                });
-                continue;
-            }
-            requestedConfigurations.set(resolved.address, configuration);
-
-            const existing = this.breakpointsByAddress.get(resolved.address);
-            if (existing && !this.sameBreakpointConfiguration(existing, configuration)
-                && (!previousAddresses.has(resolved.address)
-                    || this.hasOtherSourceReference(resolved.address, sourceKey)
-                    || this.instructionBpAddresses.has(resolved.address))) {
-                result.push({
-                    id: existing.id,
-                    verified: false,
-                    message: `Breakpoint address ${hex4(resolved.address)} already has a different configuration.`,
-                    line: bp.line,
-                });
-                continue;
-            }
-            const breakpoint: AdapterBreakpoint = existing ?? {
-                id: this.nextBpId++, address: resolved.address, ...configuration,
-            };
-            const backendChanged = !existing || !this.sameBackendConfiguration(existing, configuration);
-            if (backendChanged) {
-                Object.assign(breakpoint, configuration);
-                const addResp = await this.client.send(
-                    IpcCommand.DEBUG_BREAKPOINT_ADD,
-                    this.makeBreakpointRequest(breakpoint),
-                ).catch(() => ({ ok: false }));
-                if (!addResp.ok) {
-                    result.push({ id: breakpoint.id, verified: false, message: 'Backend rejected breakpoint', line: bp.line });
-                    continue;
-                }
-                this.breakpointsByAddress.set(resolved.address, breakpoint);
-                this.stepBreakpoints.setUserOwned(resolved.address, true);
-                this.bpAddrToId.set(resolved.address, breakpoint.id);
-                this.bpIdToAddr.set(breakpoint.id, resolved.address);
-            } else if (existing) {
-                existing.logMessage = configuration.logMessage;
-            }
-            result.push({
-                id: breakpoint.id,
-                verified: true,
-                line: resolved.verifiedLine,
-                instructionReference: hex4(resolved.address),
-                message: this.breakpointMessage(breakpoint),
-            });
-        }
-        this.sourceBpAddresses.set(sourceKey, desiredAddresses);
-        for (const addr of previousAddresses) {
-            if (!desiredAddresses.has(addr) && !this.isBreakpointAddressReferenced(addr)) {
-                await this.deleteBackendBreakpoint(addr);
-            }
-        }
-        if (desiredAddresses.size === 0) {
-            this.sourceBpAddresses.delete(sourceKey);
-        }
-        this.sendResponseBody(req, { breakpoints: result });
-    }
-
-    // -----------------------------------------------------------------------
-    // setInstructionBreakpoints — direct address breakpoints (working now)
-    // -----------------------------------------------------------------------
-
-    private async onSetInstructionBreakpoints(req: any): Promise<void> {
-        if (!this.client) {
-            this.sendResponseBody(req, { breakpoints: [] });
-            return;
-        }
-
-        const args = req.arguments ?? {};
-        const requestedBreakpoints = (args.breakpoints ?? []).map((requested: any) => ({
-            requested,
-            address: parseInt(String(requested.instructionReference ?? '0x0'), 16) & 0xFFFF,
-        }));
-        const desired = requestedBreakpoints.map((breakpoint: { address: number }) => breakpoint.address);
-
-        // Remove instruction breakpoints that are no longer desired and are not source-owned.
-        const previousAddresses = this.instructionBpAddresses;
-        this.instructionBpAddresses = new Set(desired);
-        for (const addr of previousAddresses) {
-            if (!this.instructionBpAddresses.has(addr) && !this.isBreakpointAddressReferenced(addr)) {
-                await this.deleteBackendBreakpoint(addr);
-            }
-        }
-
-        // Add newly requested breakpoints
-        const result: any[] = [];
-        for (const { requested, address: addr } of requestedBreakpoints) {
-            let configuration: Omit<AdapterBreakpoint, 'id' | 'address'>;
-            try {
-                configuration = this.parseBreakpointConfiguration(requested, false);
-            } catch (error) {
-                result.push({
-                    id: this.nextBpId++,
-                    verified: false,
-                    message: String(error instanceof Error ? error.message : error),
-                    instructionReference: hex4(addr),
-                });
-                this.instructionBpAddresses.delete(addr);
-                continue;
-            }
-            const existing = this.breakpointsByAddress.get(addr);
-            if (existing && !this.sameBreakpointConfiguration(existing, configuration)
-                && (!previousAddresses.has(addr)
-                    || [...this.sourceBpAddresses.values()].some(addresses => addresses.has(addr)))) {
-                result.push({
-                    id: existing.id,
-                    verified: false,
-                    message: `Breakpoint address ${hex4(addr)} already has a different configuration.`,
-                    instructionReference: hex4(addr),
-                });
-                continue;
-            }
-            const breakpoint: AdapterBreakpoint = existing ?? {
-                id: this.nextBpId++, address: addr, ...configuration,
-            };
-            if (!existing || !this.sameBackendConfiguration(existing, configuration)) {
-                Object.assign(breakpoint, configuration);
-                const addResp = await this.client.send(
-                    IpcCommand.DEBUG_BREAKPOINT_ADD,
-                    this.makeBreakpointRequest(breakpoint),
-                ).catch(() => ({ ok: false }));
-
-                if (addResp.ok) {
-                    this.breakpointsByAddress.set(addr, breakpoint);
-                    this.stepBreakpoints.setUserOwned(addr, true);
-                    this.bpAddrToId.set(addr, breakpoint.id);
-                    this.bpIdToAddr.set(breakpoint.id, addr);
-                    result.push({
-                        id: breakpoint.id,
-                        verified: true,
-                        instructionReference: hex4(addr),
-                        message: this.breakpointMessage(breakpoint),
-                    });
-                } else {
-                    this.instructionBpAddresses.delete(addr);
-                    result.push({
-                        id: breakpoint.id,
-                        verified: false,
-                        message: 'Failed to set breakpoint in emulator.',
-                        instructionReference: hex4(addr),
-                    });
-                }
-            } else {
-                result.push({
-                    id: breakpoint.id,
-                    verified: true,
-                    instructionReference: hex4(addr),
-                    message: this.breakpointMessage(breakpoint),
-                });
-            }
-        }
-
-        this.sendResponseBody(req, { breakpoints: result });
-    }
-
-    private isBreakpointAddressReferenced(addr: number): boolean {
-        if (this.instructionBpAddresses.has(addr)) { return true; }
-        return [...this.sourceBpAddresses.values()].some(addresses => addresses.has(addr));
-    }
-
-    private async deleteBackendBreakpoint(addr: number): Promise<void> {
-        await this.client?.send(IpcCommand.DEBUG_BREAKPOINT_DEL, { addr }).catch(() => {});
-        const id = this.bpAddrToId.get(addr);
-        this.bpAddrToId.delete(addr);
-        if (id !== undefined) { this.bpIdToAddr.delete(id); }
-        this.breakpointsByAddress.delete(addr);
-        this.stepBreakpoints.setUserOwned(addr, false);
-        if (!await this.stepBreakpoints.restoreTemporary(addr)) {
-            this.logger.warn(`v6-debug: unable to restore temporary breakpoint at ${hex4(addr)}`);
-        }
-    }
-
-    private async onDataBreakpointInfo(req: any): Promise<void> {
+    private async onDataBreakpointInfo(req: DapRequest): Promise<void> {
         if (!this.dataBreakpointsSupported()) {
             this.sendResponseBody(req, { dataId: null, description: 'Data breakpoints are unavailable' });
             return;
@@ -1413,7 +964,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         }
     }
 
-    private async onSetDataBreakpoints(req: any): Promise<void> {
+    private async onSetDataBreakpoints(req: DapRequest): Promise<void> {
         if (!this.dataBreakpointsSupported() || !this.watchpointService) {
             this.sendResponse(req, false, 'The active emulator does not support data breakpoints');
             return;
@@ -1445,7 +996,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                     active: true,
                     comment: `DAP data breakpoint at 0x${address.toString(16).toUpperCase()}`,
                 });
-                const dapId = this.nextBpId++;
+                const dapId = this.breakpoints.allocateId();
                 this.dapWatchpointIds.add(entry.id);
                 this.watchpointIdToDapId.set(entry.id, dapId);
                 result.push({ id: dapId, verified: true });
@@ -1456,7 +1007,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         }
     }
 
-    private async onExceptionInfo(req: any): Promise<void> {
+    private async onExceptionInfo(req: DapRequest): Promise<void> {
         const record = this.lastExceptionRecord;
         if (!record) {
             this.sendResponse(req, false, 'No exception stop information is available');
@@ -1474,7 +1025,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // evaluate — one typed expression path for Watch, Console, and hover
     // -----------------------------------------------------------------------
 
-    private async onEvaluate(req: any): Promise<void> {
+    private async onEvaluate(req: DapRequest): Promise<void> {
         const expression = String(req.arguments?.expression ?? '').trim();
         const frameId = req.arguments?.frameId;
         const context = this.stopContext;
@@ -1568,173 +1119,41 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         return undefined;
     }
 
-    private async onRestart(req: any): Promise<void> {
-        if (!this.client) {
-            this.sendResponse(req, false, 'No active emulator session');
-            return;
-        }
-
-        const resume = this.sessionState === 'running';
-        await this.cancelSourceStep();
-        await this.releaseSourceStepBreakpoints();
-        this.stopPoll();
-        this.pendingPause = false;
-        this.pendingStep = false;
-        this.pendingStepOverAddr = undefined;
-        this.cachedRegs = null;
-        this.invalidateStopContext();
-
-        try {
-            const response = await this.client.send(IpcCommand.RESTART, undefined, 5000, 'critical');
-            if (!response.ok) { throw new Error(response.error ?? 'Emulator restart failed'); }
-            this.sessionState = 'paused';
-            this.lifecycle.setExecutionRunning(false, this.sessionLease);
-            if (resume) {
-                await this.run();
-            } else {
-                await this.refreshRegs();
-            }
-            this.sendResponseBody(req, {});
-        } catch (error) {
-            this.sendResponse(req, false, error instanceof Error ? error.message : String(error));
-        }
+    private async onRestart(req: DapRequest): Promise<void> {
+        try { await this.execution.restart('restart'); this.sendResponseBody(req, {}); }
+        catch (error) { this.sendResponse(req, false, error instanceof Error ? error.message : String(error)); }
     }
 
-    async reset(): Promise<void> {
-        if (!this.client) { throw new Error('No active emulator session'); }
-
-        const resume = this.sessionState === 'running';
-        await this.prepareForRestart();
-        await this.sendControl(IpcCommand.STOP, 'Emulator stop failed');
-        await this.sendControl(IpcCommand.RESET, 'Emulator reset failed');
-        this.sessionState = 'paused';
-        this.lifecycle.setExecutionRunning(false, this.sessionLease);
-        if (resume) {
-            await this.run();
-        } else {
-            await this.refreshRegs();
-        }
-    }
+    async reset(): Promise<void> { await this.execution.restart('reset'); }
 
     async reloadRom(): Promise<void> {
-        if (!this.client) { throw new Error('No active emulator session'); }
-        if (!this.launchRequest?.program.toLowerCase().endsWith('.rom')) {
-            throw new Error('Reload ROM is only available for ROM debug sessions');
-        }
-
-        await this.prepareForRestart();
-        await this.sendControl(IpcCommand.STOP, 'Emulator stop failed');
-        await this.sendControl(IpcCommand.RESET, 'Emulator reset failed');
-        await this.sendControl(IpcCommand.RESTART, 'Emulator restart failed');
-        await this.lifecycle.reloadDebugRom(this.launchRequest, this.sessionLease);
-        const debugResetRequest: DebugResetRequest = { resetRecorder: true };
-        await this.sendControl(
-            IpcCommand.DEBUG_RESET,
-            'Debugger reset failed',
-            debugResetRequest,
-        );
-        this.sessionState = 'paused';
-        this.lifecycle.setExecutionRunning(false, this.sessionLease);
-        await this.run();
+        if (!this.launchRequest?.program.toLowerCase().endsWith('.rom')) { throw new Error('Reload ROM is only available for ROM debug sessions'); }
+        const request = this.launchRequest;
+        const lease = this.sessionLease;
+        await this.execution.restart('reload', () => this.lifecycle.reloadDebugRom(request, lease));
     }
 
-    private async prepareForRestart(): Promise<void> {
-        await this.cancelSourceStep();
-        await this.releaseSourceStepBreakpoints();
-        this.stopPoll();
-        this.pendingPause = false;
-        this.pendingStep = false;
-        this.pendingStepOverAddr = undefined;
-        this.cachedRegs = null;
-        this.invalidateStopContext();
-    }
-
-    private async sendControl(command: IpcCommand, errorMessage: string, data?: unknown): Promise<void> {
-        const response = await this.client!.send(command, data, 5000, 'critical');
-        if (!response.ok) { throw new Error(response.error ?? errorMessage); }
-    }
-
-    // -----------------------------------------------------------------------
-    // disconnect / terminate
-    // -----------------------------------------------------------------------
-
-    private async onDisconnect(req: any): Promise<void> {
+    private async onDisconnect(req: DapRequest): Promise<void> {
         const terminateDebuggee = req.arguments?.terminateDebuggee ?? (this.emulatorProcess !== null);
         this.terminationRequested = true;
         try { await this.cleanup(terminateDebuggee); }
-        catch (error) {
-            this.terminationRequested = false;
-            this.sendResponse(req, false, error instanceof Error ? error.message : String(error));
-            return;
-        }
-        this.sendResponseBody(req, {});
-        this.emitTerminated();
+        catch (error) { this.terminationRequested = false; this.sendResponse(req, false, error instanceof Error ? error.message : String(error)); return; }
+        this.sendResponseBody(req, {}); this.emitTerminated();
     }
 
-    private async onTerminate(req: any): Promise<void> {
+    private async onTerminate(req: DapRequest): Promise<void> {
         this.terminationRequested = true;
         try { await this.cleanup(true); }
-        catch (error) {
-            this.terminationRequested = false;
-            this.sendResponse(req, false, error instanceof Error ? error.message : String(error));
-            return;
-        }
-        this.sendResponseBody(req, {});
-        this.emitTerminated();
+        catch (error) { this.terminationRequested = false; this.sendResponse(req, false, error instanceof Error ? error.message : String(error)); return; }
+        this.sendResponseBody(req, {}); this.emitTerminated();
     }
 
     // -----------------------------------------------------------------------
     // Stop polling
     // -----------------------------------------------------------------------
 
-    private startPoll(): void {
-        this.stopPoll();
-        this.pollingActive = true;
-        const poll = async () => {
-            if (!this.pollingActive || !this.client) { return; }
-            try {
-                const stopped = await this.isStopped();
-                if (stopped) {
-                    const record = this.stopRecordsSupported ? await this.readStopRecord() : undefined;
-                    if (record && record.sequence === this.lastStopSequence) {
-                        if (this.pendingPause) {
-                            this.pollingActive = false;
-                            this.pollTimer = null;
-                            this.sessionState = 'paused';
-                            this.lifecycle.setExecutionRunning(false, this.sessionLease);
-                            await this.onStop();
-                            return;
-                        }
-                        this.pollTimer = setTimeout(poll, POLL_INTERVAL_MS);
-                        return;
-                    }
-                    this.pollingActive = false;
-                    this.pollTimer = null;
-                    this.sessionState = 'paused';
-                    this.lifecycle.setExecutionRunning(false, this.sessionLease);
-                    if (record) { this.lastStopSequence = record.sequence; }
-                    await this.onStop(record);
-                    return;
-                }
-            } catch {
-                this.pollingActive = false;
-                this.pollTimer = null;
-                return;
-            }
-            if (this.pollingActive) {
-                this.pollTimer = setTimeout(poll, POLL_INTERVAL_MS);
-            }
-        };
-        this.pollTimer = setTimeout(poll, POLL_INTERVAL_MS);
-    }
-
-    private stopPoll(): void {
-        this.pollingActive = false;
-        if (this.pollTimer !== null) {
-            clearTimeout(this.pollTimer);
-            this.pollTimer = null;
-        }
-    }
+    private startPoll(): void { this.execution.startPoll(); }
+    private stopPoll(): void { this.execution.stopPoll(); }
 
     // -----------------------------------------------------------------------
     // Stop handling
@@ -1751,13 +1170,13 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             && ((record?.reason === 'breakpoint' && record.breakpointAddress === this.pendingStepOverAddr)
                 || (record === undefined && this.cachedRegs?.pc === this.pendingStepOverAddr));
         if (stoppedAtStepOver && this.pendingStepOverAddr !== undefined) {
-            await this.stepBreakpoints.release(this.pendingStepOverAddr);
+            await this.breakpoints.releaseTemporary(this.pendingStepOverAddr);
             this.pendingStepOverAddr = undefined;
         }
         await this.syncServerBreakpoints();
-        const higherPriorityStop = this.pendingPause
+        const higherPriorityStop = this.execution.pendingPause
             || record?.reason === 'breakpoint' && record.breakpointAddress !== undefined
-                && this.breakpointsByAddress.has(record.breakpointAddress)
+                && !!this.breakpoints.at(record.breakpointAddress)
             || record?.reason === 'watchpoint' || record?.reason === 'exception'
             || record?.reason === 'script' || record?.reason === 'pause';
         if (!higherPriorityStop && this.sourceStep.active && this.cachedRegs) {
@@ -1781,17 +1200,17 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                 return;
             }
             if (outcome !== 'complete') {
-                this.pendingStep = false;
+                this.execution.pendingStep = false;
                 this.sendEvent('output', { category: 'stderr', output: `V6: Source step ${outcome.replace(/-/g, ' ')}.\n` });
             }
         }
         if (record) {
             if (record.reason === 'breakpoint' && record.breakpointAddress !== undefined) {
-                const breakpoint = this.breakpointsByAddress.get(record.breakpointAddress);
+                const breakpoint = this.breakpoints.at(record.breakpointAddress);
                 if (breakpoint?.logMessage) {
                     await this.cancelSourceStep();
                     try {
-                        this.sendEvent('output', { category: 'console', output: this.formatLogMessage(breakpoint.logMessage) });
+                        this.sendEvent('output', { category: 'console', output: this.breakpoints.formatLogMessage(breakpoint.logMessage) });
                     } catch (error) {
                         this.sendEvent('output', { category: 'stderr', output: `V6: logpoint ${hex4(breakpoint.address)} failed: ${String(error)}\n` });
                     }
@@ -1800,14 +1219,14 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                 }
             }
             if (record.reason === 'breakpoint' && record.breakpointAddress !== undefined
-                && this.breakpointsByAddress.has(record.breakpointAddress)) {
+                && !!this.breakpoints.at(record.breakpointAddress)) {
                 await this.cancelSourceStep();
             } else if (record.reason === 'watchpoint' || record.reason === 'exception'
                 || record.reason === 'script' || record.reason === 'pause') {
                 await this.cancelSourceStep();
             }
-            this.pendingStep = false;
-            this.pendingPause = false;
+            this.execution.pendingStep = false;
+            this.execution.pendingPause = false;
             const reason = mapStopReason(record.reason);
             const hitBreakpointIds = this.mapHitBreakpointIds(record);
             this.stopReason = reason;
@@ -1826,14 +1245,14 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         let reason: StopReason = 'pause';
         let hitBreakpointIds: number[] | undefined;
 
-        if (this.pendingStep) {
+        if (this.execution.pendingStep) {
             reason = 'step';
-            this.pendingStep = false;
-        } else if (this.pendingPause) {
+            this.execution.pendingStep = false;
+        } else if (this.execution.pendingPause) {
             reason = 'pause';
-            this.pendingPause = false;
+            this.execution.pendingPause = false;
         } else if (pc !== undefined) {
-            const bpId = this.bpAddrToId.get(pc);
+            const bpId = this.breakpoints.idAt(pc);
             if (bpId !== undefined) {
                 reason = 'breakpoint';
                 hitBreakpointIds = [bpId];
@@ -1845,18 +1264,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     }
 
     private async resumeLogpoint(): Promise<void> {
-        await this.captureStopBaseline();
-        this.cachedRegs = null;
-        this.sessionState = 'running';
-        this.lifecycle.setExecutionRunning(true, this.sessionLease);
-        const response = await this.client?.send(IpcCommand.RUN, undefined, 5000, 'critical');
-        if (!response?.ok) {
-            this.sessionState = 'paused';
-            this.lifecycle.setExecutionRunning(false, this.sessionLease);
-            this.emitStopped('breakpoint', undefined, 'Logpoint automatic resume failed.');
-            return;
-        }
-        this.startPoll();
+        if (!await this.execution.resumeLogpoint()) { this.emitStopped('breakpoint', undefined, 'Logpoint automatic resume failed.'); }
     }
 
     private emitStopped(reason: StopReason, hitBreakpointIds?: number[], description?: string): void {
@@ -1869,35 +1277,11 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         });
     }
 
-    private async captureStopBaseline(): Promise<void> {
-        this.lastExceptionRecord = undefined;
-        if (!this.stopRecordsSupported) { return; }
-        const record = await this.readStopRecord();
-        this.lastStopSequence = record.sequence;
-    }
-
-    private async readStopRecord(): Promise<StopRecord> {
-        const response = await this.client!.send<unknown>(
-            IpcCommand.GET_STOP_RECORD, undefined, 5000, 'critical',
-        );
-        if (!response.ok || response.data === undefined) {
-            throw new Error(response.error ?? 'Unable to read emulator stop record');
-        }
-        return decodeStopRecord(response.data);
-    }
-
-    private async isStopped(): Promise<boolean> {
-        const response = await this.client!.send<IsRunningResponse>(
-            IpcCommand.IS_RUNNING, undefined, 5000, 'critical',
-        );
-        return response.ok && response.data?.isRunning === false;
-    }
-
     private mapHitBreakpointIds(record: StopRecord): number[] | undefined {
         if (record.reason === 'breakpoint') {
             const addresses = [record.breakpointAddress, ...(record.breakpointIds ?? [])]
                 .filter((value): value is number => value !== undefined);
-            const ids = addresses.map(address => this.bpAddrToId.get(address))
+            const ids = addresses.map(address => this.breakpoints.idAt(address))
                 .filter((value): value is number => value !== undefined);
             return ids.length ? [...new Set(ids)] : undefined;
         }
@@ -1973,46 +1357,20 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // -----------------------------------------------------------------------
 
     private async syncServerBreakpoints(): Promise<void> {
-        if (!this.client) { return; }
         try {
-            const response = await this.client.send<BreakpointEntry[]>(IpcCommand.DEBUG_BREAKPOINT_GET_ALL);
-            if (!response.ok || !Array.isArray(response.data)) { return; }
-
-            const serverAddresses = new Set(response.data.map(breakpoint => breakpoint.addr));
-            for (const breakpoint of response.data) {
-                if (this.bpAddrToId.has(breakpoint.addr) || this.serverBreakpointIds.has(breakpoint.addr)) {
-                    continue;
-                }
-                const id = this.nextBpId++;
-                this.serverBreakpointIds.set(breakpoint.addr, id);
+            for (const change of await this.breakpoints.synchronize()) {
+                const breakpoint = change.breakpoint;
+                if (!breakpoint) { this.sendEvent('breakpoint', { reason: 'removed', breakpoint: { id: change.id } }); continue; }
                 const sourceLocation = this.debugIndex?.resolveAddress(breakpoint.addr);
-                const sourcePath = sourceLocation
-                    ? resolveDebugSourcePath(sourceLocation.file, this.workspaceRoot)
-                    : undefined;
-                this.sendEvent('breakpoint', {
-                    reason: 'new',
-                    breakpoint: {
-                        id,
-                        verified: breakpoint.status === 'ACTIVE',
-                        instructionReference: hex4(breakpoint.addr),
-                        message: breakpoint.comment || undefined,
-                        source: sourcePath
-                            ? { name: path.basename(sourcePath), path: sourcePath, sourceReference: 0 }
-                            : undefined,
-                        line: sourceLocation?.line,
-                        column: sourceLocation?.column,
-                    },
-                });
+                const sourcePath = sourceLocation ? resolveDebugSourcePath(sourceLocation.file, this.workspaceRoot) : undefined;
+                this.sendEvent('breakpoint', { reason: 'new', breakpoint: {
+                    id: change.id, verified: breakpoint.status === 'ACTIVE', instructionReference: hex4(breakpoint.addr),
+                    message: breakpoint.comment || undefined,
+                    source: sourcePath ? { name: path.basename(sourcePath), path: sourcePath, sourceReference: 0 } : undefined,
+                    line: sourceLocation?.line, column: sourceLocation?.column,
+                } });
             }
-
-            for (const [addr, id] of this.serverBreakpointIds) {
-                if (serverAddresses.has(addr)) { continue; }
-                this.serverBreakpointIds.delete(addr);
-                this.sendEvent('breakpoint', { reason: 'removed', breakpoint: { id } });
-            }
-        } catch (error) {
-            this.logger.debug(`v6-debug: breakpoint synchronization unavailable: ${error instanceof Error ? error.message : String(error)}`);
-        }
+        } catch (error) { this.logger.debug(`v6-debug: breakpoint synchronization unavailable: ${String(error)}`); }
     }
 
     private async refreshRegs(): Promise<void> {
@@ -2059,7 +1417,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         this.stopPoll();
         await this.cancelSourceStep();
         await this.releaseSourceStepBreakpoints();
-        this.sessionState = 'disconnected';
+        this.execution.state = 'disconnected';
         this.clearUnavailableSourceIndicator();
         this.unavailableSourceDecoration?.dispose();
         this.unavailableSourceDecoration = undefined;
@@ -2072,7 +1430,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                     await this.watchpointService.delete(id).catch(() => {});
                 }
             }
-            for (const addr of this.bpAddrToId.keys()) {
+            for (const addr of this.breakpoints.ownedAddresses()) {
                 await this.client.send(IpcCommand.DEBUG_BREAKPOINT_DEL, { addr }).catch(() => {});
             }
             await this.client.send(IpcCommand.DEBUG_ATTACH, { data: false }).catch(() => {});
@@ -2083,11 +1441,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             if (!ownedTermination && (!lease || lease.connected)) { this.lifecycle.disconnect(); }
         }
 
-        this.bpAddrToId.clear();
-        this.bpIdToAddr.clear();
-        this.breakpointsByAddress.clear();
-        this.sourceBpAddresses.clear();
-        this.instructionBpAddresses.clear();
+        this.breakpoints.clear();
         this.watchpointIdToDapId.clear();
         this.dapWatchpointIds.clear();
         this.client = null;
@@ -2096,7 +1450,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         this.cachedRegs = null;
         this.invalidateStopContext();
         this.stopRecordsSupported = false;
-        this.lastStopSequence = undefined;
+        this.execution.lastStopSequence = undefined;
         this.lastExceptionRecord = undefined;
     }
 
@@ -2104,7 +1458,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         if (this.terminationEmitted) { return; }
         this.terminationEmitted = true;
         this.stopPoll();
-        this.sessionState = 'disconnected';
+        this.execution.state = 'disconnected';
         if (exitCode !== undefined) {
             this.sendEvent('exited', { exitCode });
         }
@@ -2115,17 +1469,17 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // DAP message helpers
     // -----------------------------------------------------------------------
 
-    private sendResponseBody(req: any, body: any): void {
+    private sendResponseBody(req: DapRequest, body: unknown): void {
         this._onDidSendMessage.fire({
             type: 'response',
             request_seq: req.seq,
             success: true,
             command: req.command,
             body,
-        } as any);
+        } satisfies DapResponse);
     }
 
-    private sendResponse(req: any, success: boolean, message?: string): void {
+    private sendResponse(req: DapRequest, success: boolean, message?: string): void {
         this._onDidSendMessage.fire({
             type: 'response',
             request_seq: req.seq,
@@ -2133,15 +1487,15 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             command: req.command,
             message,
             body: {},
-        } as any);
+        } satisfies DapResponse);
     }
 
-    private sendEvent(event: string, body?: any): void {
+    private sendEvent(event: string, body?: unknown): void {
         this._onDidSendMessage.fire({
             type: 'event',
             event,
             body: body ?? {},
-        } as any);
+        } satisfies DapEvent);
     }
 }
 

@@ -196,7 +196,7 @@ describe('V6DebugAdapter', () => {
             },
         };
         (adapter as any).stopRecordsSupported = false;
-        (adapter as any).startPoll = () => {};
+        (adapter as any).execution.startPoll = () => {};
 
         await (adapter as any).onNext({ seq: 1, command: 'next' });
 
@@ -227,7 +227,7 @@ describe('V6DebugAdapter', () => {
             calls.push({ command, data });
             return command === IpcCommand.DEBUG_BREAKPOINT_GET_ALL ? { ok: true, data: [] } : { ok: true };
         };
-        (adapter as any).startPoll = () => {};
+        (adapter as any).execution.startPoll = () => {};
 
         await (adapter as any).onStepIn({ seq: 1, command: 'stepIn', arguments: { granularity: 'statement' } });
 
@@ -281,7 +281,7 @@ describe('V6DebugAdapter', () => {
             calls.push({ command, data });
             return command === IpcCommand.DEBUG_BREAKPOINT_GET_ALL ? { ok: true, data: [] } : { ok: true };
         };
-        (adapter as any).startPoll = () => {};
+        (adapter as any).execution.startPoll = () => {};
         (vscode.workspace as any).getConfiguration = () => ({
             get: (key: string, defaultValue: unknown) => key === 'sourceStepFilters' ? ['runtime/**'] : defaultValue,
         });
@@ -309,7 +309,7 @@ describe('V6DebugAdapter', () => {
             calls.push({ command, data });
             return command === IpcCommand.DEBUG_BREAKPOINT_GET_ALL ? { ok: true, data: [] } : { ok: true };
         };
-        (adapter as any).startPoll = () => {};
+        (adapter as any).execution.startPoll = () => {};
 
         await (adapter as any).onNext({ seq: 1, command: 'next', arguments: { granularity: 'statement' } });
 
@@ -325,7 +325,7 @@ describe('V6DebugAdapter', () => {
             calls.push({ command, data });
             return command === IpcCommand.DEBUG_BREAKPOINT_GET_ALL ? { ok: true, data: [] } : { ok: true };
         };
-        (adapter as any).startPoll = () => {};
+        (adapter as any).execution.startPoll = () => {};
 
         await (adapter as any).onStepOut({ seq: 1, command: 'stepOut', arguments: { frameId: 1 } });
 
@@ -342,7 +342,7 @@ describe('V6DebugAdapter', () => {
             calls.push({ command, data });
             return command === IpcCommand.DEBUG_BREAKPOINT_GET_ALL ? { ok: true, data: [] } : { ok: true };
         };
-        (adapter as any).startPoll = () => {};
+        (adapter as any).execution.startPoll = () => {};
 
         await (adapter as any).onStepOut({ seq: 1, command: 'stepOut', arguments: { threadId: 1 } });
 
@@ -370,7 +370,7 @@ describe('V6DebugAdapter', () => {
             calls.push({ command, data });
             return command === IpcCommand.DEBUG_BREAKPOINT_GET_ALL ? { ok: true, data: [] } : { ok: true };
         };
-        (adapter as any).startPoll = () => {};
+        (adapter as any).execution.startPoll = () => {};
 
         await (adapter as any).onStepOut({ seq: 1, command: 'stepOut', arguments: { frameId: 1 } });
 
@@ -413,7 +413,7 @@ describe('V6DebugAdapter', () => {
             },
         };
         (adapter as any).stopRecordsSupported = false;
-        (adapter as any).startPoll = () => {};
+        (adapter as any).execution.startPoll = () => {};
 
         await (adapter as any).run();
 
@@ -556,7 +556,7 @@ describe('assembler macro source stepping', () => {
             calls.push({ command, data });
             return command === IpcCommand.DEBUG_BREAKPOINT_GET_ALL ? { ok: true, data: [] } : { ok: true };
         };
-        (adapter as any).startPoll = () => {};
+        (adapter as any).execution.startPoll = () => {};
         return calls;
     }
 

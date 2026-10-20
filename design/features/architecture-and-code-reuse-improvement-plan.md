@@ -127,7 +127,17 @@ Verification: 722 unit tests, zero skips; 62 regressions; 28 focused compiled te
 
 No UI layout, commands or IPC schemas changed. Full C mixed signed/unsigned promotion remains deferred as previously documented; hover timeout still discards late read-only results rather than cancelling backend work. Value byte/child budgets remain explicit; no shared mutable stop/live cache is introduced.
 
-**Next stage:** R14 breakpoint/execution coordination and typed DAP facade, then R15 broader checked browser build/migration. R16-R24 remain separate roadmap work.
+## Implementation progress — stage 10 (R14)
+
+BreakpointCoordinator owns source/instruction reconciliation, configuration parsing, shared-address conflicts, IDs, server observations, logpoint expansion and temporary breakpoint references. Operations serialize against captured session identity and guarded wire dispatch. Failed replacement acknowledgments preserve the last acknowledged configuration; failed removals remain owned for retry. Partial source-step acquisitions are tracked immediately for cleanup. ExecutionController owns acknowledged run/pause/instruction-step/reset/restart/reload/logpoint sequencing; StopMonitor owns non-overlapping polling, sequence deduplication, manual-pause fallback and invalidation of delayed replies. Failed RUN no longer publishes a false continued/running transition.
+
+DAP request arguments and outgoing envelopes are typed instead of per-handler any envelopes; malformed outer requests are rejected and unexpected dispatch failures receive error responses. Presentation/semantic source-step planning remains in the adapter, using the existing bounded planner rather than rewriting it. Narrow display/watchpoint-feedback ports replace all four legacy core-to-panel exceptions. No new runtime VS Code dependency is introduced in policy owners. Existing command IDs and IPC schema are unchanged.
+
+Verification: 730 unit tests, zero skips; 62 regressions; seven minimum-version and seven packaged current-version Extension Host/emulator tests; three live conformance tests. CI and host/browser-shared/full test typechecks pass. Lint warnings drop from 66 to 26 (zero errors) by replacing untyped breakpoint/request envelopes. Direct policy regressions cover rejected configuration publication, shared source/instruction/temporary ownership, stale queued/in-flight edits, failed RUN, reset/reload order, stale controls and delayed polling. Existing C breakpoint/inline stepping and ASM hover/Watch/Globals/struct-pool tests pass.
+
+Limitations: the facade types describe the supported DAP subset, not an imported third-party protocol library or exhaustive runtime schema validator. Data-watchpoint CRUD remains delegated to WatchpointService. Source location selection and editor decoration presentation remain in the adapter; broader project/program/navigation consolidation remains R18. Controls reject stale session work but do not replay mutations or cancel already-sent emulator commands.
+
+**Next stage:** R15 broader checked browser build/migration. R16-R24 remain separate roadmap work.
 
 ## 1. Executive assessment
 

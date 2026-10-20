@@ -57,4 +57,7 @@ export class StepBreakpointStore {
             .filter(address => !this.userAddresses.has(address))
             .map(address => this.backend.remove(address)));
     }
+
+    /** Forget bookkeeping only after the owning session has been invalidated. */
+    reset(): void { this.temporaryReferences.clear(); this.userAddresses.clear(); }
 }

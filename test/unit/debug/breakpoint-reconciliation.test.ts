@@ -50,7 +50,7 @@ describe('V6DebugAdapter breakpoint reconciliation', () => {
         expect(commands).to.deep.equal([
             { command: IpcCommand.DEBUG_BREAKPOINT_DEL, payload: { addr: 0x1234 } },
         ]);
-        expect((adapter as any).bpAddrToId.has(0x1234)).to.equal(false);
+        expect(((adapter as any).breakpoints.idAt(0x1234) !== undefined)).to.equal(false);
     });
 
     it('keeps a shared backend breakpoint until its last source removes it', async () => {
@@ -121,7 +121,7 @@ describe('V6DebugAdapter breakpoint reconciliation', () => {
         });
 
         expect(commands).to.deep.equal([]);
-        expect((adapter as any).bpAddrToId.get(0x1234)).to.equal(1);
+        expect((adapter as any).breakpoints.idAt(0x1234)).to.equal(1);
     });
 
     it('rejects a conflicting configuration from another source at the same address', async () => {
@@ -144,7 +144,7 @@ describe('V6DebugAdapter breakpoint reconciliation', () => {
         });
 
         expect(commands).to.deep.equal([]);
-        expect((adapter as any).breakpointsByAddress.get(0x1234).condition.value).to.equal(1);
+        expect((adapter as any).breakpoints.at(0x1234).condition.value).to.equal(1);
     });
 
     it('rejects conflicting configurations at one address in the same source request', async () => {
@@ -163,7 +163,7 @@ describe('V6DebugAdapter breakpoint reconciliation', () => {
         });
 
         expect(commands.filter(entry => entry.command === IpcCommand.DEBUG_BREAKPOINT_ADD)).to.have.length(1);
-        expect((adapter as any).breakpointsByAddress.get(0x1234).condition.value).to.equal(1);
+        expect((adapter as any).breakpoints.at(0x1234).condition.value).to.equal(1);
     });
 
     it('describes active conditional, hit-count, and logpoint behavior', async () => {

@@ -33,9 +33,9 @@ The TypeScript-AST test scans production imports/exports and literal
 require/dynamic imports. It distinguishes type-only relationships from runtime
 edges, rejects new core-to-view dependencies, prohibits runtime VS Code imports
 in pure metadata/codecs/shared modules, and prohibits Node/VS Code imports in
-browser-safe shared modules. Two legacy adapter files retain four named type-only
-panel edges until R14/R18 replace them with navigation/display ports; no runtime
-panel edge is allowed. This is an incremental gate, not a claim that all existing
+browser-safe shared modules. Debugger policy owners depend on narrow display and
+feedback ports; the four former adapter-to-panel exceptions were removed in R14.
+No core-to-panel edge is allowed. This is an incremental gate, not a claim that all existing
 architecture debt has been removed.
 
 Manifest tests check command/menu IDs, settings constants, debugger type, API

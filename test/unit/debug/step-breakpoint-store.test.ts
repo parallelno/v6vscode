@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { StepBreakpointStore } from '../../../src/debug/adapter/step-breakpoint-store';
+import { StepBreakpointStore } from '../../../src/debug/session/step-breakpoint-store';
 
 describe('StepBreakpointStore', () => {
     it('reference-counts temporary ownership and does not replace a user breakpoint', async () => {

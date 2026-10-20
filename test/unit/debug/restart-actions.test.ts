@@ -41,7 +41,7 @@ describe('V6DebugAdapter restart actions', () => {
 
     it('resets hardware and resumes an executing session', async () => {
         const { adapter, requests } = makeAdapter();
-        (adapter as any).sessionState = 'running';
+        (adapter as any).execution.state = 'running';
 
         await adapter.reset();
 

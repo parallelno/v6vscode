@@ -56,12 +56,7 @@ describe('Architecture and extension manifest contracts', () => {
     });
 
     it('prevents new core-to-panel dependencies and runtime host dependencies in pure modules', () => {
-        const exceptions = new Set([
-            'debug/adapter/v6-debug-adapter.ts -> emulator/panel/emulator-panel',
-            'debug/adapter/v6-debug-adapter.ts -> debug/views/watchpoints-provider',
-            'debug/adapter/v6-debug-adapter-factory.ts -> emulator/panel/emulator-panel',
-            'debug/adapter/v6-debug-adapter-factory.ts -> debug/views/watchpoints-provider',
-        ]);
+        const exceptions = new Set<string>();
         const seen = new Set<string>();
         const failures: string[] = [];
         const src = path.join(root, 'src');
@@ -70,7 +65,7 @@ describe('Architecture and extension manifest contracts', () => {
             if (relative.startsWith('test/')) { continue; }
             const source = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
             const core = /^(shared\/|emulator\/(?!panel\/)|debug\/(?!views\/))/.test(relative);
-            const pure = /^(shared\/|debug\/metadata\/|debug\/utilities\/|debug\/values\/)/.test(relative) || /-codec\.ts$/.test(relative);
+            const pure = /^(shared\/|debug\/metadata\/|debug\/utilities\/|debug\/values\/|debug\/session\/)/.test(relative) || /-codec\.ts$/.test(relative);
             for (const edge of edges(source)) {
                 const resolved = edge.target.startsWith('.')
                     ? path.relative(src, path.resolve(path.dirname(file), edge.target)).replace(/\\/g, '/') : edge.target;

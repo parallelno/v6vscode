@@ -28,6 +28,12 @@ Composition root. Creates platform and project services, registers commands, pus
 
 ## Memory and typed values
 
+Debugger control policies live in `src/debug/session/`: BreakpointCoordinator
+reconciles user/source/instruction/temporary ownership; ExecutionController
+sequences acknowledged controls and StopMonitor owns bounded polling. DAP
+envelopes, editor decorations and source-step presentation stay in the adapter.
+Display/watchpoint feedback use narrow ports rather than concrete panel types.
+
 `MemoryBackend` owns checked GET_MEM exchanges: supported layout, bank/range bounds,
 echoed address, exact length and lossless byte validation. Live `MemoryService`
 keeps its visible cache; `StopMemoryReader` is a separate stopped-generation
