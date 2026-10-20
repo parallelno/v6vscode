@@ -13,7 +13,8 @@ import {
     validateMemoryEditInput,
 } from './memory-edit-codec';
 
-export class MemoryEditService extends EventEmitter {
+export interface MemoryEditEvents { change: [entries: readonly MemoryEditSnapshot[]] }
+export class MemoryEditService extends EventEmitter<MemoryEditEvents> {
     private entries: readonly MemoryEditSnapshot[] = [];
     private readonly operations: SessionOperations<readonly MemoryEditSnapshot[]>;
 

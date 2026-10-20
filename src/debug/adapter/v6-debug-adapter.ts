@@ -1,4 +1,4 @@
-import { DapRequest, DapResponse, DapEvent, dapRequest } from './dap-protocol';
+import { DapRequest, DapResponse, DapEvent, DapStackFrame, DapScope, dapRequest } from './dap-protocol';
 import { ExecutionController } from '../session/execution-controller';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -32,7 +32,7 @@ import { ScopeService, SemanticScope, SemanticScopeKind } from './scope-service'
 import { DapFrameContext, StackTraceService } from './stack-trace-service';
 import { VariableService } from './variable-service';
 import { hexAddress, TypedValue } from '../values/value-format';
-import { dapVariableValue } from './dap-value-presenter';
+import { DapVariable, dapVariableValue } from './dap-value-presenter';
 import { ValueEvaluationService, ValueEvaluationContext } from '../values/value-evaluation-service';
 import { isAssemblerSource, isHoverEvaluation } from '../values/evaluation-context';
 import { toDwarfRegisters } from '../metadata/v6c-register-map';
@@ -340,8 +340,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                         const fc = loadResult.index.sourceFiles.length;
                         this.sendEvent('output', { category: 'console', output: `V6: Debug metadata loaded — ${fc} source file(s)\n` });
                     }
-                } catch (e: any) {
-                    this.debugMetadataError = `Could not load debug artifact '${elfPath}': ${e.message}`;
+                } catch (e) {
+                    this.debugMetadataError = `Could not load debug artifact '${elfPath}': ${e instanceof Error ? e.message : String(e)}`;
                     this.sendEvent('output', { category: 'important', output: `V6: ${this.debugMetadataError}\n` });
                 }
             }
@@ -351,8 +351,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             this.execution.state = 'paused';
             try {
                 this.emulatorPanel.reveal();
-            } catch (panelError: any) {
-                this.logger.error(`v6-debug: emulator display panel failed to open: ${panelError?.stack ?? panelError}`);
+            } catch (panelError) {
+                this.logger.error(`v6-debug: emulator display panel failed to open: ${panelError instanceof Error ? panelError.stack ?? panelError.message : String(panelError)}`);
                 throw panelError;
             }
             this.logger.info('v6-debug: emulator display panel opened');
@@ -362,9 +362,9 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             // Signal VS Code that breakpoints can now be sent.
             // Must come AFTER the ELF is loaded so debugIndex is ready for setBreakpoints.
             this.sendEvent('initialized');
-        } catch (err: any) {
-            this.logger.error(`v6-debug: launch failed: ${err?.stack ?? err}`);
-            this.sendResponse(req, false, `Launch failed: ${err.message}`);
+        } catch (err) {
+            this.logger.error(`v6-debug: launch failed: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
+            this.sendResponse(req, false, `Launch failed: ${err instanceof Error ? err.message : String(err)}`);
             await this.cleanup(true).catch(error => this.logger.error(`v6-debug cleanup: ${error}`));
         }
     }
@@ -387,8 +387,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
             this.sendResponseBody(req, {});
             this.sendEvent('initialized');
-        } catch (err: any) {
-            this.sendResponse(req, false, `Attach failed: ${err.message}`);
+        } catch (err) {
+            this.sendResponse(req, false, `Attach failed: ${err instanceof Error ? err.message : String(err)}`);
         }
     }
 
@@ -411,8 +411,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             } else {
                 await this.run();
             }
-        } catch (err: any) {
-            this.sendResponse(req, false, `Could not load debug program: ${err.message}`);
+        } catch (err) {
+            this.sendResponse(req, false, `Could not load debug program: ${err instanceof Error ? err.message : String(err)}`);
             await this.cleanup(true).catch(error => this.logger.error(`v6-debug cleanup: ${error}`));
         }
     }
@@ -508,12 +508,12 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         displayPc = pc,
         sourceOverride?: { file: string; line: number; column: number },
         isTopFrame = false,
-    ): any {
+    ): DapStackFrame {
         // Resolve PC to source location using debug index
         const srcLoc = sourceOverride
             ? { ...sourceOverride, isStmt: false }
             : this.debugIndex?.resolveAddress(displayPc);
-        const frame: any = {
+        const frame: DapStackFrame = {
             id,
             name,
             instructionPointerReference: hex4(pc),
@@ -584,7 +584,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         });
     }
 
-    private machineScopes(frameId: number): any[] {
+    private machineScopes(frameId: number): DapScope[] {
         return [
             { name: 'Registers', variablesReference: this.variablesHandles.create(this.stoppedGeneration, { frameId, kind: 'registers' }), expensive: false, presentationHint: 'registers' },
             { name: 'Flags', variablesReference: this.variablesHandles.create(this.stoppedGeneration, { frameId, kind: 'flags' }), expensive: false },
@@ -690,7 +690,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         }
     }
 
-    private withVariableHandle(variable: import('./dap-value-presenter').DapVariableValue, context: DebugStopContext, depth: number): any {
+    private withVariableHandle(variable: import('./dap-value-presenter').DapVariableValue, context: DebugStopContext, depth: number): DapVariable {
         const { valueData, ...dapVariable } = variable;
         const count = (dapVariable.namedVariables ?? 0) + (dapVariable.indexedVariables ?? 0);
         return {
@@ -699,8 +699,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         };
     }
 
-    private async buildStackVars(sp: number): Promise<any[]> {
-        const vars: any[] = [];
+    private async buildStackVars(sp: number): Promise<DapVariable[]> {
+        const vars: DapVariable[] = [];
         try {
             const resp = await this.client!.send<GetStackSampleResponse>(
                 IpcCommand.GET_STACK_SAMPLE,
@@ -976,7 +976,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             this.dapWatchpointIds.clear();
             this.watchpointIdToDapId.clear();
 
-            const result: any[] = [];
+            const result: Array<{ id?: number; verified: boolean; message?: string }> = [];
             for (const requested of req.arguments?.breakpoints ?? []) {
                 const match = /^v6:(\d+)$/.exec(String(requested.dataId ?? ''));
                 if (!match) {
@@ -1503,8 +1503,8 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 // Variable builder helper
 // ---------------------------------------------------------------------------
 
-function mkVar(name: string, value: string, variablesReference: number, presentationHint?: string): any {
-    const v: any = { name, value, variablesReference };
+function mkVar(name: string, value: string, variablesReference: number, presentationHint?: string): DapVariable {
+    const v: DapVariable = { name, value, variablesReference };
     if (presentationHint) { v.presentationHint = { kind: presentationHint }; }
     return v;
 }

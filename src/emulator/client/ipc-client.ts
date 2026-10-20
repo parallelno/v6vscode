@@ -6,7 +6,7 @@ import { IpcCommand, IpcResponse } from '../protocol/ipc-commands';
 import { encodeRequest, decodeResponse, frameLength, MAX_IPC_PAYLOAD_BYTES } from '../protocol/ipc-codec';
 import { V6Error } from '../../platform/errors/v6-error';
 import { ErrorCode } from '../../platform/errors/error-codes';
-import { Logger } from '../../platform/logging/logger';
+import type { LogSink } from '../../platform/logging/log-sink';
 
 const DEFAULT_TIMEOUT_MS = 5000;
 const CONNECT_TIMEOUT_MS = 3000;
@@ -38,7 +38,8 @@ interface PendingRequest {
 }
 
 /** One request at a time: an indeterminate stream must be abandoned, not reused. */
-export class IpcClient extends EventEmitter {
+export interface IpcClientEvents { disconnect: [error: Error] }
+export class IpcClient extends EventEmitter<IpcClientEvents> {
     private socket: net.Socket | null = null;
     private connecting: { promise: Promise<void>; cancel(error: Error): void } | undefined;
     private receiveBuffer = Buffer.alloc(0);
@@ -49,7 +50,7 @@ export class IpcClient extends EventEmitter {
     private epoch = 0;
     private readonly limits: IpcClientLimits;
 
-    constructor(private readonly logger: Logger, limits: Partial<IpcClientLimits> = {}, private readonly clock: TimerClock = systemTimerClock) {
+    constructor(private readonly logger: Pick<LogSink, 'debug' | 'error'>, limits: Partial<IpcClientLimits> = {}, private readonly clock: TimerClock = systemTimerClock) {
         super();
         this.limits = { ...DEFAULT_LIMITS, ...limits };
         for (const value of Object.values(this.limits)) {

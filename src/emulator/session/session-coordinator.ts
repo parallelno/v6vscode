@@ -14,7 +14,7 @@ import {
     IpcResponse,
 } from '../protocol/ipc-commands';
 import { getServerInfo, validateDebuggerServer } from '../protocol/ipc-server-info';
-import { Logger } from '../../platform/logging/logger';
+import type { LogSink } from '../../platform/logging/log-sink';
 import { PathService } from '../../platform/files/path-service';
 import { V6Error } from '../../platform/errors/v6-error';
 import { ErrorCode } from '../../platform/errors/error-codes';
@@ -75,11 +75,17 @@ export interface ConnectionSnapshot {
     readonly debuggerAttached: boolean;
 }
 
-export class SessionCoordinator extends EventEmitter {
+export interface SessionEvents {
+    stateChange: [state: EmulatorState];
+    frameModeChange: [mode: EmulatorFrameMode];
+    exit: [code: number | null];
+    error: [error: Error];
+}
+export class SessionCoordinator extends EventEmitter<SessionEvents> {
     private readonly locator: V6emulLocator;
     private readonly launcher: V6emulLauncher;
     private readonly client: IpcClient;
-    private readonly logger: Logger;
+    private readonly logger: LogSink;
     private readonly pathService: PathService;
     private readonly programLoader = new ProgramLoader();
 
@@ -102,7 +108,7 @@ export class SessionCoordinator extends EventEmitter {
         locator: V6emulLocator,
         launcher: V6emulLauncher,
         client: IpcClient,
-        logger: Logger,
+        logger: LogSink,
         pathService: PathService,
     ) {
         super();
@@ -573,7 +579,7 @@ export class SessionCoordinator extends EventEmitter {
             this.mode = undefined;
             this.debuggerAttached = false;
             this.setState('stopped');
-            this.emit('error', err);
+            this.emit('error', err instanceof Error ? err : new Error(String(err)));
         });
     }
 

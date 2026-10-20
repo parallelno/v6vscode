@@ -1,0 +1,17 @@
+{
+  "src/debug/metadata/debug-metadata-index.ts": {
+    "@typescript-eslint/no-unused-vars": 3
+  },
+  "src/debug/metadata/dwarf-cfi.ts": {
+    "@typescript-eslint/no-unused-vars": 1
+  },
+  "src/debug/metadata/dwarf-locations.ts": {
+    "@typescript-eslint/no-unused-vars": 1
+  },
+  "src/debug/metadata/dwarf-strings.ts": {
+    "@typescript-eslint/no-unused-vars": 1
+  },
+  "src/debug/metadata/dwarf4-line-reader.ts": {
+    "@typescript-eslint/no-unused-vars": 3
+  }
+}

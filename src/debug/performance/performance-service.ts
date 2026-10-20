@@ -6,7 +6,8 @@ import { GetServerInfoResponse, IpcCommand } from '../../emulator/protocol/ipc-c
 import { validatePerformanceServer } from '../../emulator/protocol/ipc-server-info';
 import { decodeCodePerfSnapshot, decodeCodePerfSnapshots, validateCodePerfInput } from './performance-codec';
 
-export class PerformanceService extends EventEmitter {
+export interface PerformanceEvents { change: [entries: readonly CodePerfSnapshot[]] }
+export class PerformanceService extends EventEmitter<PerformanceEvents> {
     private entries: readonly CodePerfSnapshot[] = [];
     private readonly operations: SessionOperations<readonly CodePerfSnapshot[]>;
 

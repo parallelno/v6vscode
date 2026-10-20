@@ -316,7 +316,7 @@ function requiredInteger(value: Record<string, unknown>, field: string, min: num
     return value[field];
 }
 
-function assignOptionalInteger<K extends keyof StopRecord>(
+function assignOptionalInteger<K extends 'breakpointAddress' | 'accessedGlobalAddress' | 'observedValue' | 'oldValue' | 'newValue'>(
     source: Record<string, unknown>, target: StopRecord, field: K,
 ): void {
     const value = source[field as string];
@@ -324,7 +324,7 @@ function assignOptionalInteger<K extends keyof StopRecord>(
     if (!isIntegerInRange(value, 0, Number.MAX_SAFE_INTEGER)) {
         throw new Error(`Invalid stop record: ${String(field)} is invalid`);
     }
-    (target as any)[field] = value;
+    target[field] = value;
 }
 
 function assignIntegerArray<K extends 'breakpointIds' | 'watchpointIds'>(

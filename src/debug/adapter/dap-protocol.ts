@@ -27,6 +27,11 @@ export interface DapArguments {
 export interface DapRequest { type: 'request'; seq: number; command: string; arguments?: DapArguments }
 export interface DapResponse { type: 'response'; request_seq: number; success: boolean; command: string; message?: string; body: unknown }
 export interface DapEvent { type: 'event'; event: string; body: unknown }
+export interface DapStackFrame {
+    id: number; name: string; instructionPointerReference: string; line: number; column: number;
+    source?: { path: string; name: string; sourceReference: number };
+}
+export interface DapScope { name: string; variablesReference: number; expensive: boolean; presentationHint?: string }
 
 /** The only untyped-input assertion; request arguments retain their documented shapes. */
 export function dapRequest(value: unknown): DapRequest | undefined {

@@ -195,7 +195,17 @@ One bounded lexer/precedence parser/AST and checked integer arithmetic implement
 
 Verification: 759 unit tests, zero skips; 62 regressions; three live conformance tests; CI/full test typecheck pass with the existing 26 warnings and zero errors. Shared AST/precedence vectors, assembler-versus-C symbol meaning, rejected address-only operations, short-circuiting and bounds are covered; existing expression/hover/value tests pass. No new expression syntax or complete C arithmetic claim.
 
-**Next stage:** R21 warning ratchet, narrow core ports and executable typed event contracts.
+Stage 16 commit: `1b666b1` — `Share bounded expression syntax with explicit address and C policies`.
+
+## Implementation progress — stage 17 (R21)
+
+Transport/session and Performance/Memory Edits events now have executable typed tuple contracts. Core transport/coordinator logging uses a structural LogSink rather than a VS Code Logger class dependency. DAP frame/scope/variable outputs and caught errors are typed; stop-record optional integer assignment no longer escapes through any. Existing tests remain compatible through structural ports; no event payload/runtime behavior changes.
+
+Lint now enforces a committed per-file/per-rule warning ceiling, not a global count that can hide new warnings in another module. Warnings fall from 26 to nine with zero errors. CI includes a separate core test lane using ts-node directly, without the VS Code mock/host, plus type-error assertions for invalid event names/payloads. The full existing unit suite remains; broad replacement of historical private-state tests is not claimed.
+
+Verification: two host-free core tests, 759 unit tests, zero skips; 62 regressions; eight minimum-version integration tests; CI/full test compilation pass. Existing session crossover/disposal and UI value tests remain green. Nine legacy unused-variable warnings are explicitly bounded; dependency/toolchain versions are unchanged.
+
+**Next stage:** R22 measured bottleneck work, with no speculative worker/framework migration.
 
 ## 1. Executive assessment
 

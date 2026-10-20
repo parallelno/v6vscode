@@ -8,6 +8,7 @@ export interface DapVariable {
     variablesReference: number;
     namedVariables?: number;
     indexedVariables?: number;
+    presentationHint?: { kind: string };
 }
 
 export interface DapVariableValue extends DapVariable {

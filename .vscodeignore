@@ -5,6 +5,7 @@ src/**
 
 # Tests, design docs, temp files
 test/**
+scripts/**
 design/**
 temp/**
 docs/**
