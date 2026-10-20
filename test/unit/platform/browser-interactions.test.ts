@@ -57,4 +57,23 @@ describe('Browser interaction behavior', () => {
         history.key('Enter', 'three'); assert.strictEqual(JSON.stringify(history.values), '["two","three"]');
         history.key('ArrowUp', 'draft2'); assert.strictEqual(history.key('Escape', 'three').value, 'draft2');
     });
+
+    it('reuses unchanged keyed rows, replaces changed rows, reorders and removes absent rows', () => {
+        const { KeyedRows } = load('keyed-rows'); const renderer = new KeyedRows(); let created = 0;
+        const parent = { children: [] as any[], insertBefore(row: any, before: any) {
+            const old = this.children.indexOf(row); if (old >= 0) this.children.splice(old, 1);
+            this.children.splice(before ? this.children.indexOf(before) : this.children.length, 0, row);
+        } };
+        const create = (entry: { id: number; name: string }) => {
+            created++; const row = { entry, remove() { const index = parent.children.indexOf(row); if (index >= 0) parent.children.splice(index, 1); } }; return row;
+        };
+        const entries = [{ id: 1, name: 'one' }, { id: 2, name: 'two' }];
+        renderer.render(parent, entries, (entry: typeof entries[0]) => entry.id, create);
+        const first = parent.children[0]; renderer.render(parent, entries, (entry: typeof entries[0]) => entry.id, create);
+        assert.strictEqual(created, 2); assert.strictEqual(parent.children[0], first);
+        renderer.render(parent, [entries[1], entries[0]], (entry: typeof entries[0]) => entry.id, create);
+        assert.strictEqual(parent.children[1], first); assert.strictEqual(created, 2);
+        renderer.render(parent, [{ id: 1, name: 'changed' }], (entry: typeof entries[0]) => entry.id, create);
+        assert.strictEqual(created, 3); assert.strictEqual(parent.children.length, 1); assert.notStrictEqual(parent.children[0], first);
+    });
 });

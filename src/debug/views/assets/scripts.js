@@ -1,3 +1,4 @@
+import { KeyedRows } from '../../../../out/webview/ui/keyed-rows.js';
 import { placeMenu, menuKeys, closeMenu as hideMenu } from '../../../../out/webview/ui/menu.js';
 import { clearInvalid, invalid as markInvalid, bindEditKeys } from '../../../../out/webview/ui/edit.js';
 import { matchesScriptName } from '../../../../out/webview/script-name-match.js';
@@ -80,10 +81,18 @@ import { matchesScriptName } from '../../../../out/webview/script-name-match.js'
     function select(id, row) {
         selectedId = id; rows.querySelector('.selected')?.classList.remove('selected'); row?.classList.add('selected');
     }
+    const keyedRows = new KeyedRows();
     function render() {
-        const visible = visibleEntries(); rows.replaceChildren();
-        if (adding) rows.appendChild(editorRow(null));
-        visible.forEach(entry => rows.appendChild(entry.scriptId === editingId ? editorRow(entry) : displayRow(entry)));
+        const visible = visibleEntries();
+        if (adding || editingId !== null) {
+            keyedRows.clear(); rows.replaceChildren();
+            if (adding) rows.appendChild(editorRow(null));
+            visible.forEach(entry => rows.appendChild(entry.scriptId === editingId ? editorRow(entry) : displayRow(entry)));
+        } else {
+            if (!rows.children.length || rows.querySelector('form')) { keyedRows.clear(); rows.replaceChildren(); }
+            keyedRows.render(rows, visible, entry => entry.scriptId, displayRow,
+                entry => JSON.stringify([entry, canMutate, submitting, canRunOnce]));
+        }
         count.textContent = `${visible.length} of ${entries.length}`;
         empty.hidden = adding || visible.length > 0;
         empty.textContent = entries.length ? 'No matching scripts' : 'No scripts';
@@ -195,6 +204,7 @@ import { matchesScriptName } from '../../../../out/webview/script-name-match.js'
         }
         if (message.type === 'snapshot') {
             const changed = message.generation !== generation;
+            if (changed) { keyedRows.clear(); rows.replaceChildren(); }
             generation = message.generation; entries = message.entries;
             maxNameBytes = message.maxNameBytes; maxPathBytes = message.maxPathBytes;
             if (changed) { editingId = null; editDraft = null; adding = false; closeMenu(); }

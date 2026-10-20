@@ -30,7 +30,6 @@ frames_out/
 # Temporary
 .tmp/
 temp/
-test/core/
 
 # VSCode package vsix
 *.vsix

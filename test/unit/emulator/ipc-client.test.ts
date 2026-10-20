@@ -37,6 +37,18 @@ describe('IpcClient + MockTcpServer', () => {
         expect(resp.data!.pong).to.equal(true);
     });
 
+    it('observes queue/wire timing without allowing diagnostic failures to alter requests', async () => {
+        const samples: import('../../../src/emulator/client/ipc-client').IpcTiming[] = [];
+        let clock = 0;
+        client = new IpcClient(makeLogger(), {}, undefined, { now: () => ++clock, completed: sample => { samples.push(sample); throw new Error('diagnostic only'); } });
+        await client.connect(server.port);
+        const replies = await Promise.all([client.send(IpcCommand.PING), client.send(IpcCommand.IS_RUNNING)]);
+        expect(replies.every(reply => reply.ok)).to.equal(true);
+        expect(samples).to.have.length(2);
+        expect(samples.every(sample => sample.queueMs >= 0 && sample.wireMs >= 0)).to.equal(true);
+        expect(samples[1].queueMs).to.be.greaterThan(samples[0].queueMs);
+    });
+
     it('should send IS_RUNNING', async () => {
         await client.connect(server.port);
         const resp = await client.send<IsRunningResponse>(IpcCommand.IS_RUNNING);

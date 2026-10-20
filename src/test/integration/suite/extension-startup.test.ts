@@ -87,4 +87,41 @@ suite('Language presentation startup', () => {
             } finally { panel.dispose(); }
         }
     });
+
+    test('profiles unchanged keyed snapshots against full DOM rebuilding with shipped browser code', async () => {
+        const extension = vscode.extensions.getExtension('parallelno.v6vscode')!;
+        const shared = vscode.Uri.joinPath(extension.extensionUri, 'out', 'webview');
+        const panel = vscode.window.createWebviewPanel('v6.keyedProfile', 'Keyed profile', vscode.ViewColumn.Beside,
+            { enableScripts: true, localResourceRoots: [shared] });
+        const moduleUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(shared, 'ui', 'keyed-rows.js'));
+        try {
+            const result = new Promise<{ before: { created: number; ms: number }; after: { created: number; ms: number }; retained: number }>((resolve, reject) => {
+                const timer = setTimeout(() => reject(new Error('Keyed profile did not complete')), 20000);
+                panel.webview.onDidReceiveMessage(value => { clearTimeout(timer); resolve(value); });
+            });
+            panel.webview.html = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy"
+                content="default-src 'none'; script-src ${panel.webview.cspSource} 'nonce-keyedProfile';"></head><body><div id="rows"></div>
+                <script type="module" nonce="keyedProfile">
+                import { KeyedRows } from '${moduleUri}';
+                const api = acquireVsCodeApi(), parent = document.getElementById('rows');
+                const entries = Array.from({length: 2000}, (_, id) => ({ id, name: 'entry ' + id }));
+                function profile(keyed) {
+                    parent.replaceChildren(); let created = 0; const renderer = new KeyedRows();
+                    const make = entry => { created++; const row = document.createElement('div');
+                        for (let i = 0; i < 5; i++) { const cell = document.createElement('span'); cell.textContent = entry.name; row.append(cell); } return row; };
+                    const start = performance.now();
+                    for (let i = 0; i < 20; i++) {
+                        if (keyed) renderer.render(parent, entries, entry => entry.id, make);
+                        else { parent.replaceChildren(); entries.forEach(entry => parent.append(make(entry))); }
+                    }
+                    return { created, ms: performance.now() - start };
+                }
+                api.postMessage({ before: profile(false), after: profile(true), retained: parent.children.length });
+                </script></body></html>`;
+            const measured = await result;
+            console.log(`Keyed browser profile: ${JSON.stringify(measured)}`);
+            assert.strictEqual(measured.before.created, 40000); assert.strictEqual(measured.after.created, 2000);
+            assert.strictEqual(measured.retained, 2000);
+        } finally { panel.dispose(); }
+    });
 });

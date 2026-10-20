@@ -205,7 +205,15 @@ Lint now enforces a committed per-file/per-rule warning ceiling, not a global co
 
 Verification: two host-free core tests, 759 unit tests, zero skips; 62 regressions; eight minimum-version integration tests; CI/full test compilation pass. Existing session crossover/disposal and UI value tests remain green. Nine legacy unused-variable warnings are explicitly bounded; dependency/toolchain versions are unchanged.
 
-**Next stage:** R22 measured bottleneck work, with no speculative worker/framework migration.
+Stage 17 commit: `3b4d094` — `Type core events and DAP outputs with a per-file warning ratchet`.
+
+## Implementation progress — stage 18 (R22)
+
+Measured Scripts/Performance unchanged snapshot churn and migrated both to a shared keyed-row renderer outside edit mode. Real VS Code webview profile (2,000 five-cell rows × 20 snapshots): row creations 40,000 → 2,000; retained rows 2,000; local script time 522.3 → 101.1 ms. Behavioral tests cover reuse/change/reorder/removal; the profile executes shipped ESM. Added opt-in transport queue/wire measurements without changing priority or letting diagnostic errors affect requests. A 32-request local burst measured queue p50/p95 ≈14/20 ms and wire p50 ≈0.49 ms. A 4,236-byte O2 ELF measured ≈38 ms cold and 3.4 ms for 50 cache hits with one parse; retained existing cache and deferred speculative workers/offload. Exact workloads, contrary stand-in timing, limits and reproduction commands are documented in docs/architecture-performance.md.
+
+Verification: two host-free core tests, 761 unit tests, zero skips; 62 regressions; eight packaged current-version tests and nine minimum-version integration tests including the new browser profile; CI/full test typecheck pass with nine bounded warnings and zero errors. This is a measured keyed-list pilot, not completion of arbitrary large-list virtualization or large-artifact offload. No new framework/dependency.
+
+**Next stage:** R23 mandatory release/package/minimum/conformance gates and shared-owner documentation.
 
 ## 1. Executive assessment
 

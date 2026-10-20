@@ -12,6 +12,7 @@ const DEFAULT_TIMEOUT_MS = 5000;
 const CONNECT_TIMEOUT_MS = 3000;
 
 export type IpcPriority = 'critical' | 'high' | 'normal' | 'low';
+export interface IpcTiming { readonly command: IpcCommand; readonly priority: IpcPriority; readonly queueMs: number; readonly wireMs: number; readonly queuedAtSubmission: number }
 const PRIORITY_ORDER: Record<IpcPriority, number> = { critical: 0, high: 1, normal: 2, low: 3 };
 
 export interface IpcClientLimits {
@@ -27,6 +28,10 @@ const DEFAULT_LIMITS: IpcClientLimits = {
 };
 
 interface PendingRequest {
+    command: IpcCommand;
+    submittedAt: number;
+    dispatchedAt?: number;
+    queuedAtSubmission: number;
     frame: Buffer;
     timeoutMs: number;
     priority: IpcPriority;
@@ -50,7 +55,8 @@ export class IpcClient extends EventEmitter<IpcClientEvents> {
     private epoch = 0;
     private readonly limits: IpcClientLimits;
 
-    constructor(private readonly logger: Pick<LogSink, 'debug' | 'error'>, limits: Partial<IpcClientLimits> = {}, private readonly clock: TimerClock = systemTimerClock) {
+    constructor(private readonly logger: Pick<LogSink, 'debug' | 'error'>, limits: Partial<IpcClientLimits> = {}, private readonly clock: TimerClock = systemTimerClock,
+        private readonly timing?: { now(): number; completed(sample: IpcTiming): void }) {
         super();
         this.limits = { ...DEFAULT_LIMITS, ...limits };
         for (const value of Object.values(this.limits)) {
@@ -122,6 +128,7 @@ export class IpcClient extends EventEmitter<IpcClientEvents> {
             const frame = encodeRequest(cmd, data);
             if (frame.length - 4 > this.limits.maxPayloadBytes) { throw new RangeError('IPC request exceeds payload limit'); }
             const request: PendingRequest = {
+                command: cmd, submittedAt: this.timing?.now() ?? 0, queuedAtSubmission: this.requestQueue.length,
                 frame, timeoutMs, priority, sequence: this.nextSequence++,
                 scope, reject,
                 complete: raw => {
@@ -158,6 +165,7 @@ export class IpcClient extends EventEmitter<IpcClientEvents> {
         const socket = this.socket;
         if (!socket || socket.destroyed) { request.reject(new V6Error(ErrorCode.IPC_CONNECTION_REFUSED, 'Not connected')); return; }
         this.active = request;
+        request.dispatchedAt = this.timing?.now();
         request.timer = this.clock.schedule(() => {
             if (this.socket === socket && this.active === request) {
                 this.failConnection(new V6Error(ErrorCode.IPC_TIMEOUT, `IPC request timed out after ${request.timeoutMs}ms`));
@@ -190,6 +198,11 @@ export class IpcClient extends EventEmitter<IpcClientEvents> {
                 if (length !== this.receiveBuffer.length) { throw new V6Error(ErrorCode.IPC_DECODE_ERROR, 'Unexpected extra IPC response bytes'); }
                 const request = this.active;
                 request.complete(this.receiveBuffer); // Validate before advancing the queue.
+                if (this.timing && request.dispatchedAt !== undefined) {
+                    try { this.timing.completed(Object.freeze({ command: request.command, priority: request.priority,
+                        queueMs: request.dispatchedAt - request.submittedAt, wireMs: this.timing.now() - request.dispatchedAt,
+                        queuedAtSubmission: request.queuedAtSubmission })); } catch { /* Diagnostics cannot alter transport order. */ }
+                }
                 this.clock.cancel(request.timer);
                 this.active = undefined;
                 this.receiveBuffer = Buffer.alloc(0);
