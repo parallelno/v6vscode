@@ -3,7 +3,7 @@ import {
     MEMORY_BANK_SIZE,
     MemorySpace,
     memorySpaceKey,
-} from './memory-space';
+} from '../../shared/memory-space';
 
 interface BankCache {
     readonly values: Uint8Array;

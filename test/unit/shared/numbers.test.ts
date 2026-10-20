@@ -58,8 +58,9 @@ describe('Shared numeric mechanics', () => {
             const file = path.join(process.cwd(), `src/debug/views/assets/${asset}.js`);
             const sourceFile = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
             const imports = sourceFile.statements.filter(ts.isImportDeclaration);
-            assert.strictEqual(imports.length, 1);
-            const specifier = (imports[0].moduleSpecifier as ts.StringLiteral).text;
+            const numericImport = imports.find(statement => (statement.moduleSpecifier as ts.StringLiteral).text.endsWith('/numbers.js'))!;
+            assert.ok(numericImport);
+            const specifier = (numericImport.moduleSpecifier as ts.StringLiteral).text;
             assert.strictEqual(path.resolve(path.dirname(file), specifier), path.join(process.cwd(), 'out/webview/numbers.js'));
         }
     });

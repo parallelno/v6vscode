@@ -4,7 +4,7 @@ import type { CommandSender } from '../session/session-operations';
 import type { OperationScope } from '../../platform/async/scoped-task-queue';
 import { decodeProtocolData, requireProtocolOk } from '../protocol/protocol-result';
 import { expectInteger, expectRecord, ValidationError } from '../../shared/validation';
-import { MEMORY_BANK_SIZE, RAM_DISK_BANK_COUNT, RAM_DISK_COUNT, MemorySpace, isValidMemorySpace, memorySpaceGlobalAddress } from './memory-space';
+import { MEMORY_BANK_SIZE, RAM_DISK_BANK_COUNT, RAM_DISK_COUNT, MemorySpace, isValidMemorySpace, memorySpaceGlobalAddress } from '../../shared/memory-space';
 
 /** Protocol v2 command 93 has a fixed global layout; these are protocol limits,
  * not per-panel negotiated fields. Preview/value budgets remain consumer policy.

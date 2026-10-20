@@ -1,6 +1,5 @@
 // @ts-check
 (function () {
-    // @ts-ignore
     const vscode = acquireVsCodeApi();
     const status = document.getElementById('status');
     const content = /** @type {HTMLElement} */ (document.getElementById('content'));
@@ -62,7 +61,7 @@
     function openMenu(event, target) {
         event.preventDefault(); hideTooltip(); menuTarget = target;
         menu.querySelectorAll('button').forEach(button => { const paletteAction = button.dataset.action === 'copy' || button.dataset.action === 'edit' || button.dataset.action === 'paste'; button.hidden = target.kind === 'palette' ? !paletteAction : paletteAction; button.disabled = button.dataset.action === 'copy' ? false : !canMutate || (button.dataset.action === 'dismount' && !target.mounted); });
-        menu.hidden = false; menu.style.left = `${Math.max(4, Math.min(event.clientX || 12, innerWidth - 120))}px`; menu.style.top = `${Math.max(4, Math.min(event.clientY || 12, innerHeight - 100))}px`; menu.querySelector('button:not([hidden])')?.focus();
+        menu.hidden = false; menu.style.left = `${Math.max(4, Math.min(event.clientX || 12, innerWidth - 120))}px`; menu.style.top = `${Math.max(4, Math.min(event.clientY || 12, innerHeight - 100))}px`; (/** @type {HTMLButtonElement} */ (menu.querySelector('button:not([hidden])')))?.focus();
     }
     function closeMenu(restoreFocus = true) { if (menu.hidden) return; menu.hidden = true; if (restoreFocus) menuTarget?.element?.focus(); menuTarget = null; }
     function startPaletteEdit(target) {
@@ -82,9 +81,9 @@
         input.addEventListener('blur', () => finish(true));
         target.element.replaceWith(input); input.focus(); input.select();
     }
-    menu.addEventListener('click', event => { const action = event.target?.dataset?.action; const target = menuTarget; closeMenu(action !== 'edit'); if (!target || !action) return; if (action === 'copy') post({ type: 'copyPalette', index: target.index }); if (action === 'edit') startPaletteEdit(target); if (action === 'paste') post({ type: 'pastePalette', index: target.index }); if (action === 'mount') post({ type: 'mountDrive', driveIdx: target.index }); if (action === 'dismount') post({ type: 'dismountDrive', driveIdx: target.index }); });
-    menu.addEventListener('keydown', event => { const buttons = [...menu.querySelectorAll('button:not([hidden]):not(:disabled)')]; const index = buttons.indexOf(document.activeElement); if (event.key === 'Escape') { event.preventDefault(); closeMenu(); } if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); buttons[(index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus(); } });
-    document.addEventListener('mousedown', event => { if (!menu.hidden && !menu.contains(event.target)) closeMenu(); }); window.addEventListener('blur', closeMenu); window.addEventListener('scroll', closeMenu, true);
+    menu.addEventListener('click', event => { const action = (/** @type {HTMLElement} */ (event.target))?.dataset?.action; const target = menuTarget; closeMenu(action !== 'edit'); if (!target || !action) return; if (action === 'copy') post({ type: 'copyPalette', index: target.index }); if (action === 'edit') startPaletteEdit(target); if (action === 'paste') post({ type: 'pastePalette', index: target.index }); if (action === 'mount') post({ type: 'mountDrive', driveIdx: target.index }); if (action === 'dismount') post({ type: 'dismountDrive', driveIdx: target.index }); });
+    menu.addEventListener('keydown', event => { const buttons = [.../** @type {NodeListOf<HTMLButtonElement>} */ (menu.querySelectorAll('button:not([hidden]):not(:disabled)'))]; const index = buttons.indexOf(/** @type {HTMLButtonElement} */ (document.activeElement)); if (event.key === 'Escape') { event.preventDefault(); closeMenu(); } if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); buttons[(index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus(); } });
+    document.addEventListener('mousedown', event => { if (!menu.hidden && !menu.contains(/** @type {Node} */ (event.target))) closeMenu(); }); window.addEventListener('blur', () => closeMenu()); window.addEventListener('scroll', () => closeMenu(), true);
     window.addEventListener('message', event => {
         const message = event.data;
         if (message.type === 'reset') { generation = message.generation; model = null; content.hidden = true; closeMenu(); hideTooltip(); }

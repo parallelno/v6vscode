@@ -1,6 +1,5 @@
 // @ts-check
 (function () {
-    // @ts-ignore
     const vscode = acquireVsCodeApi();
     const ROW_HEIGHT = 26;
     const OVERSCAN = 8;
@@ -228,7 +227,7 @@
         source.disabled = !row.sourceBacked;
         menu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - menu.offsetWidth - 8))}px`;
         menu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - menu.offsetHeight - 8))}px`;
-        /** @type {HTMLButtonElement|null} */ (menu.querySelector('button:not(:disabled)'))?.focus();
+        /** @type {HTMLButtonElement|null} */ ((/** @type {HTMLButtonElement} */ (menu.querySelector('button:not(:disabled)'))))?.focus();
     }
     function closeMenu() {
         if (menu.hidden) return;
@@ -247,7 +246,7 @@
         if (menuTarget && selectedAction) action(menuTarget.row, selectedAction);
     });
     menu.addEventListener('keydown', event => {
-        const buttons = Array.from(menu.querySelectorAll('button:not(:disabled)'));
+        const buttons = Array.from(/** @type {NodeListOf<HTMLButtonElement>} */ (menu.querySelectorAll('button:not(:disabled)')));
         const current = buttons.indexOf(/** @type {HTMLButtonElement} */ (document.activeElement));
         let next = -1;
         if (event.key === 'ArrowDown') next = (current + 1) % buttons.length;

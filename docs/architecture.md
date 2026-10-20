@@ -49,6 +49,15 @@ provider owns hover Markdown and definition links. Import-boundary tests prevent
 language/value modules from depending on DAP helpers. No old-path re-export shims
 remain for the moved modules.
 
+## Browser-safe shared code
+
+`src/shared/` provides numeric literals/hex formatting, script-name matching and
+memory-space mapping to both host and browser consumers. The shared build emits
+ESM under `out/webview/`; Scripts and Memory Edits import those shipped modules
+directly. The standard compile/prepublish path also checks all shipped asset
+JavaScript using the DOM-only browser configuration. This preserves the existing
+plain JavaScript UI without adding a framework or copying host algorithms.
+
 ```mermaid
 flowchart LR
 	DAP[V6 Debug Adapter] --> Lifecycle[Emulator Lifecycle]

@@ -1,6 +1,6 @@
+import { matchesScriptName } from '../../../../out/webview/script-name-match.js';
 // @ts-check
 (function () {
-    // @ts-ignore
     const vscode = acquireVsCodeApi();
     const query = /** @type {HTMLInputElement} */ (document.getElementById('query'));
     const count = document.getElementById('count');
@@ -50,16 +50,7 @@
         }
         return { name: name.value, path: wirePath, active };
     }
-    function matches(name, value) {
-        const pattern = value.trim().slice(0, 256).toLocaleLowerCase();
-        const candidate = name.toLocaleLowerCase();
-        if (!pattern) return true;
-        if (!pattern.includes('*')) return candidate.includes(pattern);
-        const escaped = pattern.replace(/\*+/g, '*').split('*')
-            .map(part => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*');
-        return new RegExp(`^${escaped}$`, 'u').test(candidate);
-    }
-    function visibleEntries() { return entries.filter(entry => matches(entry.name, query.value)); }
+    function visibleEntries() { return entries.filter(entry => matchesScriptName(entry.name, query.value)); }
     function cell(text, className = '', field = '') {
         const element = document.createElement('div'); element.className = `cell ${className}`;
         element.setAttribute('role', 'gridcell'); element.textContent = text;
@@ -116,7 +107,7 @@
                 closeMenu(); render();
             }
         });
-        row.addEventListener('contextmenu', event => openMenu(event, entry.scriptId, event.target?.dataset?.field ?? 'name', row));
+        row.addEventListener('contextmenu', event => openMenu(event, entry.scriptId, (/** @type {HTMLElement} */ (event.target))?.dataset?.field ?? 'name', row));
         row.addEventListener('keydown', event => {
             if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) openMenu(event, entry.scriptId, 'name', row);
         });
@@ -131,7 +122,7 @@
         const name = textInput('Name', values.name); const path = textInput('Path', values.path);
         for (const control of [active, name.input, path.input]) control.disabled = !canMutate || submitting;
         row.append(cell(entry ? (entry.compilation.status === 'compiled' ? '✓' : '✕') : '—', 'compilation'), activeCell, name.cell, path.cell);
-        for (const [key, input] of [['name', name.input], ['path', path.input]]) input.addEventListener('input', () => {
+        for (const [key, input] of /** @type {Array<[string, HTMLInputElement]>} */ ([['name', name.input], ['path', path.input]])) input.addEventListener('input', () => {
             clearInvalid(input); if (entry && editDraft) editDraft[key] = input.value; else draft[key] = input.value;
         });
         active.addEventListener('change', () => {
@@ -179,11 +170,11 @@
         const rect = source.getBoundingClientRect();
         menu.style.left = `${Math.max(4, Math.min(event.clientX || rect.left, window.innerWidth - 180))}px`;
         menu.style.top = `${Math.max(4, Math.min(event.clientY || rect.bottom, window.innerHeight - 240))}px`;
-        menu.querySelector('button:not([disabled])')?.focus();
+        (/** @type {HTMLButtonElement} */ (menu.querySelector('button:not([disabled])')))?.focus();
     }
     function closeMenu() { if (!menu.hidden) { menu.hidden = true; menuSource?.focus(); } menuId = null; menuField = null; menuSource = null; }
     menu.addEventListener('click', event => {
-        const action = event.target?.dataset?.action; const scriptId = menuId; const field = menuField; closeMenu();
+        const action = (/** @type {HTMLElement} */ (event.target))?.dataset?.action; const scriptId = menuId; const field = menuField; closeMenu();
         if (!action) return;
         if (action === 'add') startAdd();
         else if (action === 'disableAll') post({ type: 'disableAll' });
@@ -195,17 +186,17 @@
         else if (scriptId !== null && action === 'delete') post({ type: 'delete', scriptId });
     });
     menu.addEventListener('keydown', event => {
-        const buttons = [...menu.querySelectorAll('button:not([disabled])')]; const index = buttons.indexOf(document.activeElement);
+        const buttons = [.../** @type {NodeListOf<HTMLButtonElement>} */ (menu.querySelectorAll('button:not([disabled])'))]; const index = buttons.indexOf(/** @type {HTMLButtonElement} */ (document.activeElement));
         if (event.key === 'Escape') { event.preventDefault(); closeMenu(); }
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             event.preventDefault(); buttons[(index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
         }
     });
     table.addEventListener('contextmenu', event => {
-        if (!event.target.closest?.('.row')) openMenu(event, null, null, table);
+        if (!(/** @type {Element} */ (event.target)).closest?.('.row')) openMenu(event, null, null, table);
     });
     empty.addEventListener('contextmenu', event => openMenu(event, null, null, empty));
-    document.addEventListener('mousedown', event => { if (!menu.hidden && !menu.contains(event.target)) closeMenu(); });
+    document.addEventListener('mousedown', event => { if (!menu.hidden && !menu.contains(/** @type {Node} */ (event.target))) closeMenu(); });
     table.addEventListener('scroll', closeMenu);
     query.addEventListener('input', () => { vscode.postMessage({ type: 'persistQuery', value: query.value }); render(); });
     window.addEventListener('message', event => {

@@ -15,7 +15,7 @@ import {
     memorySpaceKey,
     memorySpaceLabel,
     memorySpaceGlobalAddress,
-} from '../../emulator/memory/memory-space';
+} from '../../shared/memory-space';
 import { MemoryReadCapabilities } from '../../emulator/protocol/memory-models';
 import { DebugSymbolService } from '../metadata/debug-symbol-service';
 import { evaluateSymbolExpression } from '../utilities/symbol-expression';

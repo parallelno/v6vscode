@@ -1,7 +1,6 @@
 import { parseIntegerLiteral, formatHex as hex } from '../../../../out/webview/numbers.js';
 // @ts-check
 (function () {
-    // @ts-ignore
     const vscode = acquireVsCodeApi();
     const status = document.getElementById('status');
     const table = /** @type {HTMLDivElement} */ (document.getElementById('table'));
@@ -171,11 +170,11 @@ import { parseIntegerLiteral, formatHex as hex } from '../../../../out/webview/n
                 || (id === null && noEntries && ['disableAll', 'deleteAll'].includes(action));
             if (action === 'toggle' && entry) button.textContent = entry.active ? 'Disable' : 'Enable';
         });
-        menu.hidden = false; menu.style.left = `${event.clientX}px`; menu.style.top = `${event.clientY}px`; menu.querySelector('button:not([hidden])')?.focus();
+        menu.hidden = false; menu.style.left = `${event.clientX}px`; menu.style.top = `${event.clientY}px`; (/** @type {HTMLButtonElement} */ (menu.querySelector('button:not([hidden])')))?.focus();
     }
     function closeMenu() { menu.hidden = true; menuId = null; }
     menu.addEventListener('click', event => {
-        const action = event.target?.dataset?.action; const entry = entries.find(item => item.id === menuId); closeMenu();
+        const action = (/** @type {HTMLElement} */ (event.target))?.dataset?.action; const entry = entries.find(item => item.id === menuId); closeMenu();
         if (action === 'add' && canMutate) post({ type: 'add', candidate: defaultWatchpoint() });
         if (action === 'reveal' && entry) post({ type: 'reveal', id: entry.id });
         if (action === 'toggle' && entry) post({ type: 'edit', candidate: { ...entry, active: !entry.active } });
@@ -185,13 +184,13 @@ import { parseIntegerLiteral, formatHex as hex } from '../../../../out/webview/n
     });
     menu.addEventListener('keydown', event => { if (event.key === 'Escape') closeMenu(); });
     table.addEventListener('contextmenu', event => {
-        if (!(event.target instanceof Element) || !event.target.closest('.row')) openMenu(event, null);
+        if (!(event.target instanceof Element) || !(/** @type {Element} */ (event.target)).closest('.row')) openMenu(event, null);
     });
     empty.addEventListener('keydown', event => { if (event.key === 'Enter' && canMutate) { editingId = 'new'; render(); } });
     document.addEventListener('click', event => {
-        if (!menu.contains(event.target)) closeMenu();
+        if (!menu.contains(/** @type {Node} */ (event.target))) closeMenu();
         const form = rows.querySelector('form');
-        if (form && !form.contains(event.target)) form.requestSubmit();
+        if (form && !form.contains(/** @type {Node} */ (event.target))) form.requestSubmit();
     });
     window.addEventListener('blur', () => rows.querySelector('form')?.requestSubmit());
     window.addEventListener('message', event => {
@@ -238,7 +237,7 @@ import { parseIntegerLiteral, formatHex as hex } from '../../../../out/webview/n
                 submitting = false;
                 submittedOperation = null;
                 announce(message.message);
-                const control = rows.querySelector(`form [aria-label="${({ globalAddr: 'Global Address', len: 'Length', value: 'Value', access: 'Access', condition: 'Condition', type: 'Type', active: 'Activity', comment: 'Comment' })[message.field] || ''}"]`);
+                const control = /** @type {HTMLInputElement} */ (rows.querySelector(`form [aria-label="${({ globalAddr: 'Global Address', len: 'Length', value: 'Value', access: 'Access', condition: 'Condition', type: 'Type', active: 'Activity', comment: 'Comment' })[message.field] || ''}"]`));
                 if (control) {
                     control.classList.add('invalid');
                     control.setAttribute('aria-invalid', 'true');

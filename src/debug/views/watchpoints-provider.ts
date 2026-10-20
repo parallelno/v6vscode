@@ -8,7 +8,7 @@ import {
     globalAddressMemoryLocation,
     MEMORY_BANK_SIZE,
     memorySpaceKey,
-} from '../../emulator/memory/memory-space';
+} from '../../shared/memory-space';
 import { WatchpointAddRequest, WatchpointEditRequest, WatchpointEntry } from '../../emulator/protocol/debug-models';
 import { Logger } from '../../platform/logging/logger';
 import { DebugSymbolService } from '../metadata/debug-symbol-service';

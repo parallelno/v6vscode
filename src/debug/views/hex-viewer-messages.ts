@@ -1,4 +1,4 @@
-import { MemorySpace } from '../../emulator/memory/memory-space';
+import { MemorySpace } from '../../shared/memory-space';
 
 export type HexViewerWebviewMessage =
     | { type: 'ready' }

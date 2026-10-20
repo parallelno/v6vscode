@@ -13,6 +13,7 @@ docs/**
 tsconfig.json
 tsconfig.test.json
 tsconfig.browser-shared.json
+tsconfig.browser.json
 .mocharc.yml
 .eslintrc.json
 .editorconfig

@@ -126,6 +126,12 @@ describe('Architecture and extension manifest contracts', () => {
         assert.ok(views.includes('v6.hardwareStatistics'));
         assert.ok(views.includes('v6emul.panels'));
         assert.ok(manifest.scripts.compile.includes('compile:browser-shared'));
+        assert.ok(manifest.scripts.compile.includes('check:browser'));
+        const browserConfig = JSON.parse(fs.readFileSync(path.join(root, 'tsconfig.browser.json'), 'utf8'));
+        assert.strictEqual(browserConfig.compilerOptions.checkJs, true);
+        assert.deepStrictEqual(browserConfig.compilerOptions.types, []);
+        assert.ok(browserConfig.include.includes('src/debug/views/assets/**/*.js'));
+        assert.ok(browserConfig.include.includes('src/emulator/panel/assets/**/*.js'));
         const ignore = fs.readFileSync(path.join(root, '.vscodeignore'), 'utf8');
         assert.ok(ignore.includes('!src/debug/views/assets/**'));
         assert.ok(!/^out\/(?:\*\*)?\s*$/m.test(ignore), 'Compiled resources must ship');

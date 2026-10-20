@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { MemoryCache } from '../../../src/emulator/memory/memory-cache';
-import { allMemorySpaces, MAIN_MEMORY_SPACE, MEMORY_BANK_SIZE } from '../../../src/emulator/memory/memory-space';
+import { allMemorySpaces, MAIN_MEMORY_SPACE, MEMORY_BANK_SIZE } from '../../../src/shared/memory-space';
 
 describe('MemoryCache', () => {
     it('allocates independent storage for Main RAM and all 32 RAM-disk banks', () => {

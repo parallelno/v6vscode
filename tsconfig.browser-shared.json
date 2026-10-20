@@ -2,12 +2,12 @@
   "compilerOptions": {
     "target": "ES2019",
     "module": "ES2020",
-    "lib": ["ES2019"],
+    "lib": ["ES2019", "DOM"],
     "types": [],
     "rootDir": "src/shared",
     "outDir": "out/webview",
     "strict": true,
     "noEmitOnError": true
   },
-  "files": ["src/shared/numbers.ts"]
+  "include": ["src/shared/**/*.ts"]
 }

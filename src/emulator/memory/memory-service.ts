@@ -1,7 +1,7 @@
 import type { CommandSender } from '../session/session-operations';
 import { MemoryReadCapabilities } from '../protocol/memory-models';
 import { MemoryCache, CachedMemoryRange } from './memory-cache';
-import { MemorySpace } from './memory-space';
+import { MemorySpace } from '../../shared/memory-space';
 import { MemoryBackend, validateMemoryCapabilities } from './memory-backend';
 
 /** Live-view cache adapter. Never shared with a stopped debug generation. */

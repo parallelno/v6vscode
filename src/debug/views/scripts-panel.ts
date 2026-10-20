@@ -4,7 +4,7 @@ import { SessionCoordinator } from '../../emulator/session/session-coordinator';
 import { ScriptInput, ScriptSnapshot } from '../../emulator/protocol/debug-models';
 import { Logger } from '../../platform/logging/logger';
 import { ScriptService } from '../scripts/script-service';
-import { MAX_SCRIPTS_QUERY_LENGTH } from './scripts-query';
+import { MAX_SCRIPTS_QUERY_LENGTH } from '../../shared/script-name-match';
 import { ScriptField, ScriptsHostMessage, ScriptsWebviewMessage } from './scripts-messages';
 
 export const SCRIPTS_PANEL_ID = 'v6.scripts';
@@ -42,7 +42,7 @@ export class ScriptsPanel implements vscode.Disposable {
         const assetsUri = vscode.Uri.joinPath(this.extensionUri, 'src', 'debug', 'views', 'assets');
         const panel = vscode.window.createWebviewPanel(
             SCRIPTS_PANEL_ID, 'Scripts', vscode.ViewColumn.Beside,
-            { enableScripts: true, localResourceRoots: [assetsUri], retainContextWhenHidden: true },
+            { enableScripts: true, localResourceRoots: [assetsUri, vscode.Uri.joinPath(this.extensionUri, 'out', 'webview')], retainContextWhenHidden: true },
         );
         this.panel = panel;
         panel.webview.html = this.html(panel.webview, assetsUri);
@@ -278,12 +278,12 @@ export class ScriptsPanel implements vscode.Disposable {
         const cssUri = webview.asWebviewUri(vscode.Uri.joinPath(assetsUri, 'scripts.css'));
         const jsUri = webview.asWebviewUri(vscode.Uri.joinPath(assetsUri, 'scripts.js'));
         return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src ${webview.cspSource} 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${cssUri}"><title>Scripts</title></head>
 <body><div class="toolbar"><input id="query" type="search" maxlength="256" aria-label="Filter scripts by name" placeholder="Filter by name"><span id="count"></span></div>
 <div id="status" role="status">No active emulator session</div><div id="table" role="grid" aria-label="Scripts"><div class="header" role="row"><span role="columnheader">Compilation</span><span role="columnheader">Activity</span><span role="columnheader">Name</span><span role="columnheader">Path</span></div><div id="rows"></div></div><div id="empty" tabindex="0">No scripts</div><div id="live" class="sr-only" aria-live="polite"></div>
 <div id="menu" role="menu" hidden><button role="menuitem" data-action="copy">Copy</button><button role="menuitem" data-action="add">Add</button><button role="menuitem" data-action="compile">Compile</button><button role="menuitem" data-action="runOnce">Run Once</button><button role="menuitem" data-action="disable">Disable</button><button role="menuitem" data-action="disableAll">Disable All</button><button role="menuitem" data-action="delete">Delete</button><button role="menuitem" data-action="deleteAll">Delete All</button></div>
-<script nonce="${nonce}" src="${jsUri}"></script></body></html>`;
+<script type="module" nonce="${nonce}" src="${jsUri}"></script></body></html>`;
     }
 }
 

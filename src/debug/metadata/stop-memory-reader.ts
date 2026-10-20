@@ -2,7 +2,7 @@ import type { CommandSender } from '../../emulator/session/session-operations';
 import type { OperationScope } from '../../platform/async/scoped-task-queue';
 import { MemoryReadCapabilities } from '../../emulator/protocol/memory-models';
 import { MemoryBackend, PROTOCOL_V2_MEMORY } from '../../emulator/memory/memory-backend';
-import { MAIN_MEMORY_SPACE } from '../../emulator/memory/memory-space';
+import { MAIN_MEMORY_SPACE } from '../../shared/memory-space';
 
 /** Stopped CPU reader: bounded consumer budget, no address wrapping and no live cache. */
 export class StopMemoryReader {

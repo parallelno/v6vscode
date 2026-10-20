@@ -21,7 +21,7 @@ describe('Watchpoints webview editing', () => {
 
     it('opens bulk actions from empty table space without replacing row menus', () => {
         expect(source).to.include("table.addEventListener('contextmenu'");
-        expect(source).to.include("!event.target.closest('.row')) openMenu(event, null);");
+        expect(source).to.include("(event.target)).closest('.row')) openMenu(event, null);");
         expect(source).to.include("row.addEventListener('contextmenu', event => openMenu(event, entry.id))");
     });
 

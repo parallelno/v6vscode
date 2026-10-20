@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import { MemoryBackend, memoryCapabilities, PROTOCOL_V2_MEMORY } from '../../../src/emulator/memory/memory-backend';
 import { MemoryService } from '../../../src/emulator/memory/memory-service';
 import { StopMemoryReader } from '../../../src/debug/metadata/stop-memory-reader';
-import { MAIN_MEMORY_SPACE } from '../../../src/emulator/memory/memory-space';
+import { MAIN_MEMORY_SPACE } from '../../../src/shared/memory-space';
 import { IpcCommand } from '../../../src/emulator/protocol/ipc-commands';
 import { ProtocolError } from '../../../src/emulator/protocol/protocol-result';
 

@@ -33,7 +33,9 @@ describe('Scripts webview contract', () => {
     });
 
     it('supports wildcard filtering and independent running-state gates', () => {
-        expect(script).to.include("pattern.includes('*')");
+        expect(script).to.include("import { matchesScriptName } from '../../../../out/webview/script-name-match.js'");
+        expect(script).to.include('matchesScriptName(entry.name, query.value)');
+        expect(script).not.to.include('function matches(');
         expect(script).to.include('canRunOnce');
         expect(panel).to.include('scriptMutationsWhileRunning');
         expect(panel).to.include('scriptRunOnceWhileRunning');

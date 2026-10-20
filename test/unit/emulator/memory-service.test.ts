@@ -3,7 +3,7 @@ import { MemoryService } from '../../../src/emulator/memory/memory-service';
 import {
     globalAddressMemoryLocation,
     MAIN_MEMORY_SPACE,
-} from '../../../src/emulator/memory/memory-space';
+} from '../../../src/shared/memory-space';
 import { IpcCommand } from '../../../src/emulator/protocol/ipc-commands';
 
 describe('MemoryService', () => {

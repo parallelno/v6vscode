@@ -5,7 +5,7 @@ import {
     decodeScriptRunOnceResponse,
     validateScriptInput,
 } from '../../../src/debug/scripts/script-codec';
-import { matchesScriptName } from '../../../src/debug/views/scripts-query';
+import { matchesScriptName } from '../../../src/shared/script-name-match';
 import { ScriptLimits } from '../../../src/emulator/protocol/debug-models';
 
 const limits: ScriptLimits = {

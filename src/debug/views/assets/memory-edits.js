@@ -1,7 +1,7 @@
+import { globalAddressMemoryLocation, memorySpaceLabel } from '../../../../out/webview/memory-space.js';
 import { parseIntegerLiteral, formatHex as hex } from '../../../../out/webview/numbers.js';
 // @ts-check
 (function () {
-    // @ts-ignore
     const vscode = acquireVsCodeApi();
     const query = /** @type {HTMLInputElement} */ (document.getElementById('query'));
     const count = document.getElementById('count');
@@ -43,10 +43,8 @@ import { parseIntegerLiteral, formatHex as hex } from '../../../../out/webview/n
         return parsed;
     }
     function addressTitle(globalAddr) {
-        const space = Math.floor(globalAddr / 0x10000); const offset = globalAddr % 0x10000;
-        if (space === 0) return `Main RAM / ${hex(offset, 4)}`;
-        const index = space - 1;
-        return `RAM Disk ${Math.floor(index / 4) + 1} / Bank ${index % 4} / ${hex(offset, 4)}`;
+        const { space, offset } = globalAddressMemoryLocation(globalAddr);
+        return `${memorySpaceLabel(space)} / ${hex(offset, 4)}`;
     }
     function visibleEntries() { return filterValue === null ? entries : entries.filter(entry => entry.currentValue === filterValue); }
     function selectAddress(globalAddr, row) {
@@ -188,7 +186,7 @@ import { parseIntegerLiteral, formatHex as hex } from '../../../../out/webview/n
     }
     function closeMenu() { if (menu.hidden) return; menu.hidden = true; menuSource?.focus(); menuAddress = null; menuSource = null; }
     function openListMenu(event, source) {
-        if (event.target.closest?.('.row')) return;
+        if ((/** @type {Element} */ (event.target)).closest?.('.row')) return;
         event.preventDefault(); closeMenu(); listMenuSource = source;
         if (!entries.some(entry => entry.globalAddr === selectedAddress)) {
             const fallbackAddress = entries[0]?.globalAddr ?? null;
@@ -200,11 +198,11 @@ import { parseIntegerLiteral, formatHex as hex } from '../../../../out/webview/n
         listMenu.hidden = false;
         listMenu.style.left = `${Math.max(4, Math.min(event.clientX || source.getBoundingClientRect().left, window.innerWidth - 150))}px`;
         listMenu.style.top = `${Math.max(4, Math.min(event.clientY || source.getBoundingClientRect().bottom, window.innerHeight - 200))}px`;
-        listMenu.querySelector('button:not([disabled])')?.focus();
+        (/** @type {HTMLButtonElement} */ (listMenu.querySelector('button:not([disabled])')))?.focus();
     }
     function closeListMenu() { if (listMenu.hidden) return; listMenu.hidden = true; listMenuSource?.focus(); listMenuSource = null; }
     menu.addEventListener('click', event => {
-        const action = event.target?.dataset?.action; const globalAddr = menuAddress; closeMenu();
+        const action = (/** @type {HTMLElement} */ (event.target))?.dataset?.action; const globalAddr = menuAddress; closeMenu();
         if (globalAddr === null || !action) return;
         const fields = { copyOriginal: 'originalValue', copyEntered: 'enteredValue', copyCurrent: 'currentValue' };
         if (fields[action]) post({ type: 'copy', globalAddr, field: fields[action] });
@@ -216,14 +214,14 @@ import { parseIntegerLiteral, formatHex as hex } from '../../../../out/webview/n
         else if (action === 'deleteAndRestoreAll' && canRestore) post({ type: 'deleteAndRestoreAll' });
     });
     menu.addEventListener('keydown', event => {
-        const buttons = [...menu.querySelectorAll('button:not([disabled])')]; const index = buttons.indexOf(document.activeElement);
+        const buttons = [.../** @type {NodeListOf<HTMLButtonElement>} */ (menu.querySelectorAll('button:not([disabled])'))]; const index = buttons.indexOf(/** @type {HTMLButtonElement} */ (document.activeElement));
         if (event.key === 'Escape') { event.preventDefault(); closeMenu(); }
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             event.preventDefault(); buttons[(index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
         }
     });
     listMenu.addEventListener('click', event => {
-        const action = event.target?.dataset?.action; const globalAddr = selectedAddress; closeListMenu();
+        const action = (/** @type {HTMLElement} */ (event.target))?.dataset?.action; const globalAddr = selectedAddress; closeListMenu();
         if (!action || !canMutate) return;
         if (action === 'add') startAdd();
         else if (globalAddr !== null && action === 'disable') post({ type: 'disable', globalAddr });
@@ -233,7 +231,7 @@ import { parseIntegerLiteral, formatHex as hex } from '../../../../out/webview/n
         else if (action === 'deleteAndRestoreAll') post({ type: 'deleteAndRestoreAll' });
     });
     listMenu.addEventListener('keydown', event => {
-        const buttons = [...listMenu.querySelectorAll('button:not([disabled])')]; const index = buttons.indexOf(document.activeElement);
+        const buttons = [.../** @type {NodeListOf<HTMLButtonElement>} */ (listMenu.querySelectorAll('button:not([disabled])'))]; const index = buttons.indexOf(/** @type {HTMLButtonElement} */ (document.activeElement));
         if (event.key === 'Escape') { event.preventDefault(); closeListMenu(); }
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             event.preventDefault(); buttons[(index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
@@ -242,8 +240,8 @@ import { parseIntegerLiteral, formatHex as hex } from '../../../../out/webview/n
     table.addEventListener('contextmenu', event => openListMenu(event, table));
     empty.addEventListener('contextmenu', event => openListMenu(event, empty));
     document.addEventListener('mousedown', event => {
-        if (!menu.hidden && !menu.contains(event.target)) closeMenu();
-        if (!listMenu.hidden && !listMenu.contains(event.target)) closeListMenu();
+        if (!menu.hidden && !menu.contains(/** @type {Node} */ (event.target))) closeMenu();
+        if (!listMenu.hidden && !listMenu.contains(/** @type {Node} */ (event.target))) closeListMenu();
     });
     table.addEventListener('scroll', () => { closeMenu(); closeListMenu(); });
     query.addEventListener('input', () => {

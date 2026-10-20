@@ -3,7 +3,6 @@
 // Communicates with the extension host via vscode.postMessage / message events.
 
 (function () {
-    // @ts-ignore
     const vscode = acquireVsCodeApi();
 
     const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById('screen'));

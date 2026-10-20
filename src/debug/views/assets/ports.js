@@ -1,6 +1,5 @@
 // @ts-check
 (function () {
-    // @ts-ignore
     const vscode = acquireVsCodeApi();
     const status = /** @type {HTMLElement} */ (document.getElementById('status'));
     let generation = 0;

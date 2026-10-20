@@ -15,12 +15,14 @@ version admitted by a caret range. Raise both intentionally when adopting APIs.
 
 From the repository root (`C:\Work\Programming\v6vscode`):
 
-1. `npm run ci` checks host/API-floor compilation, browser-shared compilation,
+1. `npm run ci` checks host/API-floor compilation, browser-shared ESM compilation,
+   every shipped browser entry point through `npm run check:browser`,
    lint, deterministic unit tests (including boundaries/manifest), and regressions.
 2. `npm run test:integration:minimum` downloads/runs the declared floor.
 3. `npm run test:integration` uses current stable (or `V6_VSCODE_VERSION`).
 4. `npm run test:integration:packaged` tests installed VSIX resources, including
-   CSP-restricted numeric ESM execution. Pass `--minimum` directly to the compiled
+   CSP-restricted numeric/matcher/address ESM execution and the actual Scripts and
+   Memory Edits entry points with their relative imports. Pass `--minimum` directly to the compiled
    runner after packaging to combine packaged and minimum testing.
 
 Live debugger tests require `V6EMUL`; startup/resource smoke runs without it.
@@ -42,3 +44,14 @@ Manifest tests check command/menu IDs, settings constants, debugger type, API
 floor/type pin/lockfile agreement and shipped browser resource rules. Internal
 commands need not be contributed to the Command Palette. Tests fail on duplicate
 or unknown contributed/menu commands instead of silently accepting drift.
+
+## Browser build boundary
+
+`tsconfig.browser-shared.json` emits strict, browser-safe shared TypeScript into
+`out/webview/` as ESM. Host consumers import the same source for CommonJS output.
+The browser-only `tsconfig.browser.json` checks all ten asset JavaScript entry
+points with DOM/ES2022 libraries and `types: []`; it does not emit or admit Node
+globals. `src/webview/vscode-webview.d.ts` describes the isolated VS Code webview
+API. JavaScript checking is incremental (`strict: false`), not an assertion of
+fully typed message payloads or null-safe generated markup. No blanket browser
+type suppressions are permitted. Panel infrastructure remains separate roadmap work.

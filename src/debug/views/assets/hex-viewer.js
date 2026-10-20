@@ -1,6 +1,5 @@
 // @ts-check
 (function () {
-    // @ts-ignore
     const vscode = acquireVsCodeApi();
     const ROW_HEIGHT = 24;
     const ROW_COUNT = 4096;
@@ -118,7 +117,7 @@
         const moves = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -16, ArrowDown: 16, PageUp: -16 * Math.floor(viewport.clientHeight / ROW_HEIGHT), PageDown: 16 * Math.floor(viewport.clientHeight / ROW_HEIGHT) };
         const delta = moves[event.key]; if (delta === undefined) return; event.preventDefault(); navigateFocus(Math.max(0, Math.min(0xFFFF, address + delta)));
     }
-    function navigateFocus(address) { viewport.scrollTop = Math.floor(address / 16) * ROW_HEIGHT; render(); requestAnimationFrame(() => rows.querySelectorAll('.byte')[address % 16 + OVERSCAN * 16]?.focus()); }
+    function navigateFocus(address) { viewport.scrollTop = Math.floor(address / 16) * ROW_HEIGHT; render(); requestAnimationFrame(() => (/** @type {NodeListOf<HTMLElement>} */ (rows.querySelectorAll('.byte')))[address % 16 + OVERSCAN * 16]?.focus()); }
 
     function startByteEdit(address, value) {
         byteEdit = { space: selectedSpace, address, expression: `0x${value.toString(16).toUpperCase().padStart(2, '0')}`, previousValue: value, submitting: false, message: '' };

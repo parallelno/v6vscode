@@ -2,7 +2,7 @@ import * as crypto from 'crypto';
 import * as vscode from 'vscode';
 import { errorDiagnostic } from '../../emulator/protocol/protocol-result';
 import { SessionCoordinator } from '../../emulator/session/session-coordinator';
-import { globalAddressMemoryLocation, memorySpaceLabel } from '../../emulator/memory/memory-space';
+import { globalAddressMemoryLocation, memorySpaceLabel } from '../../shared/memory-space';
 import { Logger } from '../../platform/logging/logger';
 import { MemoryEditService } from '../memory-edits/memory-edit-service';
 import { HexViewerProvider } from './hex-viewer-provider';

@@ -1,6 +1,6 @@
 # Architecture, Code Reuse, and Maintainability Improvement Plan
 
-**Status:** Approved for staged implementation; R01-R04 complete in stage 1; R05/R06 complete as a two-feature pilot in stage 2; R07 complete in stage 3; R08 complete in stage 4; R09 complete in stage 5; R10 complete in stage 6; R11 complete in stage 7; R12 complete in stage 8; R13 complete in stage 9. R14-R24 remain pending.
+**Status:** Approved for staged implementation; R01-R04 complete in stage 1; R05/R06 complete as a two-feature pilot in stage 2; R07 complete in stage 3; R08 complete in stage 4; R09 complete in stage 5; R10 complete in stage 6; R11 complete in stage 7; R12 complete in stage 8; R13 complete in stage 9; R14 complete in stage 10; R15 complete in stage 11. R16-R24 remain pending.
 **Audit date:** 2026-10-18 (workspace session; some validation timestamps are 2026-10-19 UTC).
 **Owner:** v6vscode maintainers.
 **Repository:** `C:\Work\Programming\v6vscode`.
@@ -137,7 +137,19 @@ Verification: 730 unit tests, zero skips; 62 regressions; seven minimum-version 
 
 Limitations: the facade types describe the supported DAP subset, not an imported third-party protocol library or exhaustive runtime schema validator. Data-watchpoint CRUD remains delegated to WatchpointService. Source location selection and editor decoration presentation remain in the adapter; broader project/program/navigation consolidation remains R18. Controls reject stale session work but do not replay mutations or cancel already-sent emulator commands.
 
-**Next stage:** R15 broader checked browser build/migration. R16-R24 remain separate roadmap work.
+Stage 10 commit: `06d0bec` — `Coordinate debugger breakpoints and acknowledged execution policies`.
+
+## Implementation progress — stage 11 (R15)
+
+The normal compile/prepublish/CI path now emits every pure shared TypeScript module as browser ESM and typechecks all ten shipped browser JavaScript entry points with DOM/ES2022 libraries and no Node/extension-host globals. Browser-only acquireVsCodeApi has a local declaration; old suppressions are removed. Existing DOM query/event-target and tuple types are explicit. Hardware Statistics blur/scroll callbacks now pass the intended default focus-restoration argument rather than an event object. Browser checking is incremental checkJs (not blanket strict JavaScript conversion); host/shared TypeScript remains strict.
+
+Moved script-name matching and memory-space mapping to the shared browser-safe boundary and migrated all host/test imports directly, with no old-path re-export shims. Scripts actually imports the shared matcher, replacing its local wildcard algorithm; Memory Edits actually imports global address mapping/labels instead of repeating bank arithmetic. Numeric parsing remains shared by its existing host/browser consumers. Scripts uses module loading, shipped shared resource roots and a CSP allowing those resources. Browser budgets, field validation, and per-feature policies remain local.
+
+Verification: 733 unit tests, zero skips; 62 regressions; 26 focused compiled tests; eight packaged current-version and eight packaged minimum-version Extension Host/emulator tests; three live conformance tests. CI/host/browser/shared/full test compilation pass with zero lint errors and 26 warnings. Host-versus-ESM vectors cover numeric literals, wildcard/substring semantics and memory bank round-trips; manifest gates require browser checking. Packaged CSP tests execute the shared exports and the actual Scripts/Memory Edits entry points with real relative imports. Existing debugger value and C stepping tests remain green.
+
+Limitations: browser message payloads remain incrementally typed; this stage does not introduce exhaustive runtime message schemas or a UI framework. DOM existence assumptions follow the generated panel markup; strict-null browser conversion and reusable menu/editor/panel infrastructure remain separate R16/R17 work. No UI layout, public commands, project schema or emulator IPC schema changed.
+
+**Next stage:** R16 webview document/panel/message infrastructure and RefreshController pilot for Performance + Memory Edits, then R17 shared browser interaction helpers. R18-R24 remain separate roadmap work.
 
 ## 1. Executive assessment
 
