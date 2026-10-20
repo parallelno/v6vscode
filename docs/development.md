@@ -40,6 +40,9 @@ npm run package          # produces v6vscode-<version>.vsix
 
 The `.vscodeignore` file excludes `src/`, `test/`, `design/`, `temp/`, `docs/`, source maps, and other dev-only files from the packaged `.vsix`.
 
+Release publishing is deliberately separate from packaging. See [Publishing](publishing.md)
+for the fail-closed `npm run publish:dry-run` / `npm run publish:marketplace` workflow.
+
 ## Testing
 
 ```bash

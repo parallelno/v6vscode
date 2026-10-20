@@ -16,6 +16,17 @@
     "Programming Languages",
     "Other"
   ],
+  "keywords": [
+    "vector-06c",
+    "vector",
+    "8080",
+    "i8080",
+    "assembler",
+    "emulator",
+    "retro computing",
+    "debugger"
+  ],
+  "icon": "images/icon2.png",
   "main": "./out/extension.js",
   "activationEvents": [
     "workspaceContains:**/*.project.json",
@@ -548,7 +559,9 @@
     "test:all": "npm run test:unit && npm run test:regression",
     "ci": "npm run compile && npm run lint && npm run test:core && npm run test:all",
     "vscode:prepublish": "npm run compile",
-    "package": "vsce package"
+    "package": "vsce package",
+    "publish:dry-run": "node scripts/publish.cjs",
+    "publish:marketplace": "node scripts/publish.cjs --publish"
   },
   "devDependencies": {
     "@types/chai": "^5.2.3",
