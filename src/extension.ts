@@ -40,7 +40,7 @@ import { createLanguageServices } from './language/language-services';
 import { V6emulLocator } from './emulator/launcher/v6emul-locator';
 import { V6emulLauncher } from './emulator/launcher/v6emul-launcher';
 import { IpcClient } from './emulator/client/ipc-client';
-import { EmulatorLifecycle } from './emulator/lifecycle/emulator-lifecycle';
+import { SessionCoordinator } from './emulator/session/session-coordinator';
 import { EmulatorPanel } from './emulator/panel/emulator-panel';
 import { EmulatorSettingsController } from './emulator/panel/emulator-settings-controller';
 import { EmulatorSettingsPanel } from './emulator/panel/emulator-settings-panel';
@@ -116,7 +116,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
     const launcher = new V6emulLauncher(processRunner, logger, serverOutput);
     const ipcClient = new IpcClient(logger);
-    const lifecycle = new EmulatorLifecycle(locator, launcher, ipcClient, logger, pathService);
+    const lifecycle = new SessionCoordinator(locator, launcher, ipcClient, logger, pathService);
     shutdownExtension = async () => {
         try { await lifecycle.shutdown(); }
         finally { store.dispose(); }

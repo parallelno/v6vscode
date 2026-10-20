@@ -2,12 +2,12 @@ import { expect } from 'chai';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { EmulatorLifecycle } from '../../../src/emulator/lifecycle/emulator-lifecycle';
+import { SessionCoordinator } from '../../../src/emulator/session/session-coordinator';
 import { IpcCommand } from '../../../src/emulator/protocol/ipc-commands';
 
-describe('EmulatorLifecycle session ownership', () => {
-    function makeLifecycle(): EmulatorLifecycle {
-        return new EmulatorLifecycle(
+describe('SessionCoordinator session ownership', () => {
+    function makeLifecycle(): SessionCoordinator {
+        return new SessionCoordinator(
             {} as any,
             {} as any,
             { connected: false, disconnect: () => {} } as any,
@@ -76,7 +76,7 @@ describe('EmulatorLifecycle session ownership', () => {
     it('disconnects a debug-owned session without terminating the emulator process', () => {
         let disconnected = false;
         let killed = false;
-        const lifecycle = new EmulatorLifecycle(
+        const lifecycle = new SessionCoordinator(
             {} as any,
             {} as any,
             { connected: true, disconnect: () => { disconnected = true; } } as any,
@@ -129,7 +129,7 @@ describe('EmulatorLifecycle session ownership', () => {
                 ? { ok: true, data: serverInfo }
                 : { ok: true },
         };
-        const lifecycle = new EmulatorLifecycle(
+        const lifecycle = new SessionCoordinator(
             { resolve: () => 'v6emul' } as any,
             {
                 launch: (request: any) => {
@@ -188,7 +188,7 @@ describe('EmulatorLifecycle session ownership', () => {
                 return { ok: true };
             },
         };
-        const lifecycle = new EmulatorLifecycle(
+        const lifecycle = new SessionCoordinator(
             { resolve: () => 'v6emul' } as any,
             {
                 launch: (request: any) => ({
@@ -223,7 +223,7 @@ describe('EmulatorLifecycle session ownership', () => {
         const romPath = path.join(tempDir, 'test.rom');
         fs.writeFileSync(romPath, Buffer.from([0x00, 0x76]));
         const requests: Array<{ command: IpcCommand; data: any }> = [];
-        const lifecycle = new EmulatorLifecycle(
+        const lifecycle = new SessionCoordinator(
             {} as any,
             {} as any,
             {
@@ -260,7 +260,7 @@ describe('EmulatorLifecycle session ownership', () => {
         const romPath = path.join(tempDir, 'test.rom');
         fs.writeFileSync(romPath, Buffer.from([0x00, 0x76]));
         const requests: Array<{ command: IpcCommand; data: any }> = [];
-        const lifecycle = new EmulatorLifecycle(
+        const lifecycle = new SessionCoordinator(
             {} as any,
             {} as any,
             {

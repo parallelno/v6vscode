@@ -1,7 +1,7 @@
 import * as crypto from 'crypto';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
+import { SessionCoordinator } from '../../emulator/session/session-coordinator';
 import { ActiveProjectService } from '../../project/active/active-project-service';
 import { Logger } from '../../platform/logging/logger';
 import { DebugSymbolService, IndexedSymbol } from '../metadata/debug-symbol-service';
@@ -31,7 +31,7 @@ export class SymbolsPanel implements vscode.Disposable {
 
     constructor(
         private readonly extensionUri: vscode.Uri,
-        private readonly lifecycle: EmulatorLifecycle,
+        private readonly lifecycle: SessionCoordinator,
         private readonly activeProjectService: ActiveProjectService,
         private readonly workspaceState: vscode.Memento,
         private readonly symbols: DebugSymbolService,

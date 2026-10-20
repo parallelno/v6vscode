@@ -105,6 +105,8 @@ Verification: 710 unit tests, zero skips; 62 regressions; seven minimum-version 
 
 Limitations: content checks read/hash inputs on each requested load for correctness, not speculative performance; cache size bounds retained versions, not a strict heap-byte budget. External filesystem edits are observed on reload (no background watcher introduced); editor source changes invalidate definitions immediately. Missing executable validation retains the standalone loader's existing behavior. No automatic reinterpretation of a running session's old metadata as a newly built ROM is attempted; a debug launch obtains a versioned handle for its load. Full artifact/build event coordination can extend this foundation without reintroducing global mutable selection.
 
+Follow-up cleanup: removed the temporary EmulatorLifecycle import/name shim after R11. Production and tests now refer directly to SessionCoordinator; related types come from their real owner. No runtime behavior changes. CI passes with 710 unit tests, 62 regressions and the existing 66 lint warnings; full test typecheck passes. Historical audit references below remain as evidence of the original snapshot.
+
 **Next stage:** R12 validated memory backend with separate stopped/live adapters, then R13 typed-value domain ownership. R14-R24 remain separate roadmap work.
 
 ## 1. Executive assessment

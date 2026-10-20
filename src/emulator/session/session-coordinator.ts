@@ -26,7 +26,7 @@ const DEFAULT_TCP_PORT = 9876;
 const CONNECT_RETRY_DELAY_MS = 300;
 const CONNECT_MAX_RETRIES = 10;
 
-// EmulatorLifecycle is intentionally observed by many subsystems: the debug
+// SessionCoordinator is intentionally observed by many subsystems: the debug
 // services (scripts, ports, watchpoints, memory edits, performance, trace log,
 // hardware statistics) each register a state listener, as do the panels and
 // providers (emulator display, hex viewer, memory edits, performance, trace

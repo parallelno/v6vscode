@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { IpcClient } from '../../emulator/client/ipc-client';
-import { EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
+import { SessionCoordinator } from '../../emulator/session/session-coordinator';
 import {
     WatchpointAddRequest,
     WatchpointEditRequest,
@@ -25,7 +25,7 @@ export class WatchpointService extends EventEmitter {
     private readonly stateListener: () => void;
 
     constructor(
-        private readonly lifecycle: EmulatorLifecycle,
+        private readonly lifecycle: SessionCoordinator,
         private readonly client: IpcClient,
     ) {
         super();

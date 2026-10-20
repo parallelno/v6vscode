@@ -1,6 +1,6 @@
 import * as crypto from 'crypto';
 import * as vscode from 'vscode';
-import { EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
+import { SessionCoordinator } from '../../emulator/session/session-coordinator';
 import { ScriptInput, ScriptSnapshot } from '../../emulator/protocol/debug-models';
 import { Logger } from '../../platform/logging/logger';
 import { ScriptService } from '../scripts/script-service';
@@ -20,7 +20,7 @@ export class ScriptsPanel implements vscode.Disposable {
 
     constructor(
         private readonly extensionUri: vscode.Uri,
-        private readonly lifecycle: EmulatorLifecycle,
+        private readonly lifecycle: SessionCoordinator,
         private readonly service: ScriptService,
         private readonly workspaceState: vscode.Memento,
         private readonly logger: Logger,

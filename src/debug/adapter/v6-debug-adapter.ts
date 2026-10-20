@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import type { SessionLease } from '../../emulator/session/session-coordinator';
 import type { CommandSender } from '../../emulator/session/session-operations';
 import { EmulatorProcess } from '../../emulator/launcher/v6emul-launcher';
-import { DebugLaunchRequest, EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
+import { DebugLaunchRequest, SessionCoordinator } from '../../emulator/session/session-coordinator';
 import type { EmulatorPanel } from '../../emulator/panel/emulator-panel';
 import {
     DebugResetRequest,
@@ -259,7 +259,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private readonly variablesHandles = new DapHandleStore<VariablesHandle>();
 
     constructor(
-        private readonly lifecycle: EmulatorLifecycle,
+        private readonly lifecycle: SessionCoordinator,
         private readonly emulatorPanel: EmulatorPanel,
         private readonly logger: Logger,
         private readonly pathService: PathService,

@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import { IpcClient } from '../client/ipc-client';
 import { IpcCommand, GetFddInfoResponse, GetFddImageResponse } from '../protocol/ipc-commands';
 import { Logger } from '../../platform/logging/logger';
-import type { StopContext } from '../lifecycle/emulator-lifecycle';
+import type { StopContext } from '../session/session-coordinator';
 import type { OperationScope } from '../../platform/async/scoped-task-queue';
 
 /**

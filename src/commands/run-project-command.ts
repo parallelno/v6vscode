@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { V6Project } from '../project/model/v6-project';
 import { ActiveProjectService } from '../project/active/active-project-service';
-import { EmulatorLifecycle } from '../emulator/lifecycle/emulator-lifecycle';
+import { SessionCoordinator } from '../emulator/session/session-coordinator';
 import { EmulatorPanel } from '../emulator/panel/emulator-panel';
 import { IpcClient } from '../emulator/client/ipc-client';
 import { Logger } from '../platform/logging/logger';
@@ -13,7 +13,7 @@ import { showV6Error } from '../platform/errors/error-ux';
 export class RunProjectCommand {
     constructor(
         private readonly activeProjectService: ActiveProjectService,
-        private readonly lifecycle: EmulatorLifecycle,
+        private readonly lifecycle: SessionCoordinator,
         _client: IpcClient,
         private readonly panel: EmulatorPanel,
         private readonly logger: Logger,

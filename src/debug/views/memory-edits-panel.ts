@@ -1,7 +1,7 @@
 import * as crypto from 'crypto';
 import * as vscode from 'vscode';
 import { errorDiagnostic } from '../../emulator/protocol/protocol-result';
-import { EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
+import { SessionCoordinator } from '../../emulator/session/session-coordinator';
 import { globalAddressMemoryLocation, memorySpaceLabel } from '../../emulator/memory/memory-space';
 import { Logger } from '../../platform/logging/logger';
 import { MemoryEditService } from '../memory-edits/memory-edit-service';
@@ -23,7 +23,7 @@ export class MemoryEditsPanel implements vscode.Disposable {
 
     constructor(
         private readonly extensionUri: vscode.Uri,
-        private readonly lifecycle: EmulatorLifecycle,
+        private readonly lifecycle: SessionCoordinator,
         private readonly service: MemoryEditService,
         private readonly hexViewer: HexViewerProvider,
         private readonly workspaceState: vscode.Memento,

@@ -24,7 +24,7 @@ Templates live in `src/templates/` and use `{{key}}` placeholder expansion.
 1. Resolves the active project via `ActiveProjectService` (auto-selects if one, QuickPick if multiple).
 2. Validates the executable file exists on disk. Throws `V6Error(EXECUTABLE_NOT_FOUND)` if missing.
 3. If the emulator is already running — hot-reloads the executable via `LOAD_ROM` or `MOUNT_FDD` IPC commands without restarting the emulator process.
-4. If no emulator is running — launches via `EmulatorLifecycle.start()`.
+4. If no emulator is running — launches via `SessionCoordinator.start()`.
 5. Reveals or creates the emulator webview panel.
 
 ## Debug Stepping

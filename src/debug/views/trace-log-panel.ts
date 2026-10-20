@@ -2,7 +2,7 @@ import { formatHex } from '../../shared/numbers';
 import * as crypto from 'crypto';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
+import { SessionCoordinator } from '../../emulator/session/session-coordinator';
 import { LanguagePresentationService, PresentedLine } from '../../language/language-presentation-service';
 import { SourceDocumentContext, SourceSymbolLinkService } from '../../language/symbols/symbol-link-service';
 import { Logger } from '../../platform/logging/logger';
@@ -52,7 +52,7 @@ export class TraceLogPanel implements vscode.Disposable {
 
     constructor(
         private readonly extensionUri: vscode.Uri,
-        private readonly lifecycle: EmulatorLifecycle,
+        private readonly lifecycle: SessionCoordinator,
         private readonly service: TraceLogService,
         private readonly symbols: DebugSymbolService,
         private readonly presentation: LanguagePresentationService,

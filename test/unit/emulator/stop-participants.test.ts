@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { EmulatorLifecycle } from '../../../src/emulator/lifecycle/emulator-lifecycle';
+import { SessionCoordinator } from '../../../src/emulator/session/session-coordinator';
 import { FddPersistence } from '../../../src/emulator/persistence/fdd-persistence';
 import { IpcCommand } from '../../../src/emulator/protocol/ipc-commands';
 
@@ -37,7 +37,7 @@ describe('Awaited emulator stop participants', () => {
             },
         };
         const logger = { info() {}, debug() {}, warn() {}, error() {} };
-        const lifecycle = new EmulatorLifecycle({ resolve: () => 'emulator' } as any,
+        const lifecycle = new SessionCoordinator({ resolve: () => 'emulator' } as any,
             { launch: () => { exited = deferred(); return { spawnResult: { process: { kill() {} }, exitPromise: exited.promise } }; } } as any,
             client as any, logger as any, { resolveExtensionPath: () => 'boot.bin' } as any);
         const persistence = new FddPersistence(client as any, logger as any);

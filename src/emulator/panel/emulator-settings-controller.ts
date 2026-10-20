@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { V6Project } from '../../project/model/v6-project';
 import { IpcClient } from '../client/ipc-client';
-import { EmulatorLifecycle } from '../lifecycle/emulator-lifecycle';
+import { SessionCoordinator } from '../session/session-coordinator';
 import { IpcCommand, SPEED_VALUES } from '../protocol/ipc-commands';
 import { DisplayMode } from './emulator-viewmodel';
 import { SETTING_SCRIPT_OVERLAYS_FONT_SIZE, SETTING_SCRIPT_OVERLAYS_HIDDEN } from '../../config/contribution-ids';
@@ -31,7 +31,7 @@ export class EmulatorSettingsController implements vscode.Disposable {
     readonly onDidChange = this.changeEmitter.event;
 
     constructor(
-        private readonly lifecycle: EmulatorLifecycle,
+        private readonly lifecycle: SessionCoordinator,
         private readonly client: IpcClient,
         private readonly loadProject: () => Promise<V6Project | undefined>,
         private readonly saveProject: (project: V6Project) => Promise<void>,

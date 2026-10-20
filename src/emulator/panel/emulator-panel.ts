@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import * as path from 'path';
 import { V6Project } from '../../project/model/v6-project';
-import { EmulatorLifecycle } from '../lifecycle/emulator-lifecycle';
+import { SessionCoordinator } from '../session/session-coordinator';
 import { IpcClient } from '../client/ipc-client';
 import { IpcCommand } from '../protocol/ipc-commands';
 import { decodeFrameRaw } from '../protocol/ipc-codec';
@@ -25,7 +25,7 @@ export class EmulatorPanel implements vscode.Disposable {
     private readonly store = new DisposableStore();
     private readonly viewModel = new EmulatorViewModel();
     private readonly extensionUri: vscode.Uri;
-    private readonly lifecycle: EmulatorLifecycle;
+    private readonly lifecycle: SessionCoordinator;
     private readonly client: IpcClient;
     private readonly logger: Logger;
     private frameLoopActive = false;
@@ -40,7 +40,7 @@ export class EmulatorPanel implements vscode.Disposable {
 
     constructor(
         extensionUri: vscode.Uri,
-        lifecycle: EmulatorLifecycle,
+        lifecycle: SessionCoordinator,
         client: IpcClient,
         logger: Logger,
         private readonly settings: EmulatorSettingsController,

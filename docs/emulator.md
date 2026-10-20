@@ -25,14 +25,14 @@ Concurrent connection attempts share one promise and disconnect cancels a pendin
 
 ## Lifecycle (`src/emulator/lifecycle/`)
 
-- **`emulator-lifecycle.ts`** — Shared owner for Run Project and debug-launch processes, the single emulator socket, and execution state. Debug launch chooses a free port and lends the same `IpcClient` to the DAP adapter and display panel. Closing the display does not terminate a debug-owned session. States: `stopped`, `launching`, `connected`, `running`; ownership is `run` or `debug`.
+- **`session-coordinator.ts`** — Shared owner for Run Project and debug-launch processes, the single emulator socket, and execution state. Debug launch chooses a free port and lends the same `IpcClient` to the DAP adapter and display panel. Closing the display does not terminate a debug-owned session. States: `stopped`, `launching`, `connected`, `running`; ownership is `run` or `debug`.
 
 ## Panel (`src/emulator/panel/`)
 
 Webview-based display surface for the running emulator. Execution control remains in VS Code's standard debug toolbar.
 
 - **`emulator-viewmodel.ts`** — Tracks panel state: `running`, `speed`, `viewMode`. Defines three display modes (`full` 768×312, `border` 544×288, `borderless` 512×256), forwards native-cropped RGBA frames, and produces overlay messages. Typed message types: `PanelMessage` (extension → webview) and `WebviewMessage` (webview → extension).
-- **`emulator-panel.ts`** — Creates and manages a `vscode.WebviewPanel`. Generates HTML with CSP nonce, routes `WebviewMessage` from the webview to `EmulatorLifecycle`/`IpcClient`, drives a frame polling loop (~50 fps) that calls `GET_FRAME_RAW`, crops/converts via the viewmodel, and posts `PanelMessage` to the webview.
+- **`emulator-panel.ts`** — Creates and manages a `vscode.WebviewPanel`. Generates HTML with CSP nonce, routes `WebviewMessage` from the webview to `SessionCoordinator`/`IpcClient`, drives a frame polling loop (~50 fps) that calls `GET_FRAME_RAW`, crops/converts via the viewmodel, and posts `PanelMessage` to the webview.
 - **`emulator-settings-controller.ts`** — Shared authority for Speed and Display mode validation, emulator IPC updates, and active-project persistence.
 - **`emulator-settings-panel.ts`** — Dedicated Settings editor panel for Speed and Display mode.
 - **`assets/panel.html`** — Display webview shell: canvas viewport and error bar.

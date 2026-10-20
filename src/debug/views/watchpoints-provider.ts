@@ -1,7 +1,7 @@
 import * as crypto from 'crypto';
 import * as vscode from 'vscode';
 import { ActiveProjectService } from '../../project/active/active-project-service';
-import { EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
+import { SessionCoordinator } from '../../emulator/session/session-coordinator';
 import { MemoryService } from '../../emulator/memory/memory-service';
 import {
     globalAddressMemoryLocation,
@@ -38,7 +38,7 @@ export class WatchpointsProvider implements vscode.Disposable {
 
     constructor(
         private readonly extensionUri: vscode.Uri,
-        private readonly lifecycle: EmulatorLifecycle,
+        private readonly lifecycle: SessionCoordinator,
         private readonly service: WatchpointService,
         private readonly hexViewer: HexViewerProvider,
         private readonly activeProjectService: ActiveProjectService,

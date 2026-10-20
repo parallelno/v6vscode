@@ -1,6 +1,6 @@
 import * as crypto from 'crypto';
 import * as vscode from 'vscode';
-import { EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
+import { SessionCoordinator } from '../../emulator/session/session-coordinator';
 import { FddPersistence } from '../../emulator/persistence/fdd-persistence';
 import { Logger } from '../../platform/logging/logger';
 import {
@@ -26,7 +26,7 @@ export class HardwareStatisticsProvider implements vscode.WebviewViewProvider, v
 
     constructor(
         private readonly extensionUri: vscode.Uri,
-        private readonly lifecycle: EmulatorLifecycle,
+        private readonly lifecycle: SessionCoordinator,
         private readonly service: HardwareStatisticsService,
         private readonly fddPersistence: FddPersistence,
         private readonly logger: Logger,

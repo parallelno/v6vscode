@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { errorDiagnostic, diagnosticField } from '../../emulator/protocol/protocol-result';
 import { ValidationError } from '../../shared/validation';
-import { EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
+import { SessionCoordinator } from '../../emulator/session/session-coordinator';
 import { Logger } from '../../platform/logging/logger';
 import { ActiveProjectService } from '../../project/active/active-project-service';
 import { PerformanceService } from '../performance/performance-service';
@@ -35,7 +35,7 @@ export class PerformancePanel implements vscode.Disposable {
 
     constructor(
         private readonly extensionUri: vscode.Uri,
-        private readonly lifecycle: EmulatorLifecycle,
+        private readonly lifecycle: SessionCoordinator,
         private readonly service: PerformanceService,
         private readonly symbols: DebugSymbolService,
         private readonly activeProjectService: ActiveProjectService,

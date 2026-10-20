@@ -2,7 +2,7 @@ import * as crypto from 'crypto';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { ActiveProjectService } from '../../project/active/active-project-service';
-import { EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
+import { SessionCoordinator } from '../../emulator/session/session-coordinator';
 import { IpcClient } from '../../emulator/client/ipc-client';
 import { MemoryService } from '../../emulator/memory/memory-service';
 import {
@@ -64,7 +64,7 @@ export class HexViewerProvider implements vscode.Disposable {
 
     constructor(
         private readonly extensionUri: vscode.Uri,
-        private readonly lifecycle: EmulatorLifecycle,
+        private readonly lifecycle: SessionCoordinator,
         client: IpcClient,
         private readonly memoryEdits: MemoryEditService,
         private readonly activeProjectService: ActiveProjectService,

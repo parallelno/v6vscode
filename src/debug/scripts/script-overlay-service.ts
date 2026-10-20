@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { IpcClient } from '../../emulator/client/ipc-client';
-import { EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
+import { SessionCoordinator } from '../../emulator/session/session-coordinator';
 import { ScriptOverlayItem, ScriptOverlayLimits } from '../../emulator/protocol/debug-models';
 import { GetServerInfoResponse, IpcCommand, IpcResponse } from '../../emulator/protocol/ipc-commands';
 import { validateScriptOverlayServer } from '../../emulator/protocol/ipc-server-info';
@@ -18,7 +18,7 @@ export class ScriptOverlayService extends EventEmitter {
     private readonly sessionResetListener: () => void;
 
     constructor(
-        private readonly lifecycle: EmulatorLifecycle,
+        private readonly lifecycle: SessionCoordinator,
         private readonly client: IpcClient,
         scripts: ScriptService,
     ) {

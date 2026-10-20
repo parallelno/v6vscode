@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { EmulatorLifecycle } from '../../emulator/lifecycle/emulator-lifecycle';
+import { SessionCoordinator } from '../../emulator/session/session-coordinator';
 import type { EmulatorPanel } from '../../emulator/panel/emulator-panel';
 import { Logger } from '../../platform/logging/logger';
 import { PathService } from '../../platform/files/path-service';
@@ -21,7 +21,7 @@ export class V6DebugAdapterFactory implements vscode.DebugAdapterDescriptorFacto
     private activeAdapter: V6DebugAdapter | undefined;
 
     constructor(
-        private readonly lifecycle: EmulatorLifecycle,
+        private readonly lifecycle: SessionCoordinator,
         private readonly emulatorPanel: EmulatorPanel,
         private readonly logger: Logger,
         private readonly pathService: PathService,
@@ -84,7 +84,7 @@ export class V6DebugAdapterFactory implements vscode.DebugAdapterDescriptorFacto
  */
 export function registerDebugAdapter(
     context: vscode.ExtensionContext,
-    lifecycle: EmulatorLifecycle,
+    lifecycle: SessionCoordinator,
     emulatorPanel: EmulatorPanel,
     logger: Logger,
     pathService: PathService,
