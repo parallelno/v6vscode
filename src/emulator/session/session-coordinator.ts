@@ -1,4 +1,6 @@
-import * as fs from 'fs';
+import { ProgramLoader } from './program-loader';
+import { normalizeRun } from '../../project/model/normalized-run';
+import { frameMode as resolveFrameMode, SPEED_VALUES } from '../../shared/emulator-settings';
 import * as net from 'net';
 import { EventEmitter } from 'events';
 import { V6Project } from '../../project/model/v6-project';
@@ -10,8 +12,6 @@ import {
     IpcCommand,
     PingResponse,
     IpcResponse,
-    SetMemRequest,
-    SPEED_VALUES,
 } from '../protocol/ipc-commands';
 import { getServerInfo, validateDebuggerServer } from '../protocol/ipc-server-info';
 import { Logger } from '../../platform/logging/logger';
@@ -81,6 +81,7 @@ export class SessionCoordinator extends EventEmitter {
     private readonly client: IpcClient;
     private readonly logger: Logger;
     private readonly pathService: PathService;
+    private readonly programLoader = new ProgramLoader();
 
     private emulatorProcess: EmulatorProcess | null = null;
     private _state: EmulatorState = 'stopped';
@@ -209,9 +210,10 @@ export class SessionCoordinator extends EventEmitter {
         this.mode = 'run';
         this.setState('launching');
         this._owner = 'run';
-        this.recordLoadedProgram(project.run.executable, project.run.fddReadOnly ?? false);
 
         try {
+            const image = this.programLoader.prepare(project.run, 'run-initial');
+            const run = image.run;
             const emulatorPath = this.locator.resolve();
             const port = DEFAULT_TCP_PORT;
 
@@ -219,18 +221,18 @@ export class SessionCoordinator extends EventEmitter {
                 ? project.run.bootRom
                 : this.pathService.resolveExtensionPath('res/boot/boots.bin');
 
-            const isRom = !project.run.executable.endsWith('.fdd');
+            const isRom = image.kind === 'rom';
             const romPath = isRom ? project.run.executable : undefined;
             const fddPath = !isRom ? project.run.executable : undefined;
 
             this.emulatorProcess = this.launcher.launch({
                 emulatorPath,
                 romPath,
-                loadAddr: project.run.loadAddr,
+                loadAddr: run.loadAddr,
                 bootRomPath,
                 fddPath,
                 fddAutoboot: fddPath ? true : undefined,
-                speed: project.run.speed,
+                speed: run.speed,
                 tcpPort: port,
             });
 
@@ -240,31 +242,13 @@ export class SessionCoordinator extends EventEmitter {
             const serverInfo = await this.negotiate(port, '127.0.0.1', false, id, true);
             const session = this.captureSession();
 
-            const frameMode = this.resolveFrameMode(project.run.viewMode);
-            await session.send(IpcCommand.SET_FRAME_MODE, { frameMode: frameMode.value });
+            const frameMode = resolveFrameMode(run.viewMode);
+            requireProtocolOk(IpcCommand.SET_FRAME_MODE, await session.send(IpcCommand.SET_FRAME_MODE, { frameMode: frameMode.value }), 'Unable to set display mode');
             this.updateFrameMode(frameMode.panelMode);
             await session.send(IpcCommand.SET_COLOR_FORMAT, { colorFormat: 0 });
 
-            // Load ROM or mount FDD via IPC
-            if (romPath) {
-                const romData = Array.from(fs.readFileSync(romPath));
-                const addr = project.run.loadAddr ? parseInt(project.run.loadAddr, 16) : 0x100;
-                await session.send(IpcCommand.LOAD_ROM, {
-                    data: romData,
-                    addr,
-                    autorun: true,
-                });
-                this.logger.info(`v6emul: ROM loaded at 0x${addr.toString(16)}`);
-            } else if (fddPath) {
-                const fddData = Array.from(fs.readFileSync(fddPath));
-                await session.send(IpcCommand.MOUNT_FDD, {
-                    data: fddData,
-                    driveIdx: 0,
-                    path: fddPath,
-                    autoBoot: true,
-                });
-                this.logger.info(`v6emul: FDD mounted from "${fddPath}"`);
-            }
+            await this.programLoader.load(image, 'run-initial', session, session);
+            this.recordLoadedProgram(run.executable, run.fddReadOnly);
 
             if (serverInfo.commands.includes(IpcCommand.DEBUG_ATTACH)) {
                 requireProtocolOk(IpcCommand.DEBUG_ATTACH, await session.send(IpcCommand.DEBUG_ATTACH, { data: true }), 'Unable to enable debugger');
@@ -272,10 +256,10 @@ export class SessionCoordinator extends EventEmitter {
             }
 
             // Set speed if specified
-            if (project.run.speed && SPEED_VALUES[project.run.speed] !== undefined) {
-                await session.send(IpcCommand.SET_CPU_SPEED, {
-                    speed: SPEED_VALUES[project.run.speed],
-                });
+            if (run.speed && SPEED_VALUES[run.speed] !== undefined) {
+                requireProtocolOk(IpcCommand.SET_CPU_SPEED, await session.send(IpcCommand.SET_CPU_SPEED, {
+                    speed: SPEED_VALUES[run.speed],
+                }), 'Unable to set emulator speed');
             }
 
             this.assertRequest(id);
@@ -317,7 +301,7 @@ export class SessionCoordinator extends EventEmitter {
                 emulatorPath: this.locator.resolve(),
                 tcpPort: port,
                 bootRomPath: request.bootRomPath,
-                speed: request.speed ?? '100%',
+                speed: normalizeRun({ executable: request.program, ...request }).speed,
             });
             const process = this.emulatorProcess;
             this.monitorProcess(process);
@@ -382,50 +366,18 @@ export class SessionCoordinator extends EventEmitter {
             throw new V6Error(ErrorCode.EMULATOR_LAUNCH_FAILED, 'Debug emulator is not connected');
         }
         const session = this.captureSession();
-
-        if (request.program.toLowerCase().endsWith('.fdd')) {
-            const fddData = Array.from(fs.readFileSync(request.program));
-            requireProtocolOk(IpcCommand.MOUNT_FDD, await session.send(IpcCommand.MOUNT_FDD, {
-                data: fddData,
-                driveIdx: 0,
-                path: request.program,
-                autoBoot: true,
-            }), 'Unable to mount debug FDD');
-            this.recordLoadedProgram(request.program, request.fddReadOnly ?? false);
-            this.logger.info(`v6emul: debug FDD mounted from "${request.program}"`);
-            return;
-        }
-
-        const romData = Array.from(fs.readFileSync(request.program));
-        const addr = request.loadAddr ? parseInt(request.loadAddr, 16) : 0x100;
-        requireProtocolOk(IpcCommand.LOAD_ROM, await session.send(IpcCommand.LOAD_ROM, {
-            data: romData,
-            addr,
-            autorun: false,
-        }), 'Unable to load debug ROM');
-        this.recordLoadedProgram(request.program, request.fddReadOnly ?? false);
-        this.logger.info(`v6emul: debug ROM loaded at 0x${addr.toString(16)}`);
+        const image = this.programLoader.prepare({ executable: request.program, ...request }, 'debug-initial');
+        expected?.assertCurrent();
+        await this.programLoader.load(image, 'debug-initial', session, session);
+        this.recordLoadedProgram(image.run.executable, image.run.fddReadOnly);
     }
 
     async reloadDebugRom(request: DebugLaunchRequest, expected?: OperationScope): Promise<void> {
         expected?.assertCurrent();
-        if (!this.connected) {
-            throw new V6Error(ErrorCode.EMULATOR_LAUNCH_FAILED, 'Debug emulator is not connected');
-        }
-        if (!request.program.toLowerCase().endsWith('.rom')) {
-            throw new V6Error(ErrorCode.EMULATOR_LAUNCH_FAILED, 'Reload ROM is only available for ROM debug sessions');
-        }
-
-        const data: SetMemRequest = {
-            data: Array.from(fs.readFileSync(request.program)),
-            addr: request.loadAddr ? parseInt(request.loadAddr, 16) : 0x100,
-            autorun: false,
-        };
-        const response = await this.captureSession().send(IpcCommand.SET_MEM, data, 5000, 'critical');
-        if (!response.ok) {
-            throw new V6Error(ErrorCode.EMULATOR_LAUNCH_FAILED, response.error ?? 'Unable to reload debug ROM');
-        }
-        this.logger.info(`v6emul: debug ROM reloaded at 0x${data.addr.toString(16)}`);
+        const session = this.captureSession();
+        const image = this.programLoader.prepare({ executable: request.program, ...request }, 'debug-replace');
+        expected?.assertCurrent();
+        await this.programLoader.load(image, 'debug-replace', session, session);
     }
 
     setExecutionRunning(running: boolean, expected?: OperationScope): void {
@@ -445,13 +397,9 @@ export class SessionCoordinator extends EventEmitter {
 
     async reloadRunProgram(project: V6Project): Promise<void> {
         const session = this.captureSession();
-        const bytes = Array.from(fs.readFileSync(project.run.executable));
-        const fdd = project.run.executable.toLowerCase().endsWith('.fdd');
-        const command = fdd ? IpcCommand.MOUNT_FDD : IpcCommand.LOAD_ROM;
-        const data = fdd ? { data: bytes, driveIdx: 0, path: project.run.executable, autoBoot: true }
-            : { data: bytes, addr: project.run.loadAddr ? parseInt(project.run.loadAddr, 16) : 0x100, autorun: true };
-        requireProtocolOk(command, await session.send(command, data), 'Unable to reload program');
-        this.recordLoadedProgram(project.run.executable, project.run.fddReadOnly ?? false);
+        const image = this.programLoader.prepare(project.run, 'run-reload');
+        await this.programLoader.load(image, 'run-reload', session, session);
+        this.recordLoadedProgram(image.run.executable, image.run.fddReadOnly);
     }
 
     registerStopParticipant(participant: StopParticipant): { dispose(): void } {
@@ -556,8 +504,8 @@ export class SessionCoordinator extends EventEmitter {
 
     async setFrameMode(frameMode: EmulatorFrameMode): Promise<void> {
         const session = this.captureSession();
-        const frameModeValue = frameMode === 'full' ? 0 : frameMode === 'border' ? 1 : 2;
-        await session.send(IpcCommand.SET_FRAME_MODE, { frameMode: frameModeValue });
+        const frameModeValue = resolveFrameMode(frameMode).value;
+        requireProtocolOk(IpcCommand.SET_FRAME_MODE, await session.send(IpcCommand.SET_FRAME_MODE, { frameMode: frameModeValue }), 'Unable to set display mode');
         this.updateFrameMode(frameMode);
     }
 
@@ -651,17 +599,6 @@ export class SessionCoordinator extends EventEmitter {
         if (this._frameMode !== frameMode) {
             this._frameMode = frameMode;
             this.emit('frameModeChange', frameMode);
-        }
-    }
-
-    private resolveFrameMode(viewMode: string | undefined): { value: number; panelMode: EmulatorFrameMode } {
-        switch (viewMode) {
-            case 'full':
-                return { value: 0, panelMode: 'full' };
-            case 'border':
-                return { value: 1, panelMode: 'border' };
-            default:
-                return { value: 2, panelMode: 'borderless' };
         }
     }
 

@@ -75,6 +75,8 @@ describe('Architecture and extension manifest contracts', () => {
                     else { seen.add(key); }
                 }
                 if (pure && edge.target === 'vscode' && !edge.typeOnly) { failures.push(`${relative}: runtime vscode import`); }
+                if (relative.startsWith('debug/views/') && relative !== 'debug/views/hex-viewer-provider.ts'
+                    && resolved === 'debug/views/hex-viewer-provider') { failures.push(`${relative}: concrete sibling navigation dependency`); }
                 if ((relative.startsWith('debug/values/') || relative.startsWith('language/')) && resolved.startsWith('debug/adapter/')) {
                     failures.push(`${relative}: domain/language depends on DAP adapter: ${resolved}`);
                 }

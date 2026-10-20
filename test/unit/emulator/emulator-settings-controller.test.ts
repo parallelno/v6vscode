@@ -25,7 +25,7 @@ describe('EmulatorSettingsController', () => {
         let saved: V6Project | undefined;
         const client = {
             connected,
-            send: async (command: IpcCommand, data: unknown) => { sends.push({ command, data }); },
+            send: async (command: IpcCommand, data: unknown) => { sends.push({ command, data }); return { ok: true }; },
         } as any;
         const lifecycle = {
             setFrameMode: async (mode: string) => { frameModes.push(mode); },
@@ -34,7 +34,7 @@ describe('EmulatorSettingsController', () => {
             lifecycle,
             client,
             async () => currentProject,
-            async value => { saved = value; },
+            async value => { saved = value; currentProject = value; },
         );
         return { controller, sends, frameModes, saved: () => saved };
     }
@@ -73,6 +73,16 @@ describe('EmulatorSettingsController', () => {
         await expectRejection(state.controller.setSpeed('turbo'), 'Unsupported emulator speed');
         await expectRejection(state.controller.setViewMode('wide'), 'Unsupported display mode');
         await expectRejection(state.controller.setSpeed('100%'), 'No active V6 project');
+    });
+
+    it('does not mutate the active project object when a settings save fails', async () => {
+        const current = project();
+        const controller = new EmulatorSettingsController({} as any, { connected: false } as any,
+            async () => current, async () => { throw new Error('disk full'); });
+        await expectRejection(controller.setSpeed('200%'), 'disk full');
+        expect(current.run.speed).to.equal('100%');
+        expect(controller.current.speed).to.equal('100%');
+        controller.dispose();
     });
 
     it('persists overlay preferences globally and refreshes from native configuration changes', async () => {

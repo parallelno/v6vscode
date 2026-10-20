@@ -22,7 +22,8 @@ import { evaluateSymbolExpression } from '../utilities/symbol-expression';
 import { Logger } from '../../platform/logging/logger';
 import { parseHexQuery, ParsedLocation } from './hex-viewer-query';
 import { HexViewerHostMessage, HexViewerWebviewMessage } from './hex-viewer-messages';
-import { revealDebugSource } from './debug-source-navigation';
+import { sourceNavigation as defaultSourceNavigation } from './debug-source-navigation';
+import type { SourceNavigation } from './navigation-ports';
 import { MemoryEditService } from '../memory-edits/memory-edit-service';
 
 export const HEX_VIEWER_VIEW_ID = 'v6.hexViewer';
@@ -72,6 +73,7 @@ export class HexViewerProvider implements vscode.Disposable {
         private readonly logger: Logger,
         private readonly onOpenStateChanged: (open: boolean) => void = () => {},
         private readonly symbols: DebugSymbolService = new DebugSymbolService(),
+        private readonly sourceNavigation: SourceNavigation = defaultSourceNavigation,
     ) {
         this.memory = new MemoryService(client, undefined);
         this.stateListener = () => void this.syncSession();
@@ -444,7 +446,7 @@ export class HexViewerProvider implements vscode.Disposable {
         const projectRoot = project
             ? path.dirname(project.uri.fsPath)
             : vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-        await revealDebugSource(source, projectRoot);
+        await this.sourceNavigation.reveal(source, projectRoot);
     }
 
     private async loadSymbols(): Promise<void> {

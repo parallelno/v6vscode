@@ -58,6 +58,23 @@ directly. The standard compile/prepublish path also checks all shipped asset
 JavaScript using the DOM-only browser configuration. This preserves the existing
 plain JavaScript UI without adding a framework or copying host algorithms.
 
+## Medium-term ownership
+
+Performance and Memory Edits compose a token-bound PanelHost/WebviewDocument and
+RefreshController. Feature controllers retain CRUD, confirmations, capability
+gates and error projection; polling is completion-based with 1–8 second error
+backoff. Browser menu/edit helpers serve Scripts and Performance; common table
+CSS is shared, and Symbols/Trace Log share a bounded query-history state machine.
+Strict browser-only helper ESM is emitted into `out/webview/ui/`.
+
+Project settings have one normalized default/address/speed/display model.
+ProgramLoader captures immutable bytes and prepares explicit Run/Debug policies:
+Run uses autorun LOAD_ROM, Debug initial loads paused, and Debug replacement uses
+paused SET_MEM without resetting breakpoints. FDD mounting/autoboot and read-only
+persistence ownership remain explicit. Successful repository saves publish active
+settings; failed writes do not mutate the active selection. Source and memory
+navigation use narrow ports rather than concrete sibling panel dependencies.
+
 ```mermaid
 flowchart LR
 	DAP[V6 Debug Adapter] --> Lifecycle[Emulator Lifecycle]

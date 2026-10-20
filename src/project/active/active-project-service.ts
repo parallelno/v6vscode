@@ -11,13 +11,18 @@ export class ActiveProjectService {
     readonly onDidChange = this.projectChanged.event;
     private resolveGeneration = 0;
     private publishedKey = '';
+    private readonly savedListener: vscode.Disposable | undefined;
 
     constructor(
         private readonly discovery: ProjectDiscovery,
         private readonly repository: ProjectRepository,
         private readonly workspaceService: WorkspaceService,
         private readonly logger: Logger,
-    ) {}
+    ) {
+        this.savedListener = repository.onDidSave?.(project => {
+            if (project.uri.fsPath === this.activeProject?.uri.fsPath) { this.resolveGeneration++; this.publish(project); }
+        });
+    }
 
     getActiveProject(): V6Project | undefined {
         return this.activeProject;
@@ -66,7 +71,7 @@ export class ActiveProjectService {
         return this.activeProject;
     }
 
-    dispose(): void { this.resolveGeneration++; this.projectChanged.dispose(); }
+    dispose(): void { this.resolveGeneration++; this.savedListener?.dispose(); this.projectChanged.dispose(); }
 
     private publish(project: V6Project | undefined): void {
         const key = project ? JSON.stringify([project.uri.fsPath, project.run]) : '';

@@ -2,8 +2,11 @@ import * as vscode from 'vscode';
 import { V6Project } from '../../project/model/v6-project';
 import { IpcClient } from '../client/ipc-client';
 import { SessionCoordinator } from '../session/session-coordinator';
-import { IpcCommand, SPEED_VALUES } from '../protocol/ipc-commands';
+import { IpcCommand } from '../protocol/ipc-commands';
+import { SPEED_VALUES } from '../../shared/emulator-settings';
 import { DisplayMode } from './emulator-viewmodel';
+import { normalizeRun } from '../../project/model/normalized-run';
+import { requireProtocolOk } from '../protocol/protocol-result';
 import { SETTING_SCRIPT_OVERLAYS_FONT_SIZE, SETTING_SCRIPT_OVERLAYS_HIDDEN } from '../../config/contribution-ids';
 
 const OVERLAY_FONT_SIZE_DEFAULT = 12;
@@ -64,22 +67,21 @@ export class EmulatorSettingsController implements vscode.Disposable {
     async applyProject(project: V6Project): Promise<void> {
         const next = this.fromProject(project);
         if (this.client.connected) {
-            await this.client.send(IpcCommand.SET_CPU_SPEED, { speed: SPEED_VALUES[next.speed] });
+            requireProtocolOk(IpcCommand.SET_CPU_SPEED, await this.client.send(IpcCommand.SET_CPU_SPEED, { speed: SPEED_VALUES[next.speed] }), 'Unable to set emulator speed');
             await this.lifecycle.setFrameMode(next.viewMode);
         }
         this.update(next);
     }
 
     async setSpeed(speed: string): Promise<void> {
-        if (SPEED_VALUES[speed] === undefined) {
+        if (!Object.prototype.hasOwnProperty.call(SPEED_VALUES, speed)) {
             throw new Error(`Unsupported emulator speed: ${speed}`);
         }
         const project = await this.requireProject();
         if (this.client.connected) {
-            await this.client.send(IpcCommand.SET_CPU_SPEED, { speed: SPEED_VALUES[speed] });
+            requireProtocolOk(IpcCommand.SET_CPU_SPEED, await this.client.send(IpcCommand.SET_CPU_SPEED, { speed: SPEED_VALUES[speed] }), 'Unable to set emulator speed');
         }
-        project.run.speed = speed;
-        await this.saveProject(project);
+        await this.saveProject({ ...project, run: { ...project.run, speed } });
         this.update({ ...this.state, speed, hasProject: true });
     }
 
@@ -91,8 +93,7 @@ export class EmulatorSettingsController implements vscode.Disposable {
         if (this.client.connected) {
             await this.lifecycle.setFrameMode(viewMode);
         }
-        project.run.viewMode = viewMode;
-        await this.saveProject(project);
+        await this.saveProject({ ...project, run: { ...project.run, viewMode } });
         this.update({ ...this.state, viewMode, hasProject: true });
     }
 
@@ -126,14 +127,7 @@ export class EmulatorSettingsController implements vscode.Disposable {
     }
 
     private fromProject(project: V6Project): EmulatorSettingsState {
-        const speed = SPEED_VALUES[project.run.speed ?? '100%'] === undefined
-            ? '100%'
-            : project.run.speed ?? '100%';
-        const viewMode = project.run.viewMode === 'full'
-            ? 'full'
-            : project.run.viewMode === 'border'
-                ? 'border'
-                : 'borderless';
+        const { speed, viewMode } = normalizeRun(project.run);
         return { speed, viewMode, hasProject: true, ...readOverlaySettings() };
     }
 

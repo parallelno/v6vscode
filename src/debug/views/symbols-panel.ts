@@ -5,8 +5,9 @@ import { SessionCoordinator } from '../../emulator/session/session-coordinator';
 import { ActiveProjectService } from '../../project/active/active-project-service';
 import { Logger } from '../../platform/logging/logger';
 import { DebugSymbolService, IndexedSymbol } from '../metadata/debug-symbol-service';
-import { revealDebugSource } from './debug-source-navigation';
-import { HexViewerProvider } from './hex-viewer-provider';
+import { sourceNavigation as defaultSourceNavigation } from './debug-source-navigation';
+import type { SourceNavigation } from './navigation-ports';
+import type { SymbolMemoryNavigation } from './navigation-ports';
 import { filterSymbols } from './symbols-query';
 import { SymbolAction, SymbolsHostMessage, SymbolsWebviewMessage } from './symbols-messages';
 
@@ -35,9 +36,10 @@ export class SymbolsPanel implements vscode.Disposable {
         private readonly activeProjectService: ActiveProjectService,
         private readonly workspaceState: vscode.Memento,
         private readonly symbols: DebugSymbolService,
-        private readonly hexViewer: HexViewerProvider,
+        private readonly hexViewer: SymbolMemoryNavigation,
         private readonly logger: Logger,
         private readonly onOpenStateChanged: (open: boolean) => void = () => {},
+        private readonly sourceNavigation: SourceNavigation = defaultSourceNavigation,
     ) {
         this.stateListener = state => {
             if (state === 'stopped') { this.clearSession(); }
@@ -206,7 +208,7 @@ export class SymbolsPanel implements vscode.Disposable {
         const projectRoot = project
             ? path.dirname(project.uri.fsPath)
             : vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-        await revealDebugSource(source, projectRoot);
+        await this.sourceNavigation.reveal(source, projectRoot);
     }
 
     private findHex(symbol: IndexedSymbol): void {

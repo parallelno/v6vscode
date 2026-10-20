@@ -1,6 +1,7 @@
 import * as readline from 'readline';
 import { ProcessRunner, SpawnResult } from '../../platform/process/process-runner';
 import { Logger } from '../../platform/logging/logger';
+import { SPEED_VALUES } from '../../shared/emulator-settings';
 
 interface ServerOutput {
     appendLine(value: string): void;
@@ -22,15 +23,6 @@ export interface EmulatorProcess {
     spawnResult: SpawnResult;
     port: number;
 }
-
-const SPEED_MAP: Record<string, string> = {
-    '1%': '1%',
-    '20%': '20%',
-    '50%': '50%',
-    '100%': '100%',
-    '200%': '200%',
-    'max': 'max',
-};
 
 export function buildArgs(request: LaunchRequest): string[] {
     const args: string[] = ['--serve', '--tcp-port', String(request.tcpPort)];
@@ -56,8 +48,8 @@ export function buildArgs(request: LaunchRequest): string[] {
         }
     }
 
-    if (request.speed && SPEED_MAP[request.speed]) {
-        args.push('--speed', SPEED_MAP[request.speed]);
+    if (request.speed && Object.prototype.hasOwnProperty.call(SPEED_VALUES, request.speed)) {
+        args.push('--speed', request.speed);
     }
 
     return args;

@@ -2,6 +2,9 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { SourceLocation } from '../metadata/debug-index';
 import { resolveDebugSourcePath } from '../metadata/debug-source-path';
+import type { SourceNavigation } from './navigation-ports';
+
+export const sourceNavigation: SourceNavigation = { reveal: revealDebugSource };
 
 export async function revealDebugSource(source: SourceLocation, projectRoot: string): Promise<void> {
     const sourcePath = resolveDebugSourcePath(source.file, projectRoot);

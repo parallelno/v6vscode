@@ -8,7 +8,7 @@ import { SessionCoordinator } from '../../emulator/session/session-coordinator';
 import { globalAddressMemoryLocation, memorySpaceLabel } from '../../shared/memory-space';
 import { Logger } from '../../platform/logging/logger';
 import { MemoryEditService } from '../memory-edits/memory-edit-service';
-import { HexViewerProvider } from './hex-viewer-provider';
+import type { MemoryNavigation } from './navigation-ports';
 import { MemoryEditsHostMessage, MemoryEditsWebviewMessage } from './memory-edits-messages';
 import { parseMemoryEditQuery } from './memory-edits-query';
 
@@ -37,7 +37,7 @@ export class MemoryEditsPanel implements vscode.Disposable {
         private readonly extensionUri: vscode.Uri,
         private readonly lifecycle: SessionCoordinator,
         private readonly service: MemoryEditService,
-        private readonly hexViewer: HexViewerProvider,
+        private readonly hexViewer: MemoryNavigation,
         private readonly workspaceState: vscode.Memento,
         private readonly logger: Logger,
         private readonly onOpenStateChanged: (open: boolean) => void = () => {},

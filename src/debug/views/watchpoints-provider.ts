@@ -15,7 +15,7 @@ import { DebugSymbolService } from '../metadata/debug-symbol-service';
 import { evaluateSymbolExpression } from '../utilities/symbol-expression';
 import { WatchpointService } from '../watchpoints/watchpoint-service';
 import { EntryExpressionStore } from './entry-expression-store';
-import { HexViewerProvider } from './hex-viewer-provider';
+import type { MemoryNavigation } from './navigation-ports';
 import {
     WatchpointCandidate,
     WatchpointEditCandidate,
@@ -40,7 +40,7 @@ export class WatchpointsProvider implements vscode.Disposable {
         private readonly extensionUri: vscode.Uri,
         private readonly lifecycle: SessionCoordinator,
         private readonly service: WatchpointService,
-        private readonly hexViewer: HexViewerProvider,
+        private readonly hexViewer: MemoryNavigation,
         private readonly activeProjectService: ActiveProjectService,
         private readonly logger: Logger,
         private readonly onOpenStateChanged: (open: boolean) => void = () => {},

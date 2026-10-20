@@ -7,6 +7,7 @@
   "properties": {
     "name": {
       "type": "string",
+      "minLength": 1,
       "description": "Project display name."
     },
     "run": {
@@ -15,6 +16,7 @@
       "properties": {
         "executable": {
           "type": "string",
+          "minLength": 1,
           "description": "Path to the ROM or FDD image to load."
         },
         "debugArtifact": {
@@ -28,6 +30,7 @@
         },
         "loadAddr": {
           "type": "string",
+          "pattern": "^(?:0[xX])?[0-9a-fA-F]{1,4}$",
           "default": "0x100",
           "description": "Load address for ROM images (hex string)."
         },
@@ -38,6 +41,7 @@
         },
         "speed": {
           "type": "string",
+          "enum": ["1%", "20%", "50%", "100%", "200%", "max"],
           "default": "100%",
           "description": "Emulation speed."
         },

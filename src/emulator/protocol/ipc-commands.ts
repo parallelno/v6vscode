@@ -138,14 +138,6 @@ export const enum IpcCommand {
 }
 
 // Speed value mapping: user-facing string → IPC integer
-export const SPEED_VALUES: Record<string, number> = {
-    '1%': 0,
-    '20%': 1,
-    '50%': 2,
-    '100%': 3,
-    '200%': 4,
-    'max': 5,
-};
 
 // --- Typed request interfaces ---
 

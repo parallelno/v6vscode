@@ -1,6 +1,6 @@
 # Architecture, Code Reuse, and Maintainability Improvement Plan
 
-**Status:** Approved for staged implementation; R01-R04 complete in stage 1; R05/R06 complete as a two-feature pilot in stage 2; R07 complete in stage 3; R08 complete in stage 4; R09 complete in stage 5; R10 complete in stage 6; R11 complete in stage 7; R12 complete in stage 8; R13 complete in stage 9; R14 complete in stage 10; R15 complete in stage 11. R16-R24 remain pending.
+**Status:** Approved for staged implementation; R01-R04 complete in stage 1; R05/R06 complete as a two-feature pilot in stage 2; R07 complete in stage 3; R08 complete in stage 4; R09 complete in stage 5; R10 complete in stage 6; R11 complete in stage 7; R12 complete in stage 8; R13 complete in stage 9; R14 complete in stage 10; R15 complete in stage 11; R16 complete in stage 12; R17 complete in stage 13; R18 complete in stage 14. **Medium-term roadmap complete.** R19-R24 remain pending long-term work.
 **Audit date:** 2026-10-18 (workspace session; some validation timestamps are 2026-10-19 UTC).
 **Owner:** v6vscode maintainers.
 **Repository:** `C:\Work\Programming\v6vscode`.
@@ -165,7 +165,21 @@ Scripts and Performance import compiled strict browser menu/edit helpers: placem
 
 Verification: 740 unit tests, zero skips; 62 regressions; eight packaged current and eight packaged minimum-version tests; three live conformance tests. CI/host/browser/shared/UI/full test compilation pass with 26 existing lint warnings, zero errors. Behavioral tests execute the real helpers with DOM stand-ins for enabled navigation/wrap/Home/End/Escape/focus, IME/edit errors and bounded history/draft semantics. Packaged smoke now executes Performance as well as Scripts/Memory Edits entry points with their real imports. Home/End menu navigation is now consistently supported in the pilots; no layout or command/schema changes.
 
-**Next stage:** R18 normalized project/program/navigation ownership to finish the medium term.
+Stage 13 commit: `ec03332` — `Share compiled browser menu editing history and table controls`.
+
+## Implementation progress — stage 14 (R18)
+
+NormalizedRun and shared emulator setting defaults now feed project loading, Debug configuration, program preparation and Settings UI. One speed table serves launcher/protocol consumers/settings/viewmodel; one display mapping serves settings/coordinator. Project schema and validator agree on defaults, required/nonempty fields, supported speed/view enums and complete 16-bit hexadecimal load addresses. Bare digits in project loadAddr remain hexadecimal. Invalid speeds/trailing-junk/overflow addresses now fail with actionable project validation rather than silently falling back or partially parsing; ROM images that overflow CPU memory fail before dispatch.
+
+ProgramLoader captures immutable input bytes/settings and validates them before loading. Explicit policies retain Run initial/reload LOAD_ROM autorun, Debug initial LOAD_ROM paused, FDD mount/autoboot and Debug replacement SET_MEM paused (preserving debugger state). File preparation, case-insensitive image classification, address decoding and checked acknowledgments are shared; session coordinator retains connection/ownership/persistence policy. Read-only disk disposition stays in the session/persistence owner, not a guessed wire field.
+
+Repository saves capture/validate the exact settings snapshot written, emit change only after successful persistence, and update active selection immediately. A delayed pre-save resolve cannot overwrite those newer settings; saving another project cannot change selection. Settings edits use copies rather than mutating active objects before persistence and require acknowledged speed/display changes. Existing external-file reload-on-resolve behavior is retained; no new file watcher or automatic running-ROM replacement is introduced.
+
+Memory Edits, Watchpoints and Symbols depend on narrow memory navigation ports, not HexViewerProvider. Performance/Symbols/Trace Log/Hex Viewer use an injectable source-navigation port backed by the existing editor adapter. Exact source lookup, bank-crossing rejection and opening/focus policies remain local. Import gates prohibit reintroducing concrete sibling Hex Viewer dependencies.
+
+Verification: 746 unit tests, zero skips; 62 regressions; 27 focused compiled tests; eight packaged current and eight packaged minimum-version integration tests; three live conformance tests. CI, strict host/shared/browser-UI builds, all asset checking and full test compilation pass; 26 existing warnings, zero lint errors. Tests cover schema/default/enums/parsing parity, all load-policy payloads, immutable snapshots, FDD casing/read-only metadata, rejected/stale loads, immediate save publication, old-read suppression and failed settings persistence. Final packaged activation/stepping/value tests pass after correcting an injected-default name-shadowing defect caught during validation.
+
+**Medium-term complete:** R10–R18 are implemented in separate stage commits. R19–R24 remain long-term work; none is claimed complete here. Existing R11 cache, expression-promotion and non-cancelling read-only hover limitations remain as documented. R16/R17 are deliberately scoped pilots rather than wholesale migration of every panel. Persistence uses the existing VS Code filesystem write contract, not a newly claimed atomic filesystem transaction.
 
 ## 1. Executive assessment
 

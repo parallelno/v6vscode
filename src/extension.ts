@@ -104,7 +104,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     store.add(vscode.window.registerTreeDataProvider('v6emul.panels', panelLauncher));
 
     const projectDiscovery = new ProjectDiscovery();
-    const projectRepository = new ProjectRepository(logger);
+    const projectRepository = store.add(new ProjectRepository(logger));
     const activeProjectService = store.add(new ActiveProjectService(
         projectDiscovery, projectRepository, workspaceService, logger,
     ));

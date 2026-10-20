@@ -54,4 +54,13 @@ points with DOM/ES2022 libraries and `types: []`; it does not emit or admit Node
 globals. `src/webview/vscode-webview.d.ts` describes the isolated VS Code webview
 API. JavaScript checking is incremental (`strict: false`), not an assertion of
 fully typed message payloads or null-safe generated markup. No blanket browser
-type suppressions are permitted. Panel infrastructure remains separate roadmap work.
+type suppressions are permitted. `tsconfig.browser-ui.json` separately emits strict
+DOM-only browser helpers into `out/webview/ui/`, with host/test builds excluding
+those browser sources. Packaged tests execute the actual Scripts, Performance and
+Memory Edits entry points and their relative shared/UI imports under CSP.
+
+Performance/Memory Edits panel-host tests cover document tokens, ready-once,
+visibility/disposal and malformed input; refresh tests prove coalescing and scoped
+publication. Browser helper behavioral tests cover keyboard/focus, IME submission,
+inline errors and history/drafts. Project/program tests check schema/default parity,
+complete hexadecimal addresses, Run/Debug load policies and active-save publication.

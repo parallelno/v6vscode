@@ -14,7 +14,8 @@ import { PerformanceService } from '../performance/performance-service';
 import { DebugSymbolService } from '../metadata/debug-symbol-service';
 import { CodePerfInput, CodePerfSnapshot } from '../../emulator/protocol/debug-models';
 import { evaluateSymbolExpression } from '../utilities/symbol-expression';
-import { revealDebugSource } from './debug-source-navigation';
+import { sourceNavigation as defaultSourceNavigation } from './debug-source-navigation';
+import type { SourceNavigation } from './navigation-ports';
 import { EntryExpressionStore } from './entry-expression-store';
 import { PerformanceCandidate, PerformanceHostMessage, PerformanceWebviewMessage } from './performance-messages';
 import { normalizePerformanceQuery } from './performance-query';
@@ -56,6 +57,7 @@ export class PerformancePanel implements vscode.Disposable {
         private readonly workspaceState: vscode.Memento,
         private readonly logger: Logger,
         private readonly onOpenStateChanged: (open: boolean) => void = () => {},
+        private readonly sourceNavigation: SourceNavigation = defaultSourceNavigation,
     ) {
         this.host = new PanelHost(extensionUri, PERFORMANCE_PANEL_ID, 'Performance', {
             document: (webview, assets, token) => this.html(webview, assets, token),
@@ -217,7 +219,7 @@ export class PerformancePanel implements vscode.Disposable {
         const projectRoot = project
             ? path.dirname(project.uri.fsPath)
             : vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-        await revealDebugSource(source, projectRoot);
+        await this.sourceNavigation.reveal(source, projectRoot);
     }
 
     private current(message: { generation: number }): boolean {

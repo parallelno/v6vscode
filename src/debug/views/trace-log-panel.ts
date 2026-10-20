@@ -12,7 +12,8 @@ import { parseTraceLogQuery } from '../trace-log/trace-log-query';
 import { DebugSymbolService } from '../metadata/debug-symbol-service';
 import { SourceLocation } from '../metadata/debug-index';
 import { resolveDebugSourcePath } from '../metadata/debug-source-path';
-import { revealDebugSource } from './debug-source-navigation';
+import { sourceNavigation as defaultSourceNavigation } from './debug-source-navigation';
+import type { SourceNavigation } from './navigation-ports';
 import {
     TraceLogAction,
     TraceLogHostMessage,
@@ -61,6 +62,7 @@ export class TraceLogPanel implements vscode.Disposable {
         private readonly workspaceState: vscode.Memento,
         private readonly logger: Logger,
         private readonly onOpenStateChanged: (open: boolean) => void = () => {},
+        private readonly sourceNavigation: SourceNavigation = defaultSourceNavigation,
     ) {
         this.stateListener = () => void this.syncSession();
         this.lifecycle.on('stateChange', this.stateListener);
@@ -270,7 +272,7 @@ export class TraceLogPanel implements vscode.Disposable {
             case 'copyAddress': await vscode.env.clipboard.writeText(row.view.address); break;
             case 'copyListing': await vscode.env.clipboard.writeText(row.view.listing); break;
             case 'toggleBreakpoint': await this.toggleBreakpoint(row.address, row.source); break;
-            case 'findSource': if (row.source) { await revealDebugSource(row.source, this.projectRoot); } break;
+            case 'findSource': if (row.source) { await this.sourceNavigation.reveal(row.source, this.projectRoot); } break;
         }
     }
 
@@ -285,7 +287,7 @@ export class TraceLogPanel implements vscode.Disposable {
             { start: originalStart, length },
             this.sourceContext,
         );
-        if (target) { await revealDebugSource(target, this.projectRoot); }
+        if (target) { await this.sourceNavigation.reveal(target, this.projectRoot); }
     }
 
     private async toggleBreakpoint(address: number, source?: SourceLocation): Promise<void> {

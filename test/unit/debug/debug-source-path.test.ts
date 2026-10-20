@@ -96,7 +96,7 @@ describe('resolveDebugSourcePath', () => {
             'src/debug/views/symbols-panel.ts',
             'src/debug/views/hex-viewer-provider.ts',
         ]) {
-            expect(fs.readFileSync(path.join(root, relativePath), 'utf8')).to.include('revealDebugSource(');
+            expect(fs.readFileSync(path.join(root, relativePath), 'utf8')).to.include('sourceNavigation.reveal(');
         }
     });
 });

@@ -1,4 +1,4 @@
-import { SPEED_VALUES } from '../protocol/ipc-commands';
+import { SPEED_VALUES } from '../../shared/emulator-settings';
 import { ScriptOverlayItem } from '../protocol/debug-models';
 import { renderScriptOverlays, RenderedScriptOverlay } from './script-overlay-renderer';
 
@@ -51,7 +51,7 @@ export class EmulatorViewModel {
     }
 
     setSpeed(speed: string): boolean {
-        if (SPEED_VALUES[speed] === undefined) {
+        if (!Object.prototype.hasOwnProperty.call(SPEED_VALUES, speed)) {
             return false;
         }
         this._speed = speed;

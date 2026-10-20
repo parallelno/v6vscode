@@ -1,3 +1,4 @@
+import { DEFAULT_RUN_SETTINGS, VIEW_MODES, SPEED_VALUES, LOAD_ADDRESS_PATTERN } from '../../shared/emulator-settings';
 export interface ValidationError {
     path: string;
     message: string;
@@ -17,7 +18,7 @@ interface ValidatedRun {
     viewMode: string;
 }
 
-const VALID_VIEW_MODES = ['borderless', 'border', 'full'];
+const VALID_VIEW_MODES: readonly string[] = VIEW_MODES;
 
 export function validate(data: unknown): ValidationResult {
     const errors: ValidationError[] = [];
@@ -79,6 +80,8 @@ export function validate(data: unknown): ValidationResult {
 
         if ('loadAddr' in run && typeof run.loadAddr !== 'string') {
             errors.push({ path: 'run.loadAddr', message: '"run.loadAddr" must be a string.' });
+        } else if (typeof run.loadAddr === 'string' && !new RegExp(LOAD_ADDRESS_PATTERN).test(run.loadAddr)) {
+            errors.push({ path: 'run.loadAddr', message: '"run.loadAddr" must be a complete 16-bit hexadecimal address.' });
         }
 
         if ('fddReadOnly' in run && typeof run.fddReadOnly !== 'boolean') {
@@ -87,6 +90,8 @@ export function validate(data: unknown): ValidationResult {
 
         if ('speed' in run && typeof run.speed !== 'string') {
             errors.push({ path: 'run.speed', message: '"run.speed" must be a string.' });
+        } else if (typeof run.speed === 'string' && !Object.prototype.hasOwnProperty.call(SPEED_VALUES, run.speed)) {
+            errors.push({ path: 'run.speed', message: '"run.speed" must be a supported emulator speed.' });
         }
 
         if ('viewMode' in run) {
@@ -110,10 +115,10 @@ export function validate(data: unknown): ValidationResult {
             executable: run.executable as string,
             debugArtifact: run.debugArtifact as string | undefined,
             bootRom: run.bootRom as string | undefined,
-            loadAddr: typeof run.loadAddr === 'string' ? run.loadAddr : '0x100',
-            fddReadOnly: typeof run.fddReadOnly === 'boolean' ? run.fddReadOnly : false,
-            speed: typeof run.speed === 'string' ? run.speed : '100%',
-            viewMode: typeof run.viewMode === 'string' ? run.viewMode : 'borderless',
+            loadAddr: typeof run.loadAddr === 'string' ? run.loadAddr : DEFAULT_RUN_SETTINGS.loadAddr,
+            fddReadOnly: typeof run.fddReadOnly === 'boolean' ? run.fddReadOnly : DEFAULT_RUN_SETTINGS.fddReadOnly,
+            speed: typeof run.speed === 'string' ? run.speed : DEFAULT_RUN_SETTINGS.speed,
+            viewMode: typeof run.viewMode === 'string' ? run.viewMode : DEFAULT_RUN_SETTINGS.viewMode,
         },
     };
 }

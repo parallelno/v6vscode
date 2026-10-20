@@ -1,3 +1,4 @@
+import { normalizeRun } from '../../project/model/normalized-run';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { ActiveProjectService } from '../../project/active/active-project-service';
@@ -78,11 +79,12 @@ export class V6DebugConfigurationProvider implements vscode.DebugConfigurationPr
                 }
                 return undefined;
             }
-            config.program = project.run.executable;
+            const run = normalizeRun(project.run);
+            config.program = run.executable;
             config.bootRom = project.run.bootRom ?? '';
-            config.loadAddress = project.run.loadAddr;
-            config.speed = project.run.speed;
-            config.fddReadOnly = project.run.fddReadOnly ?? false;
+            config.loadAddress = run.loadAddr;
+            config.speed = run.speed;
+            config.fddReadOnly = run.fddReadOnly;
             delete config.stopOnEntry;
 
             if (project.run.debugArtifact) {
