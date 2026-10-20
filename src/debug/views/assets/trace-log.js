@@ -1,3 +1,4 @@
+import { QueryHistory } from '../../../../out/webview/ui/query-history.js';
 // @ts-check
 (function () {
     const vscode = acquireVsCodeApi();
@@ -11,9 +12,7 @@
     const rows = /** @type {HTMLDivElement} */ (document.getElementById('rows'));
     const menu = /** @type {HTMLDivElement} */ (document.getElementById('menu'));
     /** @type {Map<number, Array<any>>} */ const windows = new Map();
-    /** @type {string[]} */ let history = [];
-    let historyIndex = 0;
-    let draft = '';
+    const history = new QueryHistory();
     let generation = 0;
     let totalMatches = 0;
     let queryValid = true;
@@ -31,36 +30,17 @@
         persist();
     });
     query.addEventListener('keydown', event => {
-        if (event.key === 'Enter' && queryValid && query.value.trim()) {
-            if (history.at(-1) !== query.value) history.push(query.value);
-            history = history.slice(-50);
-            historyIndex = history.length;
-            draft = '';
-            persist();
-        } else if (event.key === 'ArrowUp') {
-            event.preventDefault();
-            if (historyIndex === history.length) draft = query.value;
-            if (historyIndex > 0) query.value = history[--historyIndex];
-            sendQuery();
-        } else if (event.key === 'ArrowDown') {
-            event.preventDefault();
-            if (historyIndex < history.length - 1) query.value = history[++historyIndex];
-            else { historyIndex = history.length; query.value = draft; }
-            sendQuery();
-        } else if (event.key === 'Escape') {
-            event.preventDefault();
-            query.value = draft || '';
-            draft = '';
-            historyIndex = history.length;
-            sendQuery();
-        }
+        const result = history.key(event.key, query.value, queryValid);
+        if (result.prevent) event.preventDefault();
+        if (result.committed) persist();
+        if (result.changed) { query.value = result.value; sendQuery(); }
     });
 
     function sendQuery() {
         query.dispatchEvent(new Event('input'));
     }
     function persist() {
-        vscode.postMessage({ type: 'persist', query: query.value, history });
+        vscode.postMessage({ type: 'persist', query: query.value, history: history.values });
     }
 
     function visibleRange() {
@@ -266,8 +246,7 @@
         const message = event.data;
         if (message.type === 'restored') {
             query.value = message.query;
-            history = message.history;
-            historyIndex = history.length;
+            history.restore(message.history);
         } else if (message.type === 'state') {
             status.textContent = message.message;
             status.classList.toggle('error', message.state === 'error');

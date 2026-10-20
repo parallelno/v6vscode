@@ -77,7 +77,7 @@ export class TraceLogPanel implements vscode.Disposable {
         const assetsUri = vscode.Uri.joinPath(this.extensionUri, 'src', 'debug', 'views', 'assets');
         const panel = vscode.window.createWebviewPanel(
             TRACE_LOG_PANEL_ID, 'Trace Log', vscode.ViewColumn.Beside,
-            { enableScripts: true, localResourceRoots: [assetsUri], retainContextWhenHidden: true },
+            { enableScripts: true, localResourceRoots: [assetsUri, vscode.Uri.joinPath(this.extensionUri, 'out', 'webview')], retainContextWhenHidden: true },
         );
         this.panel = panel;
         panel.webview.html = this.html(panel.webview, assetsUri);
@@ -423,13 +423,13 @@ export class TraceLogPanel implements vscode.Disposable {
         const cssUri = webview.asWebviewUri(vscode.Uri.joinPath(assetsUri, 'trace-log.css'));
         const jsUri = webview.asWebviewUri(vscode.Uri.joinPath(assetsUri, 'trace-log.js'));
         return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src ${webview.cspSource} 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${cssUri}"><title>Trace Log</title></head>
 <body><div class="toolbar"><input id="query" type="search" maxlength="256" aria-label="Filter by address and instruction" placeholder="0x10* JMP*"><span id="count"></span></div>
 <div id="status" role="status">No active emulator session</div>
 <div class="table" role="grid" aria-label="Trace log"><div class="header" role="row"><span role="columnheader">Address</span><span role="columnheader">Listing</span></div><div id="viewport" tabindex="0"><div id="spacer"><div id="rows"></div></div></div></div>
 <div id="menu" role="menu" hidden><button role="menuitem" data-action="copyAddress">Copy Address</button><button role="menuitem" data-action="copyListing">Copy Listing</button><button role="menuitemcheckbox" data-action="toggleBreakpoint">Toggle Breakpoint</button><button role="menuitem" data-action="findSource">Find in Source</button></div>
-<script nonce="${nonce}" src="${jsUri}"></script></body></html>`;
+<script type="module" nonce="${nonce}" src="${jsUri}"></script></body></html>`;
     }
 }
 

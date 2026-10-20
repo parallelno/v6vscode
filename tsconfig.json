@@ -15,5 +15,5 @@
     "allowJs": true
   },
   "include": ["src"],
-  "exclude": ["src/emulator/panel/assets", "src/debug/views/assets"]
+  "exclude": ["src/emulator/panel/assets", "src/debug/views/assets", "src/webview/browser"]
 }

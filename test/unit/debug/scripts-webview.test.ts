@@ -24,8 +24,8 @@ describe('Scripts webview contract', () => {
         expect(script).not.to.include('innerHTML');
         expect(script).to.include("post({ type: 'copy', scriptId, field })");
         expect(script).to.include("editable.addEventListener('dblclick'");
-        expect(script).to.include("event.key === 'Enter'");
-        expect(script).to.include("event.key === 'Escape'");
+        expect(script).to.include('bindEditKeys(row,');
+        expect(script).to.include('markInvalid(input, message, live, status)');
         expect(script).to.include("entry.compilation.status === 'error'");
         expect(script).to.include("entry.runtime.status === 'error'");
         expect(styles).to.include('.row.error:not(.selected)');

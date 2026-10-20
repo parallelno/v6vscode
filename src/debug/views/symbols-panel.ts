@@ -67,7 +67,7 @@ export class SymbolsPanel implements vscode.Disposable {
         const assetsUri = vscode.Uri.joinPath(this.extensionUri, 'src', 'debug', 'views', 'assets');
         const panel = vscode.window.createWebviewPanel(
             SYMBOLS_VIEW_ID, 'Symbols', vscode.ViewColumn.Beside,
-            { enableScripts: true, localResourceRoots: [assetsUri], retainContextWhenHidden: true },
+            { enableScripts: true, localResourceRoots: [assetsUri, vscode.Uri.joinPath(this.extensionUri, 'out', 'webview')], retainContextWhenHidden: true },
         );
         this.panel = panel;
         panel.webview.html = this.html(panel.webview, assetsUri);
@@ -271,14 +271,14 @@ export class SymbolsPanel implements vscode.Disposable {
         const cssUri = webview.asWebviewUri(vscode.Uri.joinPath(assetsUri, 'symbols.css'));
         const jsUri = webview.asWebviewUri(vscode.Uri.joinPath(assetsUri, 'symbols.js'));
         return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src ${webview.cspSource} 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="stylesheet" href="${cssUri}"><title>Symbols</title></head>
 <body><div class="toolbar"><input id="query" type="text" maxlength="256" aria-label="Search symbols" placeholder="Name, value, or expression">
 <button id="match-case" class="toggle" aria-label="Match Case" aria-pressed="false" title="Match Case">Aa</button>
 <button id="whole-word" class="toggle whole-word" aria-label="Match Whole Word" aria-pressed="false" title="Match Whole Word"><span>ab</span></button></div>
 <div id="status" role="status">Loading symbols...</div><div id="list" role="list" aria-label="Symbols"></div>
 <div id="menu" role="menu" hidden><button role="menuitem" data-action="copyName">Copy Name</button><button role="menuitem" data-action="copyValue">Copy Value</button><button role="menuitem" data-action="findSource">Find in Source</button><button role="menuitem" data-action="findHex">Find in Hex Viewer</button></div>
-<script nonce="${nonce}" src="${jsUri}"></script></body></html>`;
+<script type="module" nonce="${nonce}" src="${jsUri}"></script></body></html>`;
     }
 }
 

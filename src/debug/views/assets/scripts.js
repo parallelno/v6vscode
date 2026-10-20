@@ -1,3 +1,5 @@
+import { placeMenu, menuKeys, closeMenu as hideMenu } from '../../../../out/webview/ui/menu.js';
+import { clearInvalid, invalid as markInvalid, bindEditKeys } from '../../../../out/webview/ui/edit.js';
 import { matchesScriptName } from '../../../../out/webview/script-name-match.js';
 // @ts-check
 (function () {
@@ -28,13 +30,7 @@ import { matchesScriptName } from '../../../../out/webview/script-name-match.js'
     let menuSource = null;
 
     function post(message) { vscode.postMessage({ generation, ...message }); }
-    function clearInvalid(...inputs) {
-        for (const input of inputs) { input.classList.remove('invalid'); input.removeAttribute('aria-describedby'); }
-    }
-    function invalid(input, message) {
-        input.classList.add('invalid'); input.setAttribute('aria-describedby', 'live'); input.focus();
-        live.textContent = message; status.textContent = message; return null;
-    }
+    function invalid(input, message) { return markInvalid(input, message, live, status); }
     function inputValue(name, path, active) {
         clearInvalid(name, path);
         if (!name.value.length) return invalid(name, 'Name must not be empty');
@@ -134,10 +130,7 @@ import { matchesScriptName } from '../../../../out/webview/script-name-match.js'
             submitting = true; for (const control of row.querySelectorAll('input')) control.disabled = true;
             post(entry ? { type: 'edit', scriptId: entry.scriptId, input } : { type: 'add', input });
         });
-        row.addEventListener('keydown', event => {
-            if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); row.requestSubmit(); }
-            if (event.key === 'Escape') { event.preventDefault(); editingId = null; editDraft = null; adding = false; submitting = false; render(); }
-        });
+        bindEditKeys(row, () => { editingId = null; editDraft = null; adding = false; submitting = false; render(); });
         setTimeout(() => { if (focusDraft) { name.input.focus(); focusDraft = false; } }, 0);
         return row;
     }
@@ -166,13 +159,9 @@ import { matchesScriptName } from '../../../../out/webview/script-name-match.js'
                 || (action === 'disableAll' && !entries.some(item => item.active))
                 || (action === 'deleteAll' && entries.length === 0);
         });
-        menu.hidden = false;
-        const rect = source.getBoundingClientRect();
-        menu.style.left = `${Math.max(4, Math.min(event.clientX || rect.left, window.innerWidth - 180))}px`;
-        menu.style.top = `${Math.max(4, Math.min(event.clientY || rect.bottom, window.innerHeight - 240))}px`;
-        (/** @type {HTMLButtonElement} */ (menu.querySelector('button:not([disabled])')))?.focus();
+        placeMenu(menu, event, source, 180, 240);
     }
-    function closeMenu() { if (!menu.hidden) { menu.hidden = true; menuSource?.focus(); } menuId = null; menuField = null; menuSource = null; }
+    function closeMenu() { hideMenu(menu, menuSource); menuId = null; menuField = null; menuSource = null; }
     menu.addEventListener('click', event => {
         const action = (/** @type {HTMLElement} */ (event.target))?.dataset?.action; const scriptId = menuId; const field = menuField; closeMenu();
         if (!action) return;
@@ -185,13 +174,7 @@ import { matchesScriptName } from '../../../../out/webview/script-name-match.js'
         else if (scriptId !== null && action === 'disable') post({ type: 'disable', scriptId });
         else if (scriptId !== null && action === 'delete') post({ type: 'delete', scriptId });
     });
-    menu.addEventListener('keydown', event => {
-        const buttons = [.../** @type {NodeListOf<HTMLButtonElement>} */ (menu.querySelectorAll('button:not([disabled])'))]; const index = buttons.indexOf(/** @type {HTMLButtonElement} */ (document.activeElement));
-        if (event.key === 'Escape') { event.preventDefault(); closeMenu(); }
-        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-            event.preventDefault(); buttons[(index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
-        }
-    });
+    menu.addEventListener('keydown', event => menuKeys(menu, closeMenu, event));
     table.addEventListener('contextmenu', event => {
         if (!(/** @type {Element} */ (event.target)).closest?.('.row')) openMenu(event, null, null, table);
     });

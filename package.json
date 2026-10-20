@@ -528,8 +528,9 @@
     ]
   },
   "scripts": {
-    "compile": "tsc -p ./ && npm run compile:browser-shared && npm run check:browser",
+    "compile": "tsc -p ./ && npm run compile:browser-shared && npm run compile:browser-ui && npm run check:browser",
     "compile:browser-shared": "tsc -p tsconfig.browser-shared.json",
+    "compile:browser-ui": "tsc -p tsconfig.browser-ui.json",
     "check:browser": "tsc -p tsconfig.browser.json",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts",

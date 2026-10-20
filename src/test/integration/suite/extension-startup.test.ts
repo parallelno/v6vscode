@@ -67,7 +67,7 @@ suite('Language presentation startup', () => {
         const extension = vscode.extensions.getExtension('parallelno.v6vscode')!;
         const assets = vscode.Uri.joinPath(extension.extensionUri, 'src', 'debug', 'views', 'assets');
         const shared = vscode.Uri.joinPath(extension.extensionUri, 'out', 'webview');
-        for (const name of ['scripts', 'memory-edits']) {
+        for (const name of ['scripts', 'performance', 'memory-edits']) {
             const panel = vscode.window.createWebviewPanel('v6.browserConsumerSmoke', 'Browser consumer smoke', vscode.ViewColumn.Beside,
                 { enableScripts: true, localResourceRoots: [assets, shared] });
             try {

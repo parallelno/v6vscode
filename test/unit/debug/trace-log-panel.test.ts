@@ -69,8 +69,8 @@ describe('Trace Log panel', () => {
         expect(script).to.include("query.addEventListener('input'");
         expect(script).to.include("event.key === 'ArrowUp'");
         expect(script).to.include("event.key === 'ArrowDown'");
-        expect(script).to.include('history = history.slice(-50)');
-        expect(script).to.include('queryValid && query.value.trim()');
+        expect(script).to.include('new QueryHistory()');
+        expect(script).to.include('history.key(event.key, query.value, queryValid)');
     });
 
     it('matches the registered editor token colors and removes source indentation', () => {

@@ -14,7 +14,7 @@ describe('Symbols webview interactions', () => {
 
     it('searches on input and caps committed history', () => {
         expect(source).to.include("query.addEventListener('input', sendQuery)");
-        expect(source).to.include('history = history.slice(-50)');
+        expect(source).to.include('new QueryHistory()');
         expect(source).to.include("event.key === 'ArrowUp'");
         expect(source).to.include("event.key === 'ArrowDown'");
     });

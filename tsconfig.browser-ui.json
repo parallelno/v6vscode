@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ES2019",
+    "module": "ES2020",
+    "lib": ["ES2019", "DOM", "DOM.Iterable"],
+    "types": [],
+    "rootDir": "src/webview/browser",
+    "outDir": "out/webview/ui",
+    "strict": true,
+    "noEmitOnError": true
+  },
+  "include": ["src/webview/browser/**/*.ts"]
+}

@@ -1,3 +1,5 @@
+import { placeMenu, menuKeys, closeMenu as hideMenu } from '../../../../out/webview/ui/menu.js';
+import { clearInvalid, invalid as markInvalid, bindEditKeys } from '../../../../out/webview/ui/edit.js';
 // @ts-check
 (function () {
     const api = acquireVsCodeApi();
@@ -27,13 +29,7 @@
     let listMenuSource = null;
 
     function post(message) { vscode.postMessage({ generation, ...message }); }
-    function clearInvalid(...inputs) {
-        for (const input of inputs) { input.classList.remove('invalid'); input.removeAttribute('aria-describedby'); }
-    }
-    function invalid(input, message) {
-        input.classList.add('invalid'); input.setAttribute('aria-describedby', 'live'); input.focus();
-        live.textContent = message; status.textContent = message; return null;
-    }
+    function invalid(input, message) { return markInvalid(input, message, live, status); }
     function inputValue(name, addrStart, addrEnd, active) {
         clearInvalid(name, addrStart, addrEnd);
         if (new TextEncoder().encode(name.value).length > 1024) return invalid(name, 'Name exceeds 1024 UTF-8 bytes');
@@ -133,12 +129,7 @@
             for (const control of row.querySelectorAll('input')) control.disabled = true;
             post(entry ? { type: 'edit', id: entry.id, input } : { type: 'add', input });
         });
-        row.addEventListener('keydown', event => {
-            if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); row.requestSubmit(); }
-            if (event.key === 'Escape') {
-                event.preventDefault(); editingId = null; editDraft = null; adding = false; submitting = false; render();
-            }
-        });
+        bindEditKeys(row, () => { editingId = null; editDraft = null; adding = false; submitting = false; render(); });
         setTimeout(() => { (focusDraft ? name.input : document.activeElement === document.body ? name.input : null)?.focus(); focusDraft = false; }, 0);
         return row;
     }
@@ -161,7 +152,7 @@
                 || (action === 'disableAll' && !entries.some(item => item.active))
                 || ((action === 'delete' || action === 'deleteAll') && entries.length === 0);
         });
-        placeMenu(menu, event, source); (/** @type {HTMLButtonElement} */ (menu.querySelector('button:not([disabled])')))?.focus();
+        placeMenu(menu, event, source, 170, 150);
     }
     function openListMenu(event, source) {
         if ((/** @type {Element} */ (event.target)).closest?.('.row')) return;
@@ -172,23 +163,11 @@
                 || (action === 'disableAll' && !entries.some(item => item.active))
                 || (action === 'deleteAll' && entries.length === 0);
         });
-        placeMenu(listMenu, event, source); (/** @type {HTMLButtonElement} */ (listMenu.querySelector('button:not([disabled])')))?.focus();
+        placeMenu(listMenu, event, source, 170, 150);
     }
-    function placeMenu(element, event, source) {
-        element.hidden = false;
-        element.style.left = `${Math.max(4, Math.min(event.clientX || source.getBoundingClientRect().left, window.innerWidth - 170))}px`;
-        element.style.top = `${Math.max(4, Math.min(event.clientY || source.getBoundingClientRect().bottom, window.innerHeight - 150))}px`;
-    }
-    function closeMenu() { if (!menu.hidden) { menu.hidden = true; menuSource?.focus(); } menuId = null; menuSource = null; }
-    function closeListMenu() { if (!listMenu.hidden) { listMenu.hidden = true; listMenuSource?.focus(); } listMenuSource = null; }
+    function closeMenu() { hideMenu(menu, menuSource); menuId = null; menuSource = null; }
+    function closeListMenu() { hideMenu(listMenu, listMenuSource); listMenuSource = null; }
     function closeMenus() { closeMenu(); closeListMenu(); }
-    function menuKeys(element, close, event) {
-        const buttons = [.../** @type {NodeListOf<HTMLButtonElement>} */ (element.querySelectorAll('button:not([disabled])'))]; const index = buttons.indexOf(/** @type {HTMLButtonElement} */ (document.activeElement));
-        if (event.key === 'Escape') { event.preventDefault(); close(); }
-        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-            event.preventDefault(); buttons[(index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
-        }
-    }
     menu.addEventListener('click', event => {
         const action = (/** @type {HTMLElement} */ (event.target))?.dataset?.action; const id = menuId; closeMenu();
         if (!action || id === null || !canMutate) return;

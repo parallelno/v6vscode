@@ -157,7 +157,15 @@ Both pilots use RefreshController: one in-flight refresh, one latest follow-up, 
 
 Verification: 737 unit tests, zero skips; 62 regressions; eight packaged current and eight packaged minimum-version integration tests; three live conformance tests. CI/host/browser/shared/full test compilation pass; 26 existing lint warnings, zero errors. New behavioral tests cover token/readiness/teardown, malformed messages, escaped document resources and latest-request coalescing without overlap/post-dispose publication. Existing stale confirmation/operation tests remain green. Browser payload schemas are feature-specific and intentionally incremental outside these two pilots.
 
-**Next stage:** R17 shared browser interaction helpers, then R18 normalized project/program/navigation ownership to finish the medium term.
+Stage 12 commit: `0ba8905` — `Compose checked panel hosts and scoped refresh pilots`.
+
+## Implementation progress — stage 13 (R17)
+
+Scripts and Performance import compiled strict browser menu/edit helpers: placement with feature-specific dimensions, enabled/visible keyboard traversal, Escape/focus restoration, IME-safe Enter submission, cancellation and accessible inline errors. Local algorithms were removed rather than wrapped. Feature enabled actions, validation, drafts and submission policy stay local. Symbols and Trace Log share bounded exact-string query history, including adjacent-duplicate suppression, validity gates and draft restoration. Common table/input/selection/accessibility CSS was moved into one stylesheet used by both pilots; feature columns/statistics/error styling remain local. ESM build/resource/CSP wiring ships all actual consumers, without adding a framework.
+
+Verification: 740 unit tests, zero skips; 62 regressions; eight packaged current and eight packaged minimum-version tests; three live conformance tests. CI/host/browser/shared/UI/full test compilation pass with 26 existing lint warnings, zero errors. Behavioral tests execute the real helpers with DOM stand-ins for enabled navigation/wrap/Home/End/Escape/focus, IME/edit errors and bounded history/draft semantics. Packaged smoke now executes Performance as well as Scripts/Memory Edits entry points with their real imports. Home/End menu navigation is now consistently supported in the pilots; no layout or command/schema changes.
+
+**Next stage:** R18 normalized project/program/navigation ownership to finish the medium term.
 
 ## 1. Executive assessment
 

@@ -276,10 +276,11 @@ export class ScriptsPanel implements vscode.Disposable {
     private html(webview: vscode.Webview, assetsUri: vscode.Uri): string {
         const nonce = crypto.randomBytes(16).toString('hex');
         const cssUri = webview.asWebviewUri(vscode.Uri.joinPath(assetsUri, 'scripts.css'));
+        const controlsCssUri = webview.asWebviewUri(vscode.Uri.joinPath(assetsUri, 'table-controls.css'));
         const jsUri = webview.asWebviewUri(vscode.Uri.joinPath(assetsUri, 'scripts.js'));
         return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src ${webview.cspSource} 'nonce-${nonce}';">
-<meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${cssUri}"><title>Scripts</title></head>
+<meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${controlsCssUri}"><link rel="stylesheet" href="${cssUri}"><title>Scripts</title></head>
 <body><div class="toolbar"><input id="query" type="search" maxlength="256" aria-label="Filter scripts by name" placeholder="Filter by name"><span id="count"></span></div>
 <div id="status" role="status">No active emulator session</div><div id="table" role="grid" aria-label="Scripts"><div class="header" role="row"><span role="columnheader">Compilation</span><span role="columnheader">Activity</span><span role="columnheader">Name</span><span role="columnheader">Path</span></div><div id="rows"></div></div><div id="empty" tabindex="0">No scripts</div><div id="live" class="sr-only" aria-live="polite"></div>
 <div id="menu" role="menu" hidden><button role="menuitem" data-action="copy">Copy</button><button role="menuitem" data-action="add">Add</button><button role="menuitem" data-action="compile">Compile</button><button role="menuitem" data-action="runOnce">Run Once</button><button role="menuitem" data-action="disable">Disable</button><button role="menuitem" data-action="disableAll">Disable All</button><button role="menuitem" data-action="delete">Delete</button><button role="menuitem" data-action="deleteAll">Delete All</button></div>

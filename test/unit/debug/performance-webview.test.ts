@@ -30,12 +30,12 @@ describe('Performance webview contract', () => {
     });
 
     it('keeps invalid drafts open with accessible field-level errors', () => {
-        expect(script).to.include("input.classList.add('invalid')");
-        expect(script).to.include("input.setAttribute('aria-describedby', 'live')");
+        expect(script).to.include('markInvalid(input, message, live, status)');
+        expect(script).to.include('bindEditKeys(row,');
         expect(script).to.include('if (!input) return');
         expect(script).to.include('editDraft[key] = input.value');
         expect(script).to.include('control.disabled = !canMutate || submitting');
-        expect(styles).to.include('.invalid');
+        expect(read('src/debug/views/assets/table-controls.css')).to.include('.invalid');
     });
 
     it('submits and renders address expressions without evaluating them in the webview', () => {

@@ -10,5 +10,5 @@
     "strict": false,
     "skipLibCheck": true
   },
-  "include": ["src/debug/views/assets/**/*.js", "src/emulator/panel/assets/**/*.js", "src/webview/**/*.d.ts"]
+  "include": ["src/debug/views/assets/**/*.js", "src/emulator/panel/assets/**/*.js", "src/webview/**/*.d.ts", "src/webview/browser/**/*.ts"]
 }
