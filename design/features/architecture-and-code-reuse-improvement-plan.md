@@ -1,6 +1,6 @@
 # Architecture, Code Reuse, and Maintainability Improvement Plan
 
-**Status:** Approved for staged implementation; R01-R04 complete in stage 1; R05/R06 complete as a two-feature pilot in stage 2; R07 complete in stage 3; R08 complete in stage 4; R09 complete in stage 5; R10 complete in stage 6; R11 complete in stage 7; R12 complete in stage 8; R13 complete in stage 9; R14 complete in stage 10; R15 complete in stage 11; R16 complete in stage 12; R17 complete in stage 13; R18 complete in stage 14. **Medium-term roadmap complete.** R19-R24 remain pending long-term work.
+**Status:** R01-R24 implemented in stages 1-20. R19-R24 were delivered as separate stages/commits, with explicit R21/R22 pilots and measurement-driven deferrals below. **Roadmap implementation complete within the documented scope; this is not a claim that all historical architecture debt or every possible optimization is eliminated.**
 **Audit date:** 2026-10-18 (workspace session; some validation timestamps are 2026-10-19 UTC).
 **Owner:** v6vscode maintainers.
 **Repository:** `C:\Work\Programming\v6vscode`.
@@ -179,7 +179,7 @@ Memory Edits, Watchpoints and Symbols depend on narrow memory navigation ports, 
 
 Verification: 746 unit tests, zero skips; 62 regressions; 27 focused compiled tests; eight packaged current and eight packaged minimum-version integration tests; three live conformance tests. CI, strict host/shared/browser-UI builds, all asset checking and full test compilation pass; 26 existing warnings, zero lint errors. Tests cover schema/default/enums/parsing parity, all load-policy payloads, immutable snapshots, FDD casing/read-only metadata, rejected/stale loads, immediate save publication, old-read suppression and failed settings persistence. Final packaged activation/stepping/value tests pass after correcting an injected-default name-shadowing defect caught during validation.
 
-**Medium-term complete:** R10–R18 are implemented in separate stage commits. R19–R24 remain long-term work; none is claimed complete here. Existing R11 cache, expression-promotion and non-cancelling read-only hover limitations remain as documented. R16/R17 are deliberately scoped pilots rather than wholesale migration of every panel. Persistence uses the existing VS Code filesystem write contract, not a newly claimed atomic filesystem transaction.
+**Medium-term complete:** R10–R18 are implemented in separate stage commits. R19–R24 are delivered in stages 15–20 below, with measurement-driven R22 deferrals explicit. Existing R11 cache, expression-promotion and non-cancelling read-only hover limitations remain as documented. R16/R17 are deliberately scoped pilots rather than wholesale migration of every panel. Persistence uses the existing VS Code filesystem write contract, not a newly claimed atomic filesystem transaction.
 
 ## Implementation progress — stage 15 (R19)
 
@@ -223,7 +223,15 @@ Documented shared-service owner/invariants and release setup in docs/architectur
 
 Verification: full clean-output release command passed locally: two host-free core tests, 763 unit tests, zero skips; 62 regressions; nine packaged current and nine packaged minimum-version integration tests with zero pending; three live conformance tests. Strict host/shared/browser-UI builds, all browser entry points, full test typecheck and nine-warning per-file lint ratchet pass. Report: temp/release-verification.json (generated, not committed).
 
-**Next stage:** R24 verified dormant UI/facade cleanup with retained active contracts.
+Stage 19 commit: `28818c5` — `Gate shipped releases on current minimum and live verification`.
+
+## Implementation progress — stage 20 (R24)
+
+Removed dormant CpuStatisticsPanel/formatter and its sole test after repository-wide reference checks found no production import, activation path or manifest command. Retained active Hardware Statistics service/model/format tests and added an explicit DAP register/8080 flag contract test. Removed four unused language-services barrel re-exports after confirming the only consumer imports createLanguageServices; retained the actual language composition/services and protocol commands. Earlier migration facade removals remain covered by source-absence checks; packaged startup now verifies stale compiled CPU Statistics/lifecycle/value/query/memory facade outputs do not ship after a clean build. Corrected stale session/watchpoint documentation and linked current shared-owner contracts.
+
+Final verification: npm run verify:release passed all six gates from clean output: strict host/shared/browser-UI compilation and shipped browser checking; per-file lint ratchet (nine warnings, zero errors); two host-free core tests; 764 unit tests, zero skips; 62 regressions; full test typecheck; nine packaged integration tests on current VS Code and nine on minimum 1.90.0 with zero pending; three live conformance tests. Additionally, 44 focused compiled tests passed (generic decoder/dialects/adapter/browser interactions/release contracts; copied existing asmdbg fixtures beside the alternate compiled test output for its historical relative fixture lookup). Generated report records every stage exit as zero. No wire IDs, contributed commands/view IDs, project formats or active CPU/hardware behavior removed. No push/PR/publication.
+
+**Roadmap closeout:** R19-R24 delivered, with separate stage commits. Remaining limits: incomplete C promotions/floating point, non-cancelling read-only hover timeout, existing artifact cache/input bounds, incremental browser message typing, older private-state tests and unmigrated panels, keyed-list (not universal virtualization) pilots, and unprofiled large-artifact offload. Remote trusted runner/variable/protection setup is documented operator work; workflows were validated locally through the same release command, not executed remotely. These are explicit follow-up areas, not hidden pending sub-stages or claimed solved features.
 
 ## 1. Executive assessment
 
@@ -804,6 +812,11 @@ Effort estimates are planning ranges for one maintainer familiar with the code, 
 **Medium-term success:** new tools can reuse lifecycle, refresh, checked messaging, validation and browser interaction primitives without copying an existing feature. The remaining DAP adapter is a readable protocol map. Existing public commands, wire schemas, view IDs and project formats remain compatible unless an explicit migration is approved.
 
 ### 11.3 Long term: simplify mature areas and strengthen guarantees
+
+**Delivered in stages 15–20:** R19 (`93a5167`), R20 (`1b666b1`), R21
+(`3b4d094`), R22 measured pilots (`251793c`), R23 (`28818c5`), R24 (stage 20
+commit). Rows below retain the original acceptance criteria; completion evidence
+and explicit pilot/deferred limits are recorded above.
 
 | ID | Priority / size | Task and dependency | Deliverable / exit criterion |
 |---|---|---|---|

@@ -31,6 +31,11 @@ suite('Language presentation startup', () => {
         if (process.env.V6_EXPECT_PACKAGED === 'true') {
             const sourceRoot = path.resolve(process.env.V6_EXTENSION_ROOT!).toLowerCase();
             assert.notStrictEqual(path.resolve(extension.extensionPath).toLowerCase(), sourceRoot);
+            for (const removed of ['out/emulator/panel/cpu-statistics-panel.js', 'out/emulator/lifecycle/emulator-lifecycle.js',
+                'out/debug/adapter/value-format.js', 'out/debug/views/scripts-query.js', 'out/emulator/memory/memory-space.js']) {
+                await assert.rejects(Promise.resolve(vscode.workspace.fs.stat(vscode.Uri.joinPath(extension.extensionUri, removed))),
+                    `Obsolete compiled module must not ship: ${removed}`);
+            }
         }
     });
 

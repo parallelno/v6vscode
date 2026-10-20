@@ -2,6 +2,12 @@
 
 The extension is organized into layers: platform infrastructure, configuration, and the composition root.
 
+For the current shared-service contract map, see [owners and invariants](architecture-owners.md).
+The staged roadmap R01-R24 is implemented; measured/pilot boundaries and known
+limits are recorded in that roadmap, [expression policies](expression-dialects.md)
+and [performance evidence](architecture-performance.md). Release verification is
+`npm run verify:release`, not just host compilation or source-tree smoke.
+
 ## Platform Layer (`src/platform/`)
 
 Infrastructure services with no domain logic:
@@ -48,6 +54,13 @@ owns response fields/child counts and the adapter owns wire handles; the editor
 provider owns hover Markdown and definition links. Import-boundary tests prevent
 language/value modules from depending on DAP helpers. No old-path re-export shims
 remain for the moved modules.
+
+`DwarfReader` is the single `.debug_info` form/abbreviation decoder. The v4
+baseline directory/constant functions project its generic DIEs; root-only reads
+remain independent of optional semantic children. Address and C expressions
+execute the same bounded syntax/arithmetic core with explicit dialect policies.
+Transport/session and snapshot pilot events have typed tuples; core logging uses
+a structural port. CI enforces per-file/rule lint warning ceilings.
 
 ## Browser-safe shared code
 
@@ -123,7 +136,7 @@ The Scripts tool is a standalone editor `WebviewPanel` backed by `ScriptService`
 
 The Symbols tool is a standalone editor `WebviewPanel` backed by the same `DebugSymbolService` as Hex Viewer. Its pure query module unions configurable name matching with exact expression-value matches while preserving duplicate symbols through generation-scoped IDs. The provider owns artifact loading, clipboard/source actions, persistence, and typed Hex Viewer handoff; its webview owns history, incremental list rendering, and accessible menus.
 
-The Watchpoints tool is another standalone editor `WebviewPanel`. A session-scoped `WatchpointService` validates schema-1 payloads, serializes mutations, and reconciles every mutation with the backend's authoritative ID-ordered snapshot. The provider validates webview messages, performs bounded memory previews, and hands typed ranges to Hex Viewer. Accurate DAP data-breakpoint stop attribution remains disabled until v6emul exposes watchpoint hit identity.
+The Watchpoints tool is another standalone editor `WebviewPanel`. A session-scoped `WatchpointService` validates schema-1 payloads, serializes mutations, and reconciles every mutation with the backend's authoritative ID-ordered snapshot. The provider validates webview messages, performs bounded memory previews, and hands typed ranges to Hex Viewer. DAP data-breakpoint stop attribution uses authoritative negotiated stop records and watchpoint hit identities when supported.
 
 Hardware Statistics is a Run and Debug `WebviewView`. `HardwareStatisticsService` validates schema-1 snapshots, rejects stale session generations, coalesces refreshes, and serializes verified palette/FDD mutations. `HardwareStatisticsProvider` owns clipboard and file-dialog access, dirty-image decisions, and the typed webview message boundary.
 

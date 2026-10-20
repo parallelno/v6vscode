@@ -53,8 +53,3 @@ export async function createLanguageServices(
         },
     };
 }
-
-export * from './assembly-highlighter';
-export * from './language-presentation-service';
-export * from './source-line-service';
-export * from './symbols/symbol-link-service';

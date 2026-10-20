@@ -9,7 +9,7 @@ Launches the `v6emul` backend, communicates over TCP using length-prefixed Messa
 
 ## Protocol (`src/emulator/protocol/`)
 
-- **`ipc-commands.ts`** — `IpcCommand` enum mapping all v6emul command IDs (PING, RUN, STOP, EXIT, LOAD_ROM, MOUNT_FDD, KEY_HANDLING, GET_MEM, etc.). Typed request/response interfaces. `SPEED_VALUES` mapping from user strings to IPC integers.
+- **`ipc-commands.ts`** — `IpcCommand` enum mapping all v6emul command IDs (PING, RUN, STOP, EXIT, LOAD_ROM, MOUNT_FDD, KEY_HANDLING, GET_MEM, etc.). Typed request/response interfaces. Shared emulator settings own the speed mapping from user strings to IPC integers.
 - **`memory-models.ts`** — Typed request and response models for bulk reads from the emulator's linear global memory address space.
 - **`ipc-codec.ts`** — `encodeRequest(cmd, data)` produces length-prefixed MessagePack buffers. `decodeResponse(buffer)` parses responses. `decodeFrameRaw(buffer)` handles the binary GET_FRAME_RAW format (width, height, ABGR pixels). `frameLength(buffer)` checks if a complete frame is available.
 
@@ -23,9 +23,15 @@ The ordered IPC protocol has no response correlation IDs. An on-wire timeout, so
 
 Concurrent connection attempts share one promise and disconnect cancels a pending connection. Request priority applies only before dispatch. Queue wait and on-wire wait each use the supplied timeout; expiring an unsent request does not invalidate a healthy active exchange. Default safety limits are 256 queued requests, 32 MiB queued request bytes and 16 MiB per response/request payload. Limits can be supplied to the client constructor for bounded test/consumer scenarios. The server must produce exactly one framed response per request; unsolicited extra bytes are rejected rather than cached for an unsent request.
 
-## Lifecycle (`src/emulator/lifecycle/`)
+## Session (`src/emulator/session/`)
 
-- **`session-coordinator.ts`** — Shared owner for Run Project and debug-launch processes, the single emulator socket, and execution state. Debug launch chooses a free port and lends the same `IpcClient` to the DAP adapter and display panel. Closing the display does not terminate a debug-owned session. States: `stopped`, `launching`, `connected`, `running`; ownership is `run` or `debug`.
+- **`session-coordinator.ts`** — Shared owner for Run Project/debug launch and borrowed attach, the single emulator socket, and execution state. Debug launch chooses a free port and lends a scoped client lease to DAP. Borrowed shutdown detaches without EXIT/persistence. Display close follows the existing owned-session stop policy. States: `stopped`, `launching`, `connected`, `running`; ownership is `run` or `debug` (borrowed attach has no owned process).
+- **`program-loader.ts`** — Immutable byte preparation and checked explicit Run/Debug/SET_MEM replacement policies.
+
+The dormant CPU Statistics panel has been removed after confirming no activation,
+command or production consumer. Registers/flags remain in DAP and execution/display
+statistics remain in the active Hardware Statistics feature; their contracts and
+wire command IDs are retained.
 
 ## Panel (`src/emulator/panel/`)
 

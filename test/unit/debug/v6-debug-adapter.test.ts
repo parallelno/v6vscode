@@ -124,6 +124,23 @@ describe('V6DebugAdapter', () => {
         assert.deepStrictEqual(responses[1].body.variables, []);
     });
 
+    it('retains the active register/flag contract after dormant CPU Statistics removal', async () => {
+        const adapter = new V6DebugAdapter({} as any, {} as any, { debug() {}, error() {} } as any, {} as any, () => ({} as any));
+        (adapter as any).cachedRegs = { cc: 0xD5, af: 0x12D5, bc: 0xBEEF, de: 0xCAFE, hl: 0x100, sp: 0xABCD, pc: 0x1234, m: 0x7F, ints: 3 };
+        const responses: any[] = [];
+        adapter.onDidSendMessage(message => responses.push(message));
+        await sendRequest(adapter, { seq: 1, command: 'scopes', arguments: { frameId: 1 } });
+        const scopes = responses[0].body.scopes;
+        for (const scope of scopes.filter((scope: any) => scope.name !== 'Raw Stack')) {
+            await sendRequest(adapter, { seq: responses.length + 1, command: 'variables', arguments: { variablesReference: scope.variablesReference } });
+        }
+        const registers = responses[1].body.variables;
+        assert.ok(registers.some((value: any) => value.name === 'PC' && value.value === '0x1234'));
+        assert.ok(registers.some((value: any) => value.name === 'BC' && value.value === '0xBEEF'));
+        const flags = responses[2].body.variables;
+        for (const name of ['S', 'Z', 'AC', 'P', 'CY']) { assert.ok(flags.some((value: any) => value.name.startsWith(`${name} `) && value.value === '1')); }
+    });
+
     it('keeps the last source location when debug metadata cannot resolve the current address', async () => {
         const adapter = new V6DebugAdapter(
             {} as any,

@@ -44,6 +44,17 @@ describe('Architecture and extension manifest contracts', () => {
     const root = process.cwd();
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
+    it('keeps dormant CPU Statistics and removed migration paths absent while active tools remain contributed', () => {
+        for (const relative of ['src/emulator/panel/cpu-statistics-panel.ts', 'src/emulator/lifecycle/emulator-lifecycle.ts',
+            'src/debug/adapter/value-format.ts', 'src/debug/views/scripts-query.ts', 'src/emulator/memory/memory-space.ts']) {
+            assert.strictEqual(fs.existsSync(path.join(root, relative)), false, relative);
+        }
+        const serialized = JSON.stringify(manifest.contributes);
+        assert.ok(serialized.includes('v6.hardwareStatistics'));
+        assert.ok(!serialized.includes('v6emulCpuStatistics'));
+        assert.ok(fs.existsSync(path.join(root, 'src/debug/hardware-statistics/hardware-statistics-format.ts')));
+    });
+
     it('classifies type-only imports separately from executable and side-effect imports', () => {
         const source = ts.createSourceFile('sample.ts', `import type { A } from 'a'; import { type B } from 'b';
             import 'c'; export type { D } from 'd'; const e = require('e'); const f = import('f');
