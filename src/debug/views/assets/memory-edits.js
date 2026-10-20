@@ -2,7 +2,9 @@ import { globalAddressMemoryLocation, memorySpaceLabel } from '../../../../out/w
 import { parseIntegerLiteral, formatHex as hex } from '../../../../out/webview/numbers.js';
 // @ts-check
 (function () {
-    const vscode = acquireVsCodeApi();
+    const api = acquireVsCodeApi();
+    const panelToken = document.body.dataset.panelToken;
+    const vscode = { postMessage: message => api.postMessage({ ...message, panelToken }) };
     const query = /** @type {HTMLInputElement} */ (document.getElementById('query'));
     const count = document.getElementById('count');
     const status = document.getElementById('status');

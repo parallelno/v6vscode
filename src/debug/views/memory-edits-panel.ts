@@ -1,4 +1,7 @@
-import * as crypto from 'crypto';
+import { PanelHost } from '../../platform/webview/panel-host';
+import { webviewDocument } from '../../platform/webview/webview-document';
+import { RefreshController } from '../../platform/async/refresh-controller';
+import { decodeMemoryEditsMessage } from './pilot-message-codecs';
 import * as vscode from 'vscode';
 import { errorDiagnostic } from '../../emulator/protocol/protocol-result';
 import { SessionCoordinator } from '../../emulator/session/session-coordinator';
@@ -15,9 +18,18 @@ export const CMD_ADD_MEMORY_EDIT = 'v6.addMemoryEdit';
 const WORKSPACE_STATE_KEY = 'v6.memoryEdits.query';
 
 export class MemoryEditsPanel implements vscode.Disposable {
-    private panel: vscode.WebviewPanel | undefined;
+    private readonly host: PanelHost<MemoryEditsWebviewMessage>;
+    private get panel(): vscode.WebviewPanel | undefined { return this.host.panel; }
     private disposed = false;
-    private pollTimer: ReturnType<typeof setInterval> | undefined;
+    private readonly refreshController = new RefreshController({
+        enabled: () => !this.disposed && this.host?.visible === true && this.lifecycle.connected && this.service.available,
+        capture: () => this.currentContinuation(),
+        refresh: async current => {
+            await this.service.refresh();
+            if (current()) { this.postReadyState(); }
+        },
+        failed: error => this.report('refresh', error), intervalMs: 1000, maxBackoffMs: 8000,
+    });
     private readonly stateListener: () => void;
     private readonly changeListener: () => void;
 
@@ -30,37 +42,28 @@ export class MemoryEditsPanel implements vscode.Disposable {
         private readonly logger: Logger,
         private readonly onOpenStateChanged: (open: boolean) => void = () => {},
     ) {
+        this.host = new PanelHost(extensionUri, MEMORY_EDITS_PANEL_ID, 'Memory Edits', {
+            document: (webview, assets, token) => this.html(webview, assets, token),
+            decode: decodeMemoryEditsMessage, message: message => this.handleMessage(message),
+            visibility: visible => { if (visible) { void this.syncSession(); } else { this.stopPolling();  } },
+            closed: () => this.stopPolling(), failed: error => this.report('operation', error),
+        }, onOpenStateChanged);
         this.stateListener = () => void this.syncSession();
         this.changeListener = () => this.postSnapshot();
         this.lifecycle.on('stateChange', this.stateListener);
         this.service.on('change', this.changeListener);
     }
 
-    toggle(): void { this.panel ? this.panel.dispose() : this.open(); }
+    toggle(): void { this.panel ? this.host.close() : this.open(); }
     isOpen(): boolean { return this.panel !== undefined; }
-    close(): void { this.panel?.dispose(); }
+    close(): void { this.host.close(); }
 
-    open(): void {
-        if (this.panel) { this.panel.reveal(); return; }
-        const assetsUri = vscode.Uri.joinPath(this.extensionUri, 'src', 'debug', 'views', 'assets');
-        const panel = vscode.window.createWebviewPanel(
-            MEMORY_EDITS_PANEL_ID, 'Memory Edits', vscode.ViewColumn.Beside,
-            { enableScripts: true, localResourceRoots: [assetsUri, vscode.Uri.joinPath(this.extensionUri, 'out', 'webview')], retainContextWhenHidden: true },
-        );
-        this.panel = panel;
-        panel.webview.html = this.html(panel.webview, assetsUri);
-        panel.webview.onDidReceiveMessage((message: MemoryEditsWebviewMessage) => void this.handleMessage(message));
-        panel.onDidChangeViewState(event => event.webviewPanel.visible ? void this.syncSession() : this.stopPolling());
-        panel.onDidDispose(() => {
-            this.stopPolling();
-            this.panel = undefined;
-            this.onOpenStateChanged(false);
-        });
-        this.onOpenStateChanged(true);
-    }
+    open(): void { this.host.open(); }
 
     async refresh(): Promise<void> {
-        await this.runOperation('refresh', () => this.service.refresh());
+        const current = this.currentContinuation();
+        try { await this.refreshController.request(true); }
+        catch (error) { if (current()) { this.report('refresh', error); } }
     }
 
     add(): void { this.post({ type: 'beginAdd' }); }
@@ -68,14 +71,17 @@ export class MemoryEditsPanel implements vscode.Disposable {
     dispose(): void {
         if (this.disposed) { return; }
         this.disposed = true;
-        this.stopPolling();
+        this.refreshController.dispose();
         this.lifecycle.removeListener('stateChange', this.stateListener);
         this.service.removeListener('change', this.changeListener);
-        this.panel?.dispose();
+        this.host.dispose();
     }
 
     private async handleMessage(message: MemoryEditsWebviewMessage): Promise<void> {
-        if (!message || typeof message.type !== 'string') { return; }
+        const decoded = decodeMemoryEditsMessage(message);
+        if (!decoded) { return; }
+        message = decoded;
+        const current = this.currentContinuation();
         try {
             switch (message.type) {
                 case 'ready':
@@ -126,7 +132,7 @@ export class MemoryEditsPanel implements vscode.Disposable {
                 } break;
             }
         } catch (error) {
-            this.report('operation', error);
+            if (current()) { this.report('operation', error); }
         }
     }
 
@@ -141,7 +147,7 @@ export class MemoryEditsPanel implements vscode.Disposable {
             this.postSnapshot();
             return;
         }
-        if (!this.panel?.visible) { return; }
+        if (!this.host.visible) { return; }
         if (!this.service.available) {
             this.stopPolling();
             this.post({
@@ -155,7 +161,7 @@ export class MemoryEditsPanel implements vscode.Disposable {
             canMutate: false, canRestore: false,
         });
         try {
-            await this.service.refresh();
+            await this.refreshController.request(true);
             if (!current()) { return; }
             this.postReadyState();
             this.startPolling();
@@ -225,24 +231,13 @@ export class MemoryEditsPanel implements vscode.Disposable {
         return Number.isInteger(message.generation) && message.generation === this.service.sessionGeneration;
     }
 
-    private startPolling(): void {
-        this.stopPolling();
-        if (this.panel?.visible) {
-            this.pollTimer = setInterval(() => {
-                const current = this.currentContinuation();
-                void this.service.refresh().catch(error => { if (current()) { this.report('refresh', error); } });
-            }, 1000);
-        }
-    }
-
-    private stopPolling(): void {
-        if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = undefined; }
-    }
+    private startPolling(): void { this.refreshController.start(); }
+    private stopPolling(): void { this.refreshController.stop(); }
 
     private currentContinuation(): () => boolean {
         const generation = this.service.sessionGeneration;
-        const panel = this.panel;
-        return () => !this.disposed && this.panel === panel && generation === this.service.sessionGeneration;
+        const current = this.host.capture();
+        return () => !this.disposed && current() && generation === this.service.sessionGeneration;
     }
 
     private postReadyState(): void {
@@ -273,21 +268,14 @@ export class MemoryEditsPanel implements vscode.Disposable {
         });
     }
 
-    private post(message: MemoryEditsHostMessage): void { void this.panel?.webview.postMessage(message); }
+    private post(message: MemoryEditsHostMessage): void { this.host.post(message); }
 
-    private html(webview: vscode.Webview, assetsUri: vscode.Uri): string {
-        const nonce = crypto.randomBytes(16).toString('hex');
-        const cssUri = webview.asWebviewUri(vscode.Uri.joinPath(assetsUri, 'memory-edits.css'));
-        const jsUri = webview.asWebviewUri(vscode.Uri.joinPath(assetsUri, 'memory-edits.js'));
+    private html(webview: vscode.Webview, assetsUri: vscode.Uri, token: string): string {
         const tooltip = 'Filter by current byte value. Decimal: 0..255. Hex: $NN, 0xNN, or NNh. Bare digits are decimal. Examples: 42, $2A, 0x2A, 2Ah. Clear the field to show all edits.';
-        return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src ${webview.cspSource} 'nonce-${nonce}';">
-<meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${cssUri}"><title>Memory Edits</title></head>
-<body><div class="toolbar"><input id="query" type="search" aria-label="Filter by current byte value" title="${tooltip}" placeholder="Filter current value"><span id="count"></span></div>
+        return webviewDocument(webview, assetsUri, { title: 'Memory Edits', asset: 'memory-edits', token, module: true, body: `<div class="toolbar"><input id="query" type="search" aria-label="Filter by current byte value" title="${tooltip}" placeholder="Filter current value"><span id="count"></span></div>
 <div id="status" role="status">No active emulator session</div><div id="table" role="grid" aria-label="Memory Edits"><div class="header" role="row"><span role="columnheader">Address</span><span role="columnheader">Original</span><span role="columnheader">Entered</span><span role="columnheader">Current</span><span role="columnheader">Activity</span><span role="columnheader">Auto-update</span></div><div id="rows"></div></div><div id="empty" tabindex="0">No memory edits</div><div id="live" class="sr-only" aria-live="polite"></div>
 <div id="menu" role="menu" hidden><button role="menuitem" data-action="copyOriginal">Copy Original Value</button><button role="menuitem" data-action="copyEntered">Copy Entered Value</button><button role="menuitem" data-action="copyCurrent">Copy Current Value</button><button role="menuitem" data-action="reveal">Find in Hex Viewer</button><button role="menuitem" data-action="disable">Disable</button><button role="menuitem" data-action="restore">Restore Original</button><button role="menuitem" data-action="delete">Delete Entry</button><button role="menuitem" data-action="deleteAndRestore">Delete and Restore</button><button role="menuitem" data-action="deleteAndRestoreAll">Delete and Restore All</button></div>
-<div id="list-menu" role="menu" hidden><button role="menuitem" data-action="add">Add</button><button role="menuitem" data-action="disable">Disable</button><button role="menuitem" data-action="disableAll">Disable All</button><button role="menuitem" data-action="delete">Delete</button><button role="menuitem" data-action="deleteAll">Delete All</button><button role="menuitem" data-action="deleteAndRestoreAll">Delete and Restore All</button></div>
-<script type="module" nonce="${nonce}" src="${jsUri}"></script></body></html>`;
+<div id="list-menu" role="menu" hidden><button role="menuitem" data-action="add">Add</button><button role="menuitem" data-action="disable">Disable</button><button role="menuitem" data-action="disableAll">Disable All</button><button role="menuitem" data-action="delete">Delete</button><button role="menuitem" data-action="deleteAll">Delete All</button><button role="menuitem" data-action="deleteAndRestoreAll">Delete and Restore All</button></div>` });
     }
 }
 

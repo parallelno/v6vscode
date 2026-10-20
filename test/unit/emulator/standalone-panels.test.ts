@@ -40,7 +40,8 @@ describe('Standalone emulator panels', () => {
             const disconnected = source.indexOf('if (!this.lifecycle.connected)');
             const panelVisibility = source.indexOf('if (!this.panel?.visible)', disconnected);
             const viewVisibility = source.indexOf('if (!this.view?.visible)', disconnected);
-            const visibility = panelVisibility >= 0 ? panelVisibility : viewVisibility;
+            const hostVisibility = source.indexOf('if (!this.host.visible)', disconnected);
+            const visibility = hostVisibility >= 0 ? hostVisibility : panelVisibility >= 0 ? panelVisibility : viewVisibility;
             expect(disconnected, `${provider} has a disconnected-session branch`).to.be.at.least(0);
             expect(visibility, `${provider} clears before its visibility guard`).to.be.greaterThan(disconnected);
         }
@@ -56,8 +57,9 @@ describe('Standalone emulator panels', () => {
     it('owns standalone debug tools as WebviewPanels with complete panel APIs', () => {
         for (const provider of ['src/debug/views/hex-viewer-provider.ts', 'src/debug/views/memory-edits-panel.ts', 'src/debug/views/performance-panel.ts', 'src/debug/views/trace-log-panel.ts', 'src/debug/views/scripts-panel.ts', 'src/debug/views/symbols-panel.ts', 'src/debug/views/ports-provider.ts', 'src/debug/views/watchpoints-provider.ts']) {
             const source = read(provider);
-            expect(source).to.include('createWebviewPanel(');
-            expect(source).to.include('this.panel.reveal();');
+            const shell = source.includes('new PanelHost(') ? read('src/platform/webview/panel-host.ts') : source;
+            expect(shell).to.include('createWebviewPanel(');
+            expect(shell).to.include('this.panel.reveal();');
             expect(source).not.to.include('this.panel.reveal(vscode.ViewColumn.Beside);');
             expect(source).not.to.include('implements vscode.WebviewViewProvider');
             for (const method of ['open()', 'close()', 'toggle()', 'isOpen()']) {

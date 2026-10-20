@@ -1,5 +1,8 @@
+import { PanelHost } from '../../platform/webview/panel-host';
+import { webviewDocument } from '../../platform/webview/webview-document';
+import { RefreshController } from '../../platform/async/refresh-controller';
+import { decodePerformanceMessage } from './pilot-message-codecs';
 import { formatHex } from '../../shared/numbers';
-import * as crypto from 'crypto';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { errorDiagnostic, diagnosticField } from '../../emulator/protocol/protocol-result';
@@ -22,9 +25,20 @@ export const CMD_ADD_PERFORMANCE = 'v6.addPerformance';
 const WORKSPACE_STATE_KEY = 'v6.performance.query';
 
 export class PerformancePanel implements vscode.Disposable {
-    private panel: vscode.WebviewPanel | undefined;
+    private readonly host: PanelHost<PerformanceWebviewMessage>;
+    private get panel(): vscode.WebviewPanel | undefined { return this.host.panel; }
     private disposed = false;
-    private pollTimer: ReturnType<typeof setInterval> | undefined;
+    private readonly refreshController = new RefreshController({
+        enabled: () => !this.disposed && this.host?.visible === true && this.lifecycle.connected && this.service.available,
+        capture: () => this.currentContinuation(),
+        refresh: async (current, full) => {
+            if (full) { await this.loadSymbols(); }
+            if (!current()) { return; }
+            await this.service.refresh();
+            if (current()) { this.postReadyState(); }
+        },
+        failed: error => this.report('refresh', error), intervalMs: 1000, maxBackoffMs: 8000,
+    });
     private readonly addressExpressions = new EntryExpressionStore<CodePerfSnapshot, 'addrStart' | 'addrEnd'>(
         ['addrStart', 'addrEnd'],
         (_field, value) => formatAddress(value),
@@ -43,6 +57,12 @@ export class PerformancePanel implements vscode.Disposable {
         private readonly logger: Logger,
         private readonly onOpenStateChanged: (open: boolean) => void = () => {},
     ) {
+        this.host = new PanelHost(extensionUri, PERFORMANCE_PANEL_ID, 'Performance', {
+            document: (webview, assets, token) => this.html(webview, assets, token),
+            decode: decodePerformanceMessage, message: message => this.handleMessage(message),
+            visibility: visible => { if (visible) { void this.syncSession(); } else { this.stopPolling(); this.post({ type: 'dismissMenus' }); } },
+            closed: () => this.stopPolling(), failed: error => this.report('operation', error),
+        }, onOpenStateChanged);
         this.stateListener = () => void this.syncSession();
         this.changeListener = () => this.postSnapshot();
         this.lifecycle.on('stateChange', this.stateListener);
@@ -50,52 +70,34 @@ export class PerformancePanel implements vscode.Disposable {
         this.service.on('change', this.changeListener);
     }
 
-    toggle(): void { this.panel ? this.panel.dispose() : this.open(); }
+    toggle(): void { this.panel ? this.host.close() : this.open(); }
     isOpen(): boolean { return this.panel !== undefined; }
-    close(): void { this.panel?.dispose(); }
+    close(): void { this.host.close(); }
     add(): void { this.post({ type: 'beginAdd' }); }
 
-    open(): void {
-        if (this.panel) { this.panel.reveal(); return; }
-        const assetsUri = vscode.Uri.joinPath(this.extensionUri, 'src', 'debug', 'views', 'assets');
-        const panel = vscode.window.createWebviewPanel(
-            PERFORMANCE_PANEL_ID, 'Performance', vscode.ViewColumn.Beside,
-            { enableScripts: true, localResourceRoots: [assetsUri], retainContextWhenHidden: true },
-        );
-        this.panel = panel;
-        panel.webview.html = this.html(panel.webview, assetsUri);
-        panel.webview.onDidReceiveMessage((message: PerformanceWebviewMessage) => void this.handleMessage(message));
-        panel.onDidChangeViewState(event => {
-            if (event.webviewPanel.visible) { void this.syncSession(); }
-            else { this.stopPolling(); this.post({ type: 'dismissMenus' }); }
-        });
-        panel.onDidDispose(() => {
-            this.stopPolling();
-            this.panel = undefined;
-            this.onOpenStateChanged(false);
-        });
-        this.onOpenStateChanged(true);
-    }
+    open(): void { this.host.open(); }
 
     async refresh(): Promise<void> {
-        await this.runOperation('refresh', async current => {
-            await this.loadSymbols();
-            if (current()) { await this.service.refresh(); }
-        });
+        const current = this.currentContinuation();
+        try { await this.refreshController.request(true); }
+        catch (error) { if (current()) { this.report('refresh', error); } }
     }
 
     dispose(): void {
         if (this.disposed) { return; }
         this.disposed = true;
-        this.stopPolling();
+        this.refreshController.dispose();
         this.lifecycle.removeListener('stateChange', this.stateListener);
         this.projectListener?.dispose();
         this.service.removeListener('change', this.changeListener);
-        this.panel?.dispose();
+        this.host.dispose();
     }
 
     private async handleMessage(message: PerformanceWebviewMessage): Promise<void> {
-        if (!message || typeof message.type !== 'string') { return; }
+        const decoded = decodePerformanceMessage(message);
+        if (!decoded) { return; }
+        message = decoded;
+        const current = this.currentContinuation();
         try {
             switch (message.type) {
                 case 'ready':
@@ -141,7 +143,7 @@ export class PerformancePanel implements vscode.Disposable {
                     break;
             }
         } catch (error) {
-            this.report('operation', error);
+            if (current()) { this.report('operation', error); }
         }
     }
 
@@ -153,7 +155,7 @@ export class PerformancePanel implements vscode.Disposable {
             this.postSnapshot();
             return;
         }
-        if (!this.panel?.visible) { return; }
+        if (!this.host.visible) { return; }
         if (!this.service.available) {
             this.stopPolling();
             this.post({
@@ -164,9 +166,7 @@ export class PerformancePanel implements vscode.Disposable {
         }
         this.post({ type: 'state', state: 'loading', message: 'Synchronizing performance tests...', canMutate: false });
         try {
-            await this.loadSymbols();
-            if (!current()) { return; }
-            await this.service.refresh();
+            await this.refreshController.request(true);
             if (!current()) { return; }
             this.postReadyState();
             this.startPolling();
@@ -224,24 +224,13 @@ export class PerformancePanel implements vscode.Disposable {
         return Number.isInteger(message.generation) && message.generation === this.service.sessionGeneration;
     }
 
-    private startPolling(): void {
-        this.stopPolling();
-        if (this.panel?.visible) {
-            this.pollTimer = setInterval(() => {
-                const current = this.currentContinuation();
-                void this.service.refresh().catch(error => { if (current()) { this.report('refresh', error); } });
-            }, 1000);
-        }
-    }
-
-    private stopPolling(): void {
-        if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = undefined; }
-    }
+    private startPolling(): void { this.refreshController.start(); }
+    private stopPolling(): void { this.refreshController.stop(); }
 
     private currentContinuation(): () => boolean {
         const generation = this.service.sessionGeneration;
-        const panel = this.panel;
-        return () => !this.disposed && this.panel === panel && generation === this.service.sessionGeneration;
+        const current = this.host.capture();
+        return () => !this.disposed && current() && generation === this.service.sessionGeneration;
     }
 
     private postReadyState(): void {
@@ -301,20 +290,13 @@ export class PerformancePanel implements vscode.Disposable {
         this.post({ type: 'state', state: 'error', message, canMutate: false });
     }
 
-    private post(message: PerformanceHostMessage): void { void this.panel?.webview.postMessage(message); }
+    private post(message: PerformanceHostMessage): void { this.host.post(message); }
 
-    private html(webview: vscode.Webview, assetsUri: vscode.Uri): string {
-        const nonce = crypto.randomBytes(16).toString('hex');
-        const cssUri = webview.asWebviewUri(vscode.Uri.joinPath(assetsUri, 'performance.css'));
-        const jsUri = webview.asWebviewUri(vscode.Uri.joinPath(assetsUri, 'performance.js'));
-        return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
-<meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${cssUri}"><title>Performance</title></head>
-<body><div class="toolbar"><input id="query" type="search" maxlength="256" aria-label="Search performance tests by name" placeholder="Search by name"><span id="count"></span></div>
+    private html(webview: vscode.Webview, assetsUri: vscode.Uri, token: string): string {
+        return webviewDocument(webview, assetsUri, { title: 'Performance', asset: 'performance', token, module: false, body: `<div class="toolbar"><input id="query" type="search" maxlength="256" aria-label="Search performance tests by name" placeholder="Search by name"><span id="count"></span></div>
 <div id="status" role="status">No active emulator session</div><div id="table" role="grid" aria-label="Performance tests"><div class="header" role="row"><span role="columnheader">Activity</span><span role="columnheader">Name</span><span role="columnheader">Start</span><span role="columnheader">End</span><span role="columnheader">Statistics</span></div><div id="rows"></div></div><div id="empty" tabindex="0">No performance tests</div><div id="live" class="sr-only" aria-live="polite"></div>
 <div id="menu" role="menu" hidden><button role="menuitem" data-action="disable">Disable</button><button role="menuitem" data-action="disableAll">Disable All</button><button role="menuitem" data-action="delete">Delete</button><button role="menuitem" data-action="deleteAll">Delete All</button></div>
-<div id="list-menu" role="menu" hidden><button role="menuitem" data-action="add">Add</button><button role="menuitem" data-action="disableAll">Disable All</button><button role="menuitem" data-action="deleteAll">Delete All</button></div>
-<script nonce="${nonce}" src="${jsUri}"></script></body></html>`;
+<div id="list-menu" role="menu" hidden><button role="menuitem" data-action="add">Add</button><button role="menuitem" data-action="disableAll">Disable All</button><button role="menuitem" data-action="deleteAll">Delete All</button></div>` });
     }
 }
 

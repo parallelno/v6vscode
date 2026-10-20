@@ -149,7 +149,15 @@ Verification: 733 unit tests, zero skips; 62 regressions; 26 focused compiled te
 
 Limitations: browser message payloads remain incrementally typed; this stage does not introduce exhaustive runtime message schemas or a UI framework. DOM existence assumptions follow the generated panel markup; strict-null browser conversion and reusable menu/editor/panel infrastructure remain separate R16/R17 work. No UI layout, public commands, project schema or emulator IPC schema changed.
 
-**Next stage:** R16 webview document/panel/message infrastructure and RefreshController pilot for Performance + Memory Edits, then R17 shared browser interaction helpers. R18-R24 remain separate roadmap work.
+## Implementation progress — stage 12 (R16)
+
+Performance and Memory Edits compose PanelHost/WebviewDocument for one CSP/resource/ready-once/visibility/disposal path. Each document has a fresh opaque token; callbacks from closed/replaced documents and pre-ready traffic are ignored. Feature decoders validate unknown messages and payload primitives before dispatch; generation checks remain authoritative for session-backed actions. Feature mutation/confirmation/capability/error policies stay in the concrete controllers. No universal CRUD base class was introduced.
+
+Both pilots use RefreshController: one in-flight refresh, one latest follow-up, full-versus-poll refresh policy, scoped publication, completion-based polling and bounded exponential error backoff (1–8 seconds). Hidden/disconnected/disposed panels invalidate polling continuations. Performance retains full symbol loading on explicit synchronization and statistic-only polling; Memory Edits retains live-value refresh policy. Service queues still own acknowledged transactions.
+
+Verification: 737 unit tests, zero skips; 62 regressions; eight packaged current and eight packaged minimum-version integration tests; three live conformance tests. CI/host/browser/shared/full test compilation pass; 26 existing lint warnings, zero errors. New behavioral tests cover token/readiness/teardown, malformed messages, escaped document resources and latest-request coalescing without overlap/post-dispose publication. Existing stale confirmation/operation tests remain green. Browser payload schemas are feature-specific and intentionally incremental outside these two pilots.
+
+**Next stage:** R17 shared browser interaction helpers, then R18 normalized project/program/navigation ownership to finish the medium term.
 
 ## 1. Executive assessment
 

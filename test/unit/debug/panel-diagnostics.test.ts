@@ -18,7 +18,8 @@ describe('Panel diagnostic projection', () => {
         const panel: any = kind === 'performance'
             ? new PerformancePanel(uri, lifecycle as any, service as any, {} as any, {} as any, {} as any, logger as any)
             : new MemoryEditsPanel(uri, lifecycle as any, service as any, {} as any, {} as any, logger as any);
-        panel.panel = { webview: { postMessage: (message: unknown) => { messages.push(message); } } };
+        panel.host.panel = { webview: { postMessage: (message: unknown) => { messages.push(message); } } };
+        panel.host.ready = true;
         return { panel, messages, lifecycle, service };
     }
 
@@ -31,7 +32,7 @@ describe('Panel diagnostic projection', () => {
             assert.deepStrictEqual(operation.diagnostic, { kind: 'remote', command: IpcCommand.DEBUG_CODE_PERF_EDIT,
                 code: 'invalid_request', field: 'addrEnd', reason: 'range' });
             if (kind === 'performance') { assert.strictEqual(operation.field, 'addrEnd'); }
-            panel.panel = undefined;
+            panel.host.panel = undefined;
             panel.dispose();
             assert.strictEqual(lifecycle.listenerCount('stateChange'), 0);
             assert.strictEqual(service.listenerCount('change'), 0);
@@ -48,7 +49,7 @@ describe('Panel diagnostic projection', () => {
         panel.report('add', failure);
         assert.strictEqual(messages[0].field, 'addrStart');
         assert.strictEqual(messages[0].diagnostic.kind, 'input');
-        panel.panel = undefined;
+        panel.host.panel = undefined;
         panel.dispose();
     });
     for (const kind of ['performance', 'memory'] as const) {
@@ -66,7 +67,7 @@ describe('Panel diagnostic projection', () => {
                 finish();
                 await pending;
                 assert.deepStrictEqual(messages, []);
-                panel.panel = undefined;
+                panel.host.panel = undefined;
                 panel.dispose();
             });
         }
@@ -87,7 +88,7 @@ describe('Panel diagnostic projection', () => {
                 assert.strictEqual(mutations, 0);
             } finally {
                 window.showWarningMessage = original;
-                panel.panel = undefined;
+                panel.host.panel = undefined;
                 panel.dispose();
             }
         });
@@ -97,7 +98,7 @@ describe('Panel diagnostic projection', () => {
             let finish!: () => void;
             const gate = new Promise<void>(resolve => { finish = resolve; });
             const pending = panel.runOperation('refresh', async () => gate);
-            panel.panel = undefined;
+            panel.host.panel = undefined;
             panel.dispose(); panel.dispose();
             messages.length = 0;
             finish();
@@ -118,7 +119,7 @@ describe('Panel diagnostic projection', () => {
             finish(entry);
             await pending;
             assert.strictEqual(panel.addressExpressions.decorate([entry], 1)[0].addrStart, '0x0001');
-            panel.panel = undefined;
+            panel.host.panel = undefined;
             panel.dispose();
         });
     }
