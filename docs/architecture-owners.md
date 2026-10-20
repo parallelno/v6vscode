@@ -16,6 +16,9 @@
 | Browser menu/edit/history/keyed rows | DOM-only strict ESM; feature policies local; preserved keyboard/focus/draft; bounded identity retention | behavioral stand-ins plus packaged CSP/profile |
 | ProjectRepository / ActiveProjectService | Save captured snapshot, publish after persistence; old reads cannot overwrite saved settings | project/settings contract tests |
 | Navigation ports | Source/memory intent without concrete sibling panels; exact lookup/bank policy remains feature-owned | navigation/import gates |
+| Include resolution / local paths | Include dialect and source-directory anchor separate from host-free lexical mechanics; missing targets remain links | host-free path vectors, provider and shipped link tests |
+| Metadata source relocation / index | Injectable existence and source-reader seams; first-existing disk suffix versus unique metadata match remain distinct | probe-order/ambiguity/per-CU tests |
+| Project source context | Explicit selected-project directory; captured into DAP before async launch, no global state in model helpers | configuration/factory/DAP regression and second-folder live navigation |
 
 No service locator or universal CRUD/panel superclass is used. Structural ports
 are introduced where they enable real consumers/testing; shared pure models may

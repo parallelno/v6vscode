@@ -1,6 +1,7 @@
 import { formatHex } from '../../shared/numbers';
 import * as crypto from 'crypto';
-import * as path from 'path';
+import { projectSourceRoot } from '../../project/model/source-context';
+import { localPathKey } from '../../platform/files/local-path';
 import * as vscode from 'vscode';
 import { SessionCoordinator } from '../../emulator/session/session-coordinator';
 import { LanguagePresentationService, PresentedLine } from '../../language/language-presentation-service';
@@ -308,9 +309,9 @@ export class TraceLogPanel implements vscode.Disposable {
 
     private findBreakpoint(address: number, source?: SourceLocation): vscode.Breakpoint | undefined {
         if (source) {
-            const sourcePath = normalizePath(resolveDebugSourcePath(source.file, this.projectRoot));
+            const sourcePath = localPathKey(resolveDebugSourcePath(source.file, this.projectRoot));
             return vscode.debug.breakpoints.find(breakpoint => breakpoint instanceof vscode.SourceBreakpoint
-                && normalizePath(breakpoint.location.uri.fsPath) === sourcePath
+                && localPathKey(breakpoint.location.uri.fsPath) === sourcePath
                 && breakpoint.location.range.start.line === source.line - 1);
         }
         return undefined;
@@ -336,9 +337,7 @@ export class TraceLogPanel implements vscode.Disposable {
     private async loadSourceContext(): Promise<void> {
         let project = this.activeProjectService.getActiveProject();
         if (!project) { project = await this.activeProjectService.resolve(); }
-        this.projectRoot = project
-            ? path.dirname(project.uri.fsPath)
-            : vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+        this.projectRoot = projectSourceRoot(project, vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '');
         if (!project?.run.debugArtifact) {
             this.sourceContext = undefined;
             return;
@@ -439,10 +438,6 @@ function formatAddress(value: number): string { return formatHex(value, 4); }
 function validGeneration(value: number): boolean { return Number.isSafeInteger(value) && value > 0; }
 function validIndex(value: number): boolean { return Number.isSafeInteger(value) && value >= 0; }
 function validLines(value: number): boolean { return Number.isSafeInteger(value) && value > 0 && value <= 4096; }
-function normalizePath(value: string): string {
-    const normalized = path.normalize(value);
-    return process.platform === 'win32' ? normalized.toLocaleLowerCase() : normalized;
-}
 function inactiveError(error: unknown): boolean {
     const message = error instanceof Error ? error.message : String(error);
     return message.includes('inactive result')

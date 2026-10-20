@@ -9,6 +9,7 @@
  */
 
 import * as path from 'path';
+import { splitSourcePathSegments } from './source-path-segments';
 import { LineRow } from './dwarf4-line-reader';
 import { Elf32Symbol, SHN_ABS, STT_FUNC, STT_NOTYPE, STT_OBJECT } from './elf32-reader';
 import { DwarfVariableDeclaration } from './dwarf4-info-reader';
@@ -353,23 +354,18 @@ function resolveIndexedFile(file: string, sourceFiles: ReadonlyArray<string>): s
     return matchByTrailingSegments(comparableFile, sourceFiles, comparable);
 }
 
-function splitPathSegments(value: string): string[] {
-    return value.split(/[\\/]+/)
-        .filter(segment => segment.length > 0 && !/^[A-Za-z]:$/.test(segment));
-}
-
 function matchByTrailingSegments(
     file: string,
     candidates: ReadonlyArray<string>,
     comparable: (value: string) => string,
 ): string | undefined {
-    const fileSegments = splitPathSegments(file);
+    const fileSegments = splitSourcePathSegments(file);
     if (fileSegments.length === 0) { return undefined; }
     let best: string | undefined;
     let bestLength = 0;
     let ties = 0;
     for (const candidate of candidates) {
-        const candidateSegments = splitPathSegments(comparable(candidate));
+        const candidateSegments = splitSourcePathSegments(comparable(candidate));
         const limit = Math.min(fileSegments.length, candidateSegments.length);
         let length = 0;
         while (length < limit

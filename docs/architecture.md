@@ -16,6 +16,7 @@ Infrastructure services with no domain logic:
 - **`errors/error-codes.ts`** — Typed `ErrorCode` enum: `CONFIG_INVALID`, `EMULATOR_NOT_FOUND`, `EXECUTABLE_NOT_FOUND`, `EMULATOR_LAUNCH_FAILED`, `IPC_CONNECTION_REFUSED`, `IPC_TIMEOUT`, `IPC_DECODE_ERROR`.
 - **`errors/v6-error.ts`** — `V6Error extends Error` with `code` and optional `cause`.
 - **`files/path-service.ts`** — Path resolution: `${extension}` token expansion, relative-to-absolute resolution, extension-rooted paths.
+- **`files/local-path.ts`** — Host-free lexical base resolution (absolute spelling preserved) and local editor-file comparison. Not a URI/metadata canonicalizer or filesystem search.
 - **`files/workspace-service.ts`** — Thin accessor for `vscode.workspace.workspaceFolders`.
 - **`process/process-runner.ts`** — Async `spawn()` wrapper returning `{ process, exitPromise }`.
 - **`disposable/lifecycle.ts`** — `toDisposable(fn)` helper and `DisposableStore` for managing multiple disposables.
@@ -31,6 +32,36 @@ Composition root. Creates platform and project services, registers commands, pus
 ## Debug Session Boundary
 
 `SessionCoordinator` is the shared process/socket owner for ordinary runs and debug launches. `V6DebugAdapter` borrows the lifecycle's `IpcClient`; `EmulatorPanel` renders frames through that same client. `IpcClient` serializes requests and orders queued work by priority, with debugger control above telemetry and display frames.
+
+## Source path ownership
+
+Include interpretation belongs to `src/language/includes/include-resolution.ts`;
+the provider only builds VS Code links/ranges. Includes remain relative to the
+containing source document, with no existence checks or workspace fallback.
+`PathService.resolveRelative` delegates to the same host-free lexical mechanism;
+its extension-resource/token API remains available.
+
+DWARF relocation remains in `debug/metadata/debug-source-path.ts`, with an
+injectable existence predicate for deterministic tests. Symbol scanning also
+accepts a source-path resolver independently of its dirty-document text reader.
+Relocation and breakpoint-to-metadata matching share only segment splitting:
+first-existing disk suffix and unique-best metadata match are different policies.
+Per-CU/v4/v5 reconstruction, URI/source IDs and artifact identities remain local.
+
+The project model's `projectSourceRoot` accepts an already selected project and
+an explicit fallback; it never reads workspace or active-project globals. Debug
+configuration captures the selected project-file directory in internal
+`__v6SourceRoot` alongside its program/artifact settings. The adapter captures that
+root before launch awaits; compatibility callers without project context use the
+factory-captured session folder, then first workspace folder, then an empty root.
+This corrects DAP's former first-workspace anchoring for nested/second-folder
+projects. Source tools and language definitions use the same project-root policy.
+Attach, project selection/discovery and missing-source fallback are unchanged.
+
+Only proven equivalent local editor identity is shared by navigation and Trace
+Log. Do not apply that key to URIs, artifact absolute identity, metadata foreign
+case inference or source-step locations. Native POSIX integration and broader
+URI identity cleanup remain separately reviewed work.
 
 ## Memory and typed values
 

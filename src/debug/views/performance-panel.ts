@@ -3,7 +3,7 @@ import { webviewDocument } from '../../platform/webview/webview-document';
 import { RefreshController } from '../../platform/async/refresh-controller';
 import { decodePerformanceMessage } from './pilot-message-codecs';
 import { formatHex } from '../../shared/numbers';
-import * as path from 'path';
+import { projectSourceRoot } from '../../project/model/source-context';
 import * as vscode from 'vscode';
 import { errorDiagnostic, diagnosticField } from '../../emulator/protocol/protocol-result';
 import { ValidationError } from '../../shared/validation';
@@ -216,9 +216,7 @@ export class PerformancePanel implements vscode.Disposable {
             return;
         }
         const project = this.activeProjectService.getActiveProject();
-        const projectRoot = project
-            ? path.dirname(project.uri.fsPath)
-            : vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+        const projectRoot = projectSourceRoot(project, vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '');
         await this.sourceNavigation.reveal(source, projectRoot);
     }
 

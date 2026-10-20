@@ -1,5 +1,5 @@
 import * as crypto from 'crypto';
-import * as path from 'path';
+import { projectSourceRoot } from '../../project/model/source-context';
 import * as vscode from 'vscode';
 import { SessionCoordinator } from '../../emulator/session/session-coordinator';
 import { ActiveProjectService } from '../../project/active/active-project-service';
@@ -205,9 +205,7 @@ export class SymbolsPanel implements vscode.Disposable {
             return;
         }
         const project = this.activeProjectService.getActiveProject();
-        const projectRoot = project
-            ? path.dirname(project.uri.fsPath)
-            : vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+        const projectRoot = projectSourceRoot(project, vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '');
         await this.sourceNavigation.reveal(source, projectRoot);
     }
 

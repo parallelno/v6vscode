@@ -1,4 +1,4 @@
-import * as path from 'path';
+import { localPathKey } from '../../platform/files/local-path';
 import * as vscode from 'vscode';
 import { SourceLocation } from '../metadata/debug-index';
 import { resolveDebugSourcePath } from '../metadata/debug-source-path';
@@ -36,9 +36,5 @@ export async function revealDebugSource(source: SourceLocation, projectRoot: str
 }
 
 function sameFile(left: vscode.Uri, right: vscode.Uri): boolean {
-    const leftPath = path.normalize(left.fsPath);
-    const rightPath = path.normalize(right.fsPath);
-    return process.platform === 'win32'
-        ? leftPath.toLocaleLowerCase() === rightPath.toLocaleLowerCase()
-        : leftPath === rightPath;
+    return localPathKey(left.fsPath) === localPathKey(right.fsPath);
 }

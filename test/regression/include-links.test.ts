@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import * as path from 'path';
-import { findIncludes, resolveIncludePath } from '../../src/language/includes/include-link-provider';
+import { findIncludes, resolveIncludePath } from '../../src/language/includes/include-resolution';
 
 describe('Regression: include link provider', () => {
     it('should handle malformed include with empty quotes (no match)', () => {
@@ -25,8 +25,8 @@ describe('Regression: include link provider', () => {
 
     it('should resolve path with backslashes on Windows-style paths', () => {
         // resolveIncludePath uses path.resolve which normalizes for the OS
-        const result = resolveIncludePath('/project/src', 'sub/file.inc');
-        expect(path.isAbsolute(result)).to.be.true;
+        const result = resolveIncludePath('/project/src', 'sub\\file.inc');
+        expect(result).to.equal(path.resolve('/project/src', 'sub\\file.inc'));
     });
 
     it('should not crash on text with only whitespace', () => {

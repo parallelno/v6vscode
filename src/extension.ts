@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
+import { projectSourceRoot } from './project/model/source-context';
 import { Logger } from './platform/logging/logger';
 import { PathService } from './platform/files/path-service';
 import { WorkspaceService } from './platform/files/workspace-service';
@@ -350,7 +350,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const project = activeProjectService.getActiveProject()
             ?? await activeProjectService.resolve();
         if (project) {
-            await revealDebugSource(source, path.dirname(project.uri.fsPath));
+            await revealDebugSource(source, projectSourceRoot(project));
         }
     }));
 

@@ -1,4 +1,5 @@
 import { normalizeRun } from '../../project/model/normalized-run';
+import { projectSourceRoot } from '../../project/model/source-context';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { ActiveProjectService } from '../../project/active/active-project-service';
@@ -81,6 +82,8 @@ export class V6DebugConfigurationProvider implements vscode.DebugConfigurationPr
             }
             const run = normalizeRun(project.run);
             config.program = run.executable;
+            // Internal launch context, captured from the same project as the program/artifact.
+            config.__v6SourceRoot = projectSourceRoot(project);
             config.bootRom = project.run.bootRom ?? '';
             config.loadAddress = run.loadAddr;
             config.speed = run.speed;

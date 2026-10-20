@@ -2,11 +2,10 @@ import { expect } from 'chai';
 import * as vscode from 'vscode';
 import { ASSEMBLER_HOVER_CONTEXT } from '../../../src/debug/values/evaluation-context';
 import {
-    findLabelDefinition,
-    findSymbolTokens,
     registerExpressionForHover,
     SymbolLinkProvider,
 } from '../../../src/language/symbols/symbol-link-provider';
+import { findLabelDefinition, findSymbolTokens } from '../../../src/language/symbols/symbol-link-service';
 
 describe('Symbol link provider helpers', () => {
     const source = { file: 'src/main.asm', line: 3, column: 2, isStmt: true };

@@ -34,6 +34,12 @@ async function main(): Promise<void> {
     const extensionRoot = path.resolve(__dirname, '../..');
     const integrationWorkspace = path.join(extensionRoot, 'temp', 'integration-debug-workspace');
     await prepareIntegrationWorkspace(extensionRoot, integrationWorkspace);
+    // A second, nested folder makes source-anchor regressions observable while
+    // keeping ordinary fixtures/projects in the first folder until the path test.
+    const secondWorkspace = path.join(integrationWorkspace, 'nested', 'game');
+    await fs.mkdir(secondWorkspace, { recursive: true });
+    const workspaceFile = path.join(extensionRoot, 'temp', 'integration-paths.code-workspace');
+    await fs.writeFile(workspaceFile, JSON.stringify({ folders: [{ path: integrationWorkspace }, { path: secondWorkspace }] }));
     const packaged = process.argv.includes('--packaged');
     const minimum = process.argv.includes('--minimum');
     const manifest = JSON.parse(await fs.readFile(path.join(extensionRoot, 'package.json'), 'utf8'));
@@ -59,8 +65,9 @@ async function main(): Promise<void> {
             V6_EXPECT_PACKAGED: packaged ? 'true' : 'false',
             V6_EXTENSION_ROOT: extensionRoot,
             V6_DEBUG_INTEGRATION_WORKSPACE: integrationWorkspace,
+            V6_PATH_INTEGRATION_WORKSPACE: secondWorkspace,
         },
-        launchArgs: [integrationWorkspace, '--skip-welcome', '--skip-release-notes', '--disable-workspace-trust'],
+        launchArgs: [workspaceFile, '--skip-welcome', '--skip-release-notes', '--disable-workspace-trust'],
     });
 }
 

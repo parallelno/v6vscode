@@ -1,5 +1,6 @@
 import { expect } from 'chai';
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { V6DebugConfigurationProvider } from '../../../src/debug/configuration/debug-configuration-provider';
 import { ActiveProjectService } from '../../../src/project/active/active-project-service';
 import { Logger } from '../../../src/platform/logging/logger';
@@ -35,6 +36,7 @@ describe('V6DebugConfigurationProvider', () => {
             loadAddress: '0x200',
             speed: '50%',
             stopOnEntry: true,
+            __v6SourceRoot: 'override/source-root',
         });
 
         expect(config?.program).to.equal(__filename);
@@ -43,6 +45,7 @@ describe('V6DebugConfigurationProvider', () => {
         expect(config).to.have.property('speed', '100%');
         expect(config).to.have.property('fddReadOnly', false);
         expect(config).not.to.have.property('stopOnEntry');
+        expect(config?.__v6SourceRoot).to.equal(path.dirname(__filename));
     });
 
     it('removes a launch override when the active project has no debug artifact', async () => {

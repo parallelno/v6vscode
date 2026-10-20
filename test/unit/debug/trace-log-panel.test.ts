@@ -3,6 +3,7 @@ import * as path from 'path';
 import { expect } from 'chai';
 import * as vscode from 'vscode';
 import { TraceLogPanel } from '../../../src/debug/views/trace-log-panel';
+import { projectSourceRoot } from '../../../src/project/model/source-context';
 
 const ROOT = process.cwd();
 const read = (relativePath: string) => fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
@@ -109,7 +110,7 @@ describe('Trace Log panel', () => {
             rows: Map<number, unknown>;
             runAction(index: number, action: string): Promise<void>;
         };
-        host.projectRoot = ROOT;
+        host.projectRoot = projectSourceRoot({ uri: { fsPath: path.join(ROOT, 'nested', 'second-project', 'game.project.json') } });
         host.rows.set(3, {
             address: 0x1234,
             listingOffset: 0,
@@ -124,6 +125,8 @@ describe('Trace Log panel', () => {
         await host.runAction(3, 'toggleBreakpoint');
         expect(debug.breakpoints).to.have.length(1);
         expect((debug.breakpoints[0] as vscode.SourceBreakpoint).location.range.start.line).to.equal(3);
+        expect((debug.breakpoints[0] as vscode.SourceBreakpoint).location.uri.fsPath)
+            .to.equal(path.join(host.projectRoot, 'src', 'main.asm'));
 
         await host.runAction(3, 'toggleBreakpoint');
         expect(debug.breakpoints).to.be.empty;

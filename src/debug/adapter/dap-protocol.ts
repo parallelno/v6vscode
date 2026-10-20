@@ -17,6 +17,8 @@ export interface DapArguments {
     program?: string;
     bootRom?: string;
     debugArtifact?: string;
+    /** Internal context supplied by project configuration, not a launch override. */
+    __v6SourceRoot?: string;
     loadAddress?: string;
     speed?: string;
     fddReadOnly?: boolean;

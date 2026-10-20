@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import * as assert from 'assert';
 import { revealDebugSource } from '../../../src/debug/views/debug-source-navigation';
 
 describe('revealDebugSource', () => {
@@ -75,5 +76,18 @@ describe('revealDebugSource', () => {
 
         expect(openCalls).to.deep.equal([sourceUri]);
         expect(showCalls[0][1]).to.deep.equal({ preview: true });
+    });
+
+    it('clamps source coordinates to the actual document, not the recorded metadata bounds', async () => {
+        await revealDebugSource({ file: 'src/main.asm', line: 999, column: 999, isStmt: true }, projectRoot);
+        expect(editor.selection.anchor).to.include({ line: 1, character: 6 });
+        await revealDebugSource({ file: 'src/main.asm', line: 0, column: 0, isStmt: true }, projectRoot);
+        expect(editor.selection.anchor).to.include({ line: 0, character: 0 });
+    });
+
+    it('propagates document-open failure without showing a different file', async () => {
+        vscodeApi.workspace.openTextDocument = async () => { throw new Error('source unavailable'); };
+        await assert.rejects(revealDebugSource({ file: 'src/main.asm', line: 1, column: 1, isStmt: true }, projectRoot), /source unavailable/);
+        expect(showCalls).to.deep.equal([]);
     });
 });

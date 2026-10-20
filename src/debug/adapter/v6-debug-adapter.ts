@@ -198,6 +198,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         private readonly getConfiguration: (s: string) => vscode.WorkspaceConfiguration,
         private readonly watchpointService?: WatchpointService,
         private readonly watchpointsProvider?: WatchpointFeedback,
+        private readonly fallbackSourceRoot = '',
     ) {}
 
     // -----------------------------------------------------------------------
@@ -285,6 +286,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private async onLaunch(req: DapRequest): Promise<void> {
         const args = req.arguments ?? {};
         try {
+            this.workspaceRoot = typeof args.__v6SourceRoot === 'string' ? args.__v6SourceRoot : this.fallbackSourceRoot;
             this.debugIndex = null;
             this.debugMetadata = undefined;
             this.invalidateStopContext();
@@ -322,11 +324,9 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             // Load debug artifact (companion ELF) if provided
             const debugArtifact = args.debugArtifact as string | undefined;
             if (debugArtifact) {
-                const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-                this.workspaceRoot = folder;
                 const elfPath = path.isAbsolute(debugArtifact)
                     ? debugArtifact
-                    : path.resolve(folder, debugArtifact);
+                    : path.resolve(this.workspaceRoot, debugArtifact);
                 const romPath = String(args.program ?? '');
                 try {
                     const loadResult = await artifactRepository.load(elfPath, romPath);

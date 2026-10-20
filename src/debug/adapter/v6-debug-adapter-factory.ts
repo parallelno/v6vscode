@@ -40,6 +40,7 @@ export class V6DebugAdapterFactory implements vscode.DebugAdapterDescriptorFacto
             this.getConfiguration,
             this.watchpointService,
             this.watchpointsProvider,
+            session.workspaceFolder?.uri.fsPath ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '',
         );
         this.adaptersBySession.set(session.id, adapter);
         this.activeAdapter = adapter;

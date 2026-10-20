@@ -1,5 +1,5 @@
-import * as path from 'path';
 import * as vscode from 'vscode';
+import { resolveAgainstDirectory } from './local-path';
 
 export class PathService {
     private readonly extensionUri: vscode.Uri;
@@ -17,9 +17,6 @@ export class PathService {
     }
 
     resolveRelative(basePath: string, relativePath: string): string {
-        if (path.isAbsolute(relativePath)) {
-            return relativePath;
-        }
-        return path.resolve(basePath, relativePath);
+        return resolveAgainstDirectory(basePath, relativePath);
     }
 }

@@ -1,6 +1,6 @@
 import { codeBeforeComment } from '../asm-lexical';
-import { SourceLocation, SymbolInfo } from '../../debug/metadata/debug-index';
-import { DebugSymbolService } from '../../debug/metadata/debug-symbol-service';
+import type { SourceLocation, SymbolInfo } from '../../debug/metadata/debug-index';
+import type { DebugSymbolService } from '../../debug/metadata/debug-symbol-service';
 import { resolveDebugSourcePath } from '../../debug/metadata/debug-source-path';
 
 const SYMBOL_PATTERN = /[A-Za-z_.@][A-Za-z0-9_.@$]*/g;
@@ -136,6 +136,7 @@ export class DebugSourceSymbolLinkService implements SourceSymbolLinkService {
     constructor(
         private readonly symbols: DebugSymbolService,
         private readonly readSourceText: SourceTextReader,
+        private readonly resolveSourcePath: (file: string, root: string) => string = resolveDebugSourcePath,
     ) {}
 
     async links(text: string, context: SourceDocumentContext): Promise<readonly SymbolLink[]> {
@@ -204,7 +205,7 @@ export class DebugSourceSymbolLinkService implements SourceSymbolLinkService {
         if (symbol.declaration) { return symbol.declaration; }
         let nonLabelMatch: SourceLocation | undefined;
         for (const file of symbols.sourceFiles()) {
-            const sourcePath = resolveDebugSourcePath(file, projectRoot);
+            const sourcePath = this.resolveSourcePath(file, projectRoot);
             const text = await this.readSourceText(sourcePath);
             if (text === undefined) { continue; }
             const label = findLabelDefinition(text, symbol.name);
@@ -233,7 +234,7 @@ export class DebugSourceSymbolLinkService implements SourceSymbolLinkService {
     private async scanSources(name: string, projectRoot: string, symbols: DebugSymbolService): Promise<SourceLocation | undefined> {
         const dotIndex = name.indexOf('.');
         for (const file of symbols.sourceFiles()) {
-            const sourcePath = resolveDebugSourcePath(file, projectRoot);
+            const sourcePath = this.resolveSourcePath(file, projectRoot);
             const text = await this.readSourceText(sourcePath);
             if (text === undefined) { continue; }
             if (dotIndex > 0) {

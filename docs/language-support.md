@@ -38,6 +38,14 @@ Assembler struct definitions are first-class syntax: `.struct`, `.ends`, `.endst
 
 ## Source Links
 
+Include parsing and resolution live in the host-free include-resolution module;
+the VS Code provider owns link ranges and file URIs. Include operands resolve
+against the containing source document directory, not the project/workspace root,
+and missing targets still produce links. Existing case-sensitive/comment-matching
+parser behavior is preserved. Source definitions retain DWARF relocation policy
+and use the selected project-file directory; debug launch captures the same root
+so nested/multi-folder projects do not redirect DAP sources to the first folder.
+
 Ctrl/Cmd-click navigation is available for `.include "..."` paths and for constants and labels present in the active project's debug artifact. Constant links open the DWARF declaration location; label links open the exact `label:` definition when it is available in the artifact source-file table. Rebuild the project when links are missing or stale.
 
 Struct symbols navigate by source scan when no ELF declaration exists: a struct name (`actor`) opens its `.struct` line; a generated offset constant (`actor.update_ptr`) opens the field line inside the struct block, following `extends` parents for inherited fields (`char.pos_x` opens `actor`'s field line); a dotted instance reference (`hero.pos_x`) opens the instance's `label:` line.

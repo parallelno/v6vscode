@@ -1,8 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { splitSourcePathSegments } from './source-path-segments';
+
+export type PathExists = (candidate: string) => boolean;
 
 /**
- * Resolves a DWARF source path to an openable file.
+ * Relocates a DWARF source path. The fallback need not exist or be absolute.
  *
  * The debug metadata may point at the machine layout where the ROM was built
  * (the "compiled site") rather than the workspace the user is editing. This
@@ -17,7 +20,7 @@ import * as path from 'path';
  *  - metadata-rooted (`/src/main.asm`) and relative (`src/main.asm`) paths
  *    are resolved against the project root when possible.
  */
-export function resolveDebugSourcePath(sourcePath: string, projectRoot: string): string {
+export function resolveDebugSourcePath(sourcePath: string, projectRoot: string, exists: PathExists = fs.existsSync): string {
     const normalized = path.normalize(sourcePath);
     const first = sourcePath[0];
     const second = sourcePath[1];
@@ -26,20 +29,20 @@ export function resolveDebugSourcePath(sourcePath: string, projectRoot: string):
     const uncPath = isSeparator(first) && isSeparator(second);
     if (driveQualified || uncPath) {
         if (withinProject(normalized, projectRoot)) { return normalized; }
-        return findWorkspaceMatch(normalized, projectRoot) ?? normalized;
+        return findWorkspaceMatch(normalized, projectRoot, exists) ?? normalized;
     }
     const metadataRooted = (first === '/' || first === path.win32.sep)
         && second !== '/'
         && second !== path.win32.sep;
     if (metadataRooted && projectRoot) {
         const projectPath = path.resolve(projectRoot, sourcePath.slice(1));
-        return fs.existsSync(projectPath) || !fs.existsSync(normalized) ? projectPath : normalized;
+        return exists(projectPath) || !exists(normalized) ? projectPath : normalized;
     }
     if (projectRoot && !path.isAbsolute(sourcePath)) {
         const projectPath = path.resolve(projectRoot, sourcePath);
-        if (fs.existsSync(projectPath)) { return projectPath; }
+        if (exists(projectPath)) { return projectPath; }
     }
-    if (fs.existsSync(normalized) || !projectRoot) {
+    if (exists(normalized) || !projectRoot) {
         return normalized;
     }
     if (!path.isAbsolute(sourcePath)) {
@@ -60,13 +63,12 @@ function withinProject(candidate: string, projectRoot: string): boolean {
  * trailing path segments against the project root, longest suffix first.
  * Returns undefined when no workspace file matches.
  */
-function findWorkspaceMatch(sourcePath: string, projectRoot: string): string | undefined {
+function findWorkspaceMatch(sourcePath: string, projectRoot: string, exists: PathExists): string | undefined {
     if (!projectRoot) { return undefined; }
-    const segments = sourcePath.split(/[\\/]+/)
-        .filter(segment => segment.length > 0 && !/^[A-Za-z]:$/.test(segment));
+    const segments = splitSourcePathSegments(sourcePath);
     for (let count = segments.length; count >= 1; count--) {
         const candidate = path.resolve(projectRoot, ...segments.slice(segments.length - count));
-        if (fs.existsSync(candidate)) { return candidate; }
+        if (exists(candidate)) { return candidate; }
     }
     return undefined;
 }

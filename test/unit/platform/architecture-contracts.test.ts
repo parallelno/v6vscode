@@ -76,7 +76,9 @@ describe('Architecture and extension manifest contracts', () => {
             if (relative.startsWith('test/')) { continue; }
             const source = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
             const core = /^(shared\/|emulator\/(?!panel\/)|debug\/(?!views\/))/.test(relative);
-            const pure = /^(shared\/|debug\/metadata\/|debug\/utilities\/|debug\/values\/|debug\/session\/)/.test(relative) || /-codec\.ts$/.test(relative);
+            const pure = /^(shared\/|debug\/metadata\/|debug\/utilities\/|debug\/values\/|debug\/session\/)/.test(relative)
+                || /-codec\.ts$/.test(relative)
+                || ['language/includes/include-resolution.ts', 'platform/files/local-path.ts', 'project/model/source-context.ts'].includes(relative);
             for (const edge of edges(source)) {
                 const resolved = edge.target.startsWith('.')
                     ? path.relative(src, path.resolve(path.dirname(file), edge.target)).replace(/\\/g, '/') : edge.target;
@@ -86,6 +88,9 @@ describe('Architecture and extension manifest contracts', () => {
                     else { seen.add(key); }
                 }
                 if (pure && edge.target === 'vscode' && !edge.typeOnly) { failures.push(`${relative}: runtime vscode import`); }
+                if (pure && !edge.typeOnly && /(?:-provider|-panel|path-service)$/.test(resolved)) {
+                    failures.push(`${relative}: pure module depends on host adapter ${resolved}`);
+                }
                 if (relative.startsWith('debug/views/') && relative !== 'debug/views/hex-viewer-provider.ts'
                     && resolved === 'debug/views/hex-viewer-provider') { failures.push(`${relative}: concrete sibling navigation dependency`); }
                 if ((relative.startsWith('debug/values/') || relative.startsWith('language/')) && resolved.startsWith('debug/adapter/')) {

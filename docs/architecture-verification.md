@@ -70,3 +70,21 @@ visibility/disposal and malformed input; refresh tests prove coalescing and scop
 publication. Browser helper behavioral tests cover keyboard/focus, IME submission,
 inline errors and history/drafts. Project/program tests check schema/default parity,
 complete hexadecimal addresses, Run/Debug load policies and active-save publication.
+
+## Path-policy boundary checks
+
+The host-free `test:core` lane exercises include parsing/base resolution,
+deterministic DWARF existence-probe order/fallback, metadata matching ambiguity,
+local file keys, explicit project roots and injected source scanning. The import
+gate prohibits runtime host adapters in pure include/path/context modules.
+Provider tests cover URI/range projection and editor navigation; integration uses
+the registered `vscode.executeLinkProvider` (including VS Code 1.90), definitions
+and hover commands. The integration workspace has two folders, with the second
+nested under the first; a real second-folder project launched from the first
+folder verifies DAP/source navigation agreement. Ordinary project discovery keeps
+its root-level `*.project.json` policy; tests do not add recursive search.
+
+Windows runs characterize current drive/UNC/native separator behavior. Conditional
+POSIX vectors are present but Windows results are not a claim of native Linux
+filesystem or VS Code verification. No generic source-remapping cache, strict
+file-kind check, URI canonicalizer or new include fallback was added.

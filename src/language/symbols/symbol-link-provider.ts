@@ -1,5 +1,5 @@
 import { codeBeforeComment } from '../asm-lexical';
-import * as path from 'path';
+import { projectSourceRoot } from '../../project/model/source-context';
 import * as vscode from 'vscode';
 import { ActiveProjectService } from '../../project/active/active-project-service';
 import { DebugSymbolService } from '../../debug/metadata/debug-symbol-service';
@@ -9,14 +9,11 @@ import { format, scalarValue } from '../../debug/values/value-format';
 import { labelAddressTypeInfo } from '../../debug/values/symbol-fallback';
 import { ASSEMBLER_HOVER_CONTEXT } from '../../debug/values/evaluation-context';
 import {
-    findLabelDefinition,
     findSymbolTokens,
     SourceDocumentContext,
     SourceSymbolLinkService,
     SymbolToken,
 } from './symbol-link-service';
-
-export { findLabelDefinition, findSymbolTokens, SourceDocumentContext, SymbolToken };
 
 export const CMD_REVEAL_SYMBOL_SOURCE = 'v6.revealSymbolSource';
 
@@ -161,7 +158,7 @@ export class SymbolLinkProvider implements vscode.HoverProvider, vscode.Definiti
 
         const target = new vscode.Position(Math.max(0, source.line - 1), Math.max(0, source.column - 1));
         return new vscode.Location(
-            vscode.Uri.file(resolveDebugSourcePath(source.file, path.dirname(project.uri.fsPath))),
+            vscode.Uri.file(resolveDebugSourcePath(source.file, projectSourceRoot(project))),
             target,
         );
     }
@@ -171,7 +168,7 @@ export class SymbolLinkProvider implements vscode.HoverProvider, vscode.Definiti
         run: { debugArtifact?: string; executable: string };
     }): SourceDocumentContext {
         return {
-            projectRoot: path.dirname(project.uri.fsPath),
+            projectRoot: projectSourceRoot(project),
             debugArtifact: project.run.debugArtifact!,
             executable: project.run.executable,
         };
