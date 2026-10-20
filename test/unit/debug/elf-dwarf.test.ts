@@ -80,7 +80,7 @@ describe('parseDwarf4CompilationDirectories', () => {
             0x00,             // abbreviation table terminator
         ]);
         const info = Buffer.from([
-            0x09, 0x00, 0x00, 0x00, // unit length
+            0x0C, 0x00, 0x00, 0x00, // version/abbrev/address size + DIE code/string offset
             0x04, 0x00,             // DWARF v4
             0x00, 0x00, 0x00, 0x00, // abbreviation offset
             0x02,                   // address size

@@ -107,6 +107,7 @@ interface Abbreviation {
 // ---------------------------------------------------------------------------
 
 export class DwarfReader {
+    private readonly abbreviationTables = new Map<number, Map<number, Abbreviation>>();
     constructor(
         private readonly info: Buffer,
         private readonly abbrev: Buffer,
@@ -115,7 +116,7 @@ export class DwarfReader {
     ) {}
 
     /** Parse all compilation units in .debug_info. */
-    readUnits(): CompilationUnit[] {
+    readUnits(rootsOnly = false): CompilationUnit[] {
         const units: CompilationUnit[] = [];
         let offset = 0;
         while (offset + 4 <= this.info.length) {
@@ -129,7 +130,7 @@ export class DwarfReader {
             if (offset + 4 + unitLength > this.info.length) {
                 throw new DwarfError('Truncated compilation unit', offset);
             }
-            units.push(this.readUnit(offset, unitLength));
+            units.push(this.readUnit(offset, unitLength, rootsOnly));
             offset += 4 + unitLength;
         }
         return units;
@@ -144,7 +145,7 @@ export class DwarfReader {
             : this.addressTable.readUInt32LE(entry);
     }
 
-    private readUnit(offset: number, unitLength: number): CompilationUnit {
+    private readUnit(offset: number, unitLength: number, rootsOnly: boolean): CompilationUnit {
         const version = this.info.readUInt16LE(offset + 4);
         let cursor: number;
         let unitType = 1; // DW_UT_compile
@@ -174,7 +175,7 @@ export class DwarfReader {
         // First pass: parse the root DIE with provisional zero bases so we can
         // read the CU's own base attributes (str_offsets_base, addr_base, etc.).
         // Indexed string/address forms are wrong in this pass; bases are not.
-        const provisionalRoot = this.readDie(unit, cursor, unitEnd, 0).die;
+        const provisionalRoot = this.readDie(unit, cursor, unitEnd, 0, true, true).die;
         if (provisionalRoot) {
             unit.strOffsetsBase = numberAttribute(provisionalRoot, DW_AT.str_offsets_base) ?? 0;
             unit.addrBase = numberAttribute(provisionalRoot, DW_AT.addr_base) ?? 0;
@@ -183,7 +184,7 @@ export class DwarfReader {
         }
 
         // Second pass: re-parse with correct bases so strx/addrx resolve correctly.
-        const root = this.readDie(unit, cursor, unitEnd, 0).die;
+        const root = this.readDie(unit, cursor, unitEnd, 0, rootsOnly).die;
         unit.root = root;
         return unit;
     }
@@ -193,6 +194,8 @@ export class DwarfReader {
         cursor: number,
         unitEnd: number,
         depth: number,
+        rootsOnly = false,
+        provisional = false,
     ): { die: Die | undefined; next: number } {
         requireRange(this.info, cursor, 1, 'DIE abbreviation code');
         const [code, codeLen] = readULEB128(this.info, cursor);
@@ -212,11 +215,15 @@ export class DwarfReader {
         };
 
         for (const attr of abbrev.attributes) {
-            die.attributes.push(this.readAttribute(unit, cursor, attr));
-            cursor = this.attributeEnd(cursor, attr, unit);
+            const next = this.attributeEnd(cursor, attr, unit);
+            if (next > unitEnd) { throw new DwarfError('Attribute crosses compilation unit boundary', cursor); }
+            const indexed = [DW_FORM.strx, DW_FORM.strx1, DW_FORM.strx2, DW_FORM.strx3, DW_FORM.strx4,
+                DW_FORM.addrx, DW_FORM.addrx1, DW_FORM.addrx2, DW_FORM.addrx3, DW_FORM.addrx4].includes(attr.form as never);
+            die.attributes.push(provisional && indexed ? { name: attr.name, form: attr.form, value: 0 } : this.readAttribute(unit, cursor, attr));
+            cursor = next;
         }
 
-        if (abbrev.hasChildren) {
+        if (abbrev.hasChildren && !rootsOnly) {
             while (cursor < unitEnd) {
                 const child = this.readDie(unit, cursor, unitEnd, depth + 1);
                 cursor = child.next;
@@ -228,6 +235,8 @@ export class DwarfReader {
     }
 
     private abbreviations(unit: CompilationUnit): Map<number, Abbreviation> {
+        const cached = this.abbreviationTables.get(unit.abbrevOffset);
+        if (cached) { return cached; }
         const table = new Map<number, Abbreviation>();
         let cursor = unit.abbrevOffset;
         while (cursor < this.abbrev.length) {
@@ -249,6 +258,7 @@ export class DwarfReader {
             }
             table.set(code, { tag, hasChildren, attributes });
         }
+        this.abbreviationTables.set(unit.abbrevOffset, table);
         return table;
     }
 
@@ -263,6 +273,11 @@ export class DwarfReader {
         const base = { name, form, value: 0 as number | bigint | string | Buffer | boolean };
 
         switch (form) {
+            case DW_FORM.indirect: {
+                const [actual, length] = readULEB128(this.info, cursor);
+                if (actual === DW_FORM.indirect) { throw new DwarfError('Nested indirect form is unsupported', cursor); }
+                return this.readAttribute(unit, cursor + length, { name, form: actual });
+            }
             case DW_FORM.flag_present:
                 return { ...base, value: true };
             case DW_FORM.flag:
@@ -299,7 +314,7 @@ export class DwarfReader {
             case DW_FORM.addrx2:
             case DW_FORM.addrx3:
             case DW_FORM.addrx4: {
-                const { index } = strxIndex(this.info, cursor, form);
+                const { index } = strxIndex(this.info, cursor, form === DW_FORM.addrx ? DW_FORM.strx : form - 4);
                 return { ...base, value: this.resolveAddress(unit, index) };
             }
             case DW_FORM.block1: {
@@ -336,7 +351,7 @@ export class DwarfReader {
                 const [value] = readULEB128(this.info, cursor);
                 return { ...base, value };
             }
-            case DW_FORM.sec_offset:
+            case DW_FORM.sec_offset: return { ...base, value: this.info.readUInt32LE(cursor) };
             case DW_FORM.loclistx:
             case DW_FORM.rnglistx: {
                 const [value] = readULEB128(this.info, cursor);
@@ -345,10 +360,12 @@ export class DwarfReader {
             case DW_FORM.ref1: return { ...base, value: unit.offset + this.info[cursor] };
             case DW_FORM.ref2: return { ...base, value: unit.offset + this.info.readUInt16LE(cursor) };
             case DW_FORM.ref4: return { ...base, value: unit.offset + this.info.readUInt32LE(cursor) };
-            case DW_FORM.ref8: return { ...base, value: Number(this.info.readBigUInt64LE(cursor)) };
+            case DW_FORM.ref8: return { ...base, value: unit.offset + Number(this.info.readBigUInt64LE(cursor)) };
+            case DW_FORM.ref_addr: return { ...base, value: this.info.readUInt32LE(cursor) };
+            case DW_FORM.ref_sig8: return { ...base, value: this.info.readBigUInt64LE(cursor) };
             case DW_FORM.ref_udata: {
                 const [value] = readULEB128(this.info, cursor);
-                return { ...base, value };
+                return { ...base, value: unit.offset + value };
             }
             default:
                 throw new DwarfError(`Unsupported DWARF form 0x${form.toString(16)}`, cursor);
@@ -377,19 +394,24 @@ export class DwarfReader {
             case DW_FORM.strx1: case DW_FORM.addrx1: return cursor + 1;
             case DW_FORM.data2: case DW_FORM.ref2: case DW_FORM.strx2: case DW_FORM.addrx2: return cursor + 2;
             case DW_FORM.data4: case DW_FORM.sec_offset: case DW_FORM.ref4:
-            case DW_FORM.strp: case DW_FORM.line_strp: case DW_FORM.strx4: case DW_FORM.addrx4:
+            case DW_FORM.ref_addr: case DW_FORM.strp: case DW_FORM.line_strp: case DW_FORM.strx4: case DW_FORM.addrx4:
             case DW_FORM.strx3: case DW_FORM.addrx3: return cursor + (attr.form === DW_FORM.strx3 || attr.form === DW_FORM.addrx3 ? 3 : 4);
-            case DW_FORM.data8: case DW_FORM.ref8: return cursor + 8;
+            case DW_FORM.data8: case DW_FORM.ref8: case DW_FORM.ref_sig8: return cursor + 8;
             case DW_FORM.data16: return cursor + 16;
             case DW_FORM.string: {
                 let end = cursor;
                 while (end < this.info.length && this.info[end] !== 0) { end++; }
+                if (end === this.info.length) { throw new DwarfError('Unterminated attribute string', cursor); }
                 return end + 1;
             }
             case DW_FORM.sdata: case DW_FORM.udata: case DW_FORM.ref_udata:
             case DW_FORM.loclistx: case DW_FORM.rnglistx: case DW_FORM.strx: case DW_FORM.addrx:
-            case DW_FORM.indirect:
                 return cursor + readULEB128(this.info, cursor)[1];
+            case DW_FORM.indirect: {
+                const [form, length] = readULEB128(this.info, cursor);
+                if (form === DW_FORM.indirect) { throw new DwarfError('Nested indirect form is unsupported', cursor); }
+                return this.attributeEnd(cursor + length, { form }, unit);
+            }
             case DW_FORM.block: case DW_FORM.exprloc: {
                 const [size, len] = readULEB128(this.info, cursor);
                 return cursor + len + size;

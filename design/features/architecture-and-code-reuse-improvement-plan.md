@@ -181,6 +181,14 @@ Verification: 746 unit tests, zero skips; 62 regressions; 27 focused compiled te
 
 **Medium-term complete:** R10–R18 are implemented in separate stage commits. R19–R24 remain long-term work; none is claimed complete here. Existing R11 cache, expression-promotion and non-cancelling read-only hover limitations remain as documented. R16/R17 are deliberately scoped pilots rather than wholesale migration of every panel. Persistence uses the existing VS Code filesystem write contract, not a newly claimed atomic filesystem transaction.
 
+## Implementation progress — stage 15 (R19)
+
+Baseline v4 compilation-directory/absolute-constant projections now consume DwarfReader instead of a second abbreviation/form decoder. Root-only projection remains independent of optional semantic children. Cached abbreviation tables and a root-only provisional pass avoid repeated whole-tree/base decoding. Fixed-width sec_offset, CU-relative references, fixed-width indexed addresses and indirect forms use the common implementation; unit-crossing attributes and nested indirect encodings fail explicitly. Baseline source lines/symbols remain independent of optional semantic-index failure.
+
+Verification: 753 unit tests, zero skips; 62 regressions; eight minimum-version integration tests; CI/full test typecheck pass with 26 existing warnings and zero errors. New form/projection/malformed-boundary tests and real O0/O1/O2 v5 fixtures pass. Differential execution against the saved old decoder over committed v4 ELF fixtures found four supported projections equal and two newly supported declaration projections (old decoder rejected exprloc). Existing ASM hover/struct-pool and C stepping integration tests pass. Corrected one synthetic test's invalid declared unit length rather than preserving an out-of-unit read.
+
+**Next stage:** R20 bounded expression mechanics and explicit dialect policies.
+
 ## 1. Executive assessment
 
 The project is a workable modular monolith with several good domain boundaries, not an irreparably tangled codebase. Its greatest weakness is **behavioral duplication and distributed ownership of state**, rather than a large graph of cyclic imports. New features repeatedly implement session synchronization, queues, capability gates, polling, error translation, panel scaffolding, menu interaction, validation, and formatting. Small variations in those implementations make otherwise similar features behave differently and increase the cost of correctness fixes.

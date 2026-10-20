@@ -29,11 +29,11 @@ function parseCompilationUnits(
     debugAbbrev: Buffer | undefined,
     debugStrings: Buffer | undefined,
 ): DwarfCompilationUnitInfo[] {
-    if (!debugInfo || !debugAbbrev || !debugStrings) { return []; }
+    if (!debugInfo || !debugAbbrev || !debugStrings || debugInfo.length < 6 || debugInfo.readUInt16LE(4) !== 4) { return []; }
     try {
         return parseDwarf4CompilationUnits(debugInfo, debugAbbrev, debugStrings);
     } catch (error: any) {
-        if (!String(error?.message ?? error).startsWith('Unsupported DWARF attribute form')) { throw error; }
+        if (!String(error?.message ?? error).startsWith('Unsupported DWARF form')) { throw error; }
         return [];
     }
 }
@@ -168,7 +168,7 @@ export function decodeDebugArtifact(elfBuf: Buffer, rom?: Buffer): LoadResult {
                 (unitIndex, stmtList) => filesForUnit(unitIndex, stmtList, lineTables, files),
             );
         } catch (error: any) {
-            if (!String(error?.message ?? error).startsWith('Unsupported DWARF attribute form')) { throw error; }
+            if (!String(error?.message ?? error).startsWith('Unsupported DWARF form')) { throw error; }
         }
     }
 
