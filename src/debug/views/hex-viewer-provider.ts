@@ -1,3 +1,4 @@
+import { memoryCapabilities } from '../../emulator/memory/memory-backend';
 import * as crypto from 'crypto';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -16,7 +17,6 @@ import {
     memorySpaceGlobalAddress,
 } from '../../emulator/memory/memory-space';
 import { MemoryReadCapabilities } from '../../emulator/protocol/memory-models';
-import { IpcCommand } from '../../emulator/protocol/ipc-commands';
 import { DebugSymbolService } from '../metadata/debug-symbol-service';
 import { evaluateSymbolExpression } from '../utilities/symbol-expression';
 import { Logger } from '../../platform/logging/logger';
@@ -274,17 +274,7 @@ export class HexViewerProvider implements vscode.Disposable {
     }
 
     private memoryCapabilities(): MemoryReadCapabilities | undefined {
-        const info = this.lifecycle.serverInfo;
-        if (!info || !info.commands.includes(IpcCommand.GET_MEM)) {
-            return undefined;
-        }
-        return {
-            maxReadLength: MEMORY_BANK_SIZE,
-            ramDiskCount: 8,
-            banksPerRamDisk: 4,
-            bytesPerBank: MEMORY_BANK_SIZE,
-            coherentWhileRunning: true,
-        };
+        return memoryCapabilities(this.lifecycle.serverInfo);
     }
 
     private async refreshVisible(range: VisibleRange): Promise<void> {

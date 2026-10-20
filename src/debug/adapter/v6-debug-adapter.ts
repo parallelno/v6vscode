@@ -46,6 +46,7 @@ import { isAssemblerSource, isHoverEvaluation } from './evaluation-context';
 import { TypeInfo } from '../metadata/dwarf-types';
 import { DWARF_REG, toDwarfRegisters } from '../metadata/v6c-register-map';
 import { StepBreakpointStore } from './step-breakpoint-store';
+import { memoryCapabilities } from '../../emulator/memory/memory-backend';
 import { LogicalLocationIndex } from './logical-location-index';
 import { SourceStepService, SourceStepState } from './source-step-service';
 
@@ -2101,7 +2102,10 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private captureStopContext(): void {
         if (!this.debugMetadata || !this.client || !this.cachedRegs) { return; }
         this.stoppedGeneration++;
-        this.stopContext = DebugStopContext.from(this.debugMetadata, this.client, this.cachedRegs);
+        const generation = this.stoppedGeneration;
+        this.stopContext = DebugStopContext.from(this.debugMetadata, this.client, this.cachedRegs,
+            memoryCapabilities(this.lifecycle.serverInfo) ?? null,
+            () => { if (generation !== this.stoppedGeneration) { throw new Error('Stopped memory context is inactive'); } });
         this.variablesHandles.reset(this.stoppedGeneration);
     }
 

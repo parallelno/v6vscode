@@ -107,7 +107,15 @@ Limitations: content checks read/hash inputs on each requested load for correctn
 
 Follow-up cleanup: removed the temporary EmulatorLifecycle import/name shim after R11. Production and tests now refer directly to SessionCoordinator; related types come from their real owner. No runtime behavior changes. CI passes with 710 unit tests, 62 regressions and the existing 66 lint warnings; full test typecheck passes. Historical audit references below remain as evidence of the original snapshot.
 
-**Next stage:** R12 validated memory backend with separate stopped/live adapters, then R13 typed-value domain ownership. R14-R24 remain separate roadmap work.
+## Implementation progress — stage 8 (R12)
+
+One checked memory backend now owns global address/bank/range/capability checks, chunking, response envelopes, echoed addresses, exact byte lengths and lossless byte decoding. Live MemoryService and stopped CPU reader use that boundary with separate caches/lifetimes, priorities and consumer budgets. Invalid array bytes are rejected instead of coerced. Live reads publish cache changes only after all chunks validate. Stop generation and connection scopes guard submission/dispatch/completion; stopped evaluation still degrades an unreadable variable rather than aborting a whole stop. CPU reads no longer silently mask out-of-range addresses.
+
+Hex Viewer and watchpoint preview derive support from one documented protocol-v2 GET_MEM profile; preview's 16-byte display budget is not represented as a server capability. No IPC schema fields are invented. The stopped reader keeps a 256-byte evaluation budget independent of the backend chunk maximum. Production DAP supplies negotiated command availability and a stopped-generation guard.
+
+Verification: 715 unit tests, zero skips; 62 regressions; seven minimum-version Extension Host/emulator tests and three live conformance tests. CI, host/browser-shared and full test typechecks pass with zero lint errors and the existing 66 warnings. Shared malformed envelope/address/length/byte vectors, capability/bank bounds, atomic cache publication and reconnect/stop invalidation tests pass. Existing live unwind/typed values, hover/struct pools and stepping remain green.
+
+**Next stage:** R13 typed-value domain ownership and shared evaluation API. R14-R24 remain separate roadmap work.
 
 ## 1. Executive assessment
 

@@ -1,55 +1,30 @@
-/**
- * Bounded memory reader over v6emul GET_MEM for stopped-state evaluation.
- *
- * CPU RAM at address N is global address N (RAM is the base memory space).
- * All reads are bounded and 16-bit wrapped; reads return undefined on failure
- * so a single bad read degrades one variable rather than aborting the stop.
- */
-
 import type { CommandSender } from '../../emulator/session/session-operations';
-import { IpcCommand } from '../../emulator/protocol/ipc-commands';
-import { ReadMemoryResponse } from '../../emulator/protocol/memory-models';
+import type { OperationScope } from '../../platform/async/scoped-task-queue';
+import { MemoryReadCapabilities } from '../../emulator/protocol/memory-models';
+import { MemoryBackend, PROTOCOL_V2_MEMORY } from '../../emulator/memory/memory-backend';
+import { MAIN_MEMORY_SPACE } from '../../emulator/memory/memory-space';
 
-const MAX_READ = 256;
-
+/** Stopped CPU reader: bounded consumer budget, no address wrapping and no live cache. */
 export class StopMemoryReader {
-    constructor(private readonly client: CommandSender) {}
+    private readonly backend: MemoryBackend;
+    private readonly scope: OperationScope;
 
-    /** Read a little-endian integer of byteSize (1 or 2) at a 16-bit address. */
+    constructor(client: CommandSender, private readonly capabilities: MemoryReadCapabilities | null = PROTOCOL_V2_MEMORY,
+        assertCurrent: () => void = () => {}) {
+        this.backend = new MemoryBackend(client);
+        this.scope = this.backend.capture(assertCurrent);
+    }
+
     async read(address: number, byteSize: number): Promise<number | undefined> {
         if (byteSize !== 1 && byteSize !== 2) { return undefined; }
         const bytes = await this.readBytes(address, byteSize);
-        if (!bytes) { return undefined; }
-        return byteSize === 1 ? bytes[0] : (bytes[0] | (bytes[1] << 8));
+        return bytes ? byteSize === 1 ? bytes[0] : bytes[0] | bytes[1] << 8 : undefined;
     }
 
-    /** Read raw bytes with 16-bit address wrapping; undefined on failure. */
     async readBytes(address: number, length: number): Promise<Uint8Array | undefined> {
-        if (!Number.isInteger(address) || !Number.isInteger(length)
-            || address < 0 || length <= 0 || length > MAX_READ) {
-            return undefined;
-        }
-        const start = address & 0xFFFF;
-        // Avoid a read that would wrap past 0xFFFF; keep it in one range.
-        const end = start + length;
-        const capped = Math.min(end, 0x10000);
-        const cappedLength = capped - start;
-        if (cappedLength !== length) {
-            // The C ABI does not wrap memory operands; treat wrap as a failure.
-            return undefined;
-        }
-        try {
-            const response = await this.client.send<ReadMemoryResponse>(IpcCommand.GET_MEM, {
-                addr: start,
-                len: length,
-            }, 5000, 'high');
-            if (!response.ok || !response.data) { return undefined; }
-            const data = response.data.data instanceof Uint8Array
-                ? response.data.data
-                : Uint8Array.from(response.data.data);
-            return data.length === length ? data : undefined;
-        } catch {
-            return undefined;
-        }
+        if (!Number.isSafeInteger(address) || !Number.isSafeInteger(length)
+            || address < 0 || length <= 0 || length > 256 || address + length > 0x10000) { return undefined; }
+        try { return await this.backend.read(MAIN_MEMORY_SPACE, address, length, this.capabilities ?? undefined, this.scope, 'high'); }
+        catch { return undefined; } // An unreadable variable must not abort the whole stop.
     }
 }

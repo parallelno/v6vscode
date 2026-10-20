@@ -1,3 +1,4 @@
+import { memoryCapabilities } from '../../emulator/memory/memory-backend';
 import * as crypto from 'crypto';
 import * as vscode from 'vscode';
 import { ActiveProjectService } from '../../project/active/active-project-service';
@@ -8,7 +9,6 @@ import {
     MEMORY_BANK_SIZE,
     memorySpaceKey,
 } from '../../emulator/memory/memory-space';
-import { IpcCommand } from '../../emulator/protocol/ipc-commands';
 import { WatchpointAddRequest, WatchpointEditRequest, WatchpointEntry } from '../../emulator/protocol/debug-models';
 import { Logger } from '../../platform/logging/logger';
 import { DebugSymbolService } from '../metadata/debug-symbol-service';
@@ -272,11 +272,7 @@ export class WatchpointsProvider implements vscode.Disposable {
     }
 
     private configureMemory(): void {
-        const supported = this.lifecycle.serverInfo?.commands.includes(IpcCommand.GET_MEM) === true;
-        this.memory.setCapabilities(supported ? {
-            maxReadLength: 16, ramDiskCount: 8, banksPerRamDisk: 4,
-            bytesPerBank: MEMORY_BANK_SIZE, coherentWhileRunning: true,
-        } : undefined);
+        this.memory.setCapabilities(memoryCapabilities(this.lifecycle.serverInfo));
     }
 
     private async resolveCandidate(candidate: WatchpointCandidate): Promise<WatchpointAddRequest> {

@@ -38,8 +38,10 @@ export class DebugStopContext {
         metadata: DebugMetadataIndex,
         client: import('../../emulator/session/session-operations').CommandSender,
         regs: import('../../emulator/protocol/ipc-commands').GetRegsResponse,
+        capabilities?: import('../../emulator/protocol/memory-models').MemoryReadCapabilities | null,
+        assertCurrent?: () => void,
     ): DebugStopContext {
-        return new DebugStopContext(metadata, new StopMemoryReader(client), toDwarfRegisters(regs));
+        return new DebugStopContext(metadata, new StopMemoryReader(client, capabilities, assertCurrent), toDwarfRegisters(regs));
     }
 
     get pc(): number { return this.topRegisters[DWARF_REG.PC] ?? 0; }

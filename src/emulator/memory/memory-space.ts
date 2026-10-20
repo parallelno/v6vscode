@@ -17,13 +17,13 @@ export function memorySpaceLabel(space: MemorySpace): string {
 }
 
 export function isValidMemorySpace(space: MemorySpace): boolean {
-    return space.kind === 'main'
-        || (Number.isInteger(space.disk)
+    return !!space && (space.kind === 'main'
+        || (space.kind === 'ramDisk' && Number.isInteger(space.disk)
             && space.disk >= 1
             && space.disk <= RAM_DISK_COUNT
             && Number.isInteger(space.bank)
             && space.bank >= 0
-            && space.bank < RAM_DISK_BANK_COUNT);
+            && space.bank < RAM_DISK_BANK_COUNT));
 }
 
 export function allMemorySpaces(
