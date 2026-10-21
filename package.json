@@ -2,7 +2,7 @@
   "name": "v6vscode",
   "displayName": "Vector-06c Development",
   "description": "Vector-06c development environment ΓÇö project management, syntax highlighting, and emulator integration.",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "publisher": "parallelno",
   "license": "MIT",
   "private": true,
@@ -317,10 +317,15 @@
       {
         "type": "v6",
         "label": "Vector-06C",
-        "languages": ["asm", "c"],
+        "languages": [
+          "asm",
+          "c"
+        ],
         "configurationAttributes": {
           "launch": {
-            "required": ["program"],
+            "required": [
+              "program"
+            ],
             "properties": {
               "program": {
                 "type": "string",
@@ -339,7 +344,14 @@
               },
               "speed": {
                 "type": "string",
-                "enum": ["1%", "20%", "50%", "100%", "200%", "max"],
+                "enum": [
+                  "1%",
+                  "20%",
+                  "50%",
+                  "100%",
+                  "200%",
+                  "max"
+                ],
                 "default": "100%",
                 "description": "Emulation speed."
               },
@@ -356,7 +368,9 @@
             }
           },
           "attach": {
-            "required": ["port"],
+            "required": [
+              "port"
+            ],
             "properties": {
               "port": {
                 "type": "number",
@@ -506,7 +520,9 @@
         "v6.debug.sourceStepFilters": {
           "type": "array",
           "default": [],
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Source path globs skipped by C source Step Into and Step Over targets."
         },
         "v6.debug.sourceStepMaxInstructions": {
