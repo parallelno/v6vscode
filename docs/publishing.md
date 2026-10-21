@@ -153,7 +153,7 @@ Local/interactive:
 3. Ensure the identity is a Contributor on `parallelno` (see above).
 4. Publish with `npm run publish:release`.
 
-`vsce` 3.7.1 (pinned here) tries credentials in this order:
+The pinned local `vsce` tries credentials in this order:
 `EnvironmentCredential`, `AzureCliCredential`, `ManagedIdentityCredential`
 (honoring `AZURE_CLIENT_ID`), `AzurePowerShellCredential`, and
 `AzureDeveloperCliCredential`. It requests an Azure DevOps token, so no token
@@ -196,8 +196,8 @@ Azure subscription):
 ### Tooling (`vsce`)
 
 The official quick start installs `vsce` globally
-(`npm install -g @vscode/vsce`). This repository pins `@vscode/vsce` **3.7.1**
-in `devDependencies` (the official CI guidance also recommends a devDependency),
+(`npm install -g @vscode/vsce`). This repository pins `@vscode/vsce` in
+`devDependencies` (the official CI guidance also recommends a devDependency),
 and `npm ci` installs it locally. The scripts use that local binary. A global
 install is optional and is not used by the publish scripts; avoid mixing versions.
 
@@ -228,8 +228,9 @@ npx ovsx publish temp/publish/v6vscode-0.1.0.vsix -p $env:OVSX_PAT
    uploaded report to pass before publishing.
 
 For automated publishing, use the official Entra ID flow above; do not store
-long-lived credentials. GitHub trusted publishing (`vsce publish --oidc`) exists in the current
-`vsce` line but is not supported by pinned 3.7.1 and is not wired here.
+long-lived credentials. GitHub trusted publishing (`vsce publish --oidc`) is
+available in the pinned `vsce` 4.0.0 but is not wired here; adopting it requires
+a Marketplace trusted-publishing policy and `id-token: write`.
 
 ## What the publish scripts do
 
