@@ -54,7 +54,7 @@ export class MemoryEditsPanel implements vscode.Disposable {
         this.service.on('change', this.changeListener);
     }
 
-    toggle(): void { this.panel ? this.host.close() : this.open(); }
+    toggle(): void { if (this.panel) { this.host.close(); } else { this.open(); } }
     isOpen(): boolean { return this.panel !== undefined; }
     close(): void { this.host.close(); }
 

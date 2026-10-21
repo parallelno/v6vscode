@@ -255,21 +255,18 @@ function parseOneLineProgram(
             const [, si] = readULEB128(data, p); p += si;
             files.push(resolveFilePath(fname, dirIdx, dirs, compDir));
         }
-        p++;
     } else {
         const [v5Dirs, afterDirs] = readV5LineTable(data, p, debugStrings, lineStrings);
         p = afterDirs;
         const v5DirectoryPaths = v5Dirs.map(entry => String(entry.get(DW_LNCT_PATH) ?? ''));
         const v5CompDir = compDir || v5DirectoryPaths.find(directory => path.isAbsolute(directory)) || '';
-        const [v5Files, afterFiles] = readV5LineTable(data, p, debugStrings, lineStrings);
-        p = afterFiles;
+        const [v5Files] = readV5LineTable(data, p, debugStrings, lineStrings);
         for (const entry of v5Files) {
             const filePath = String(entry.get(DW_LNCT_PATH) ?? '');
             const directory = v5DirectoryPaths[Number(entry.get(DW_LNCT_DIRECTORY_INDEX) ?? 0)] ?? '';
             files.push(resolveV5FilePath(filePath, directory, v5CompDir));
         }
     }
-    p++; // consume file table terminator
 
     // Sanity: p should now equal base + 4 + 4 + 2 + headerLength = end of header
     const programStart = base + 4 + 2 + (version === 5 ? 2 : 0) + 4 + headerLength;

@@ -149,7 +149,7 @@ export class DwarfReader {
         const version = this.info.readUInt16LE(offset + 4);
         let cursor: number;
         let unitType = 1; // DW_UT_compile
-        let addressSize = 8;
+        let addressSize: number;
         let abbrevOffset: number;
 
         if (version === 5) {

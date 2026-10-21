@@ -71,7 +71,7 @@ export class TraceLogPanel implements vscode.Disposable {
         this.breakpointListener = vscode.debug.onDidChangeBreakpoints(() => this.postBreakpointStates());
     }
 
-    toggle(): void { this.panel ? this.panel.dispose() : this.open(); }
+    toggle(): void { if (this.panel) { this.panel.dispose(); } else { this.open(); } }
     isOpen(): boolean { return this.panel !== undefined; }
     close(): void { this.panel?.dispose(); }
 

@@ -32,7 +32,7 @@ export class ScriptsPanel implements vscode.Disposable {
         this.service.on('change', this.changeListener);
     }
 
-    toggle(): void { this.panel ? this.panel.dispose() : this.open(); }
+    toggle(): void { if (this.panel) { this.panel.dispose(); } else { this.open(); } }
     isOpen(): boolean { return this.panel !== undefined; }
     close(): void { this.panel?.dispose(); }
     add(): void { this.post({ type: 'beginAdd' }); }

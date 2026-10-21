@@ -29,7 +29,7 @@ export interface SetPaletteEntryRequest {
     hwColor: number;
 }
 
-export interface SetPaletteEntryResponse extends SetPaletteEntryRequest {}
+export type SetPaletteEntryResponse = SetPaletteEntryRequest;
 
 export interface DismountFddRequest {
     driveIdx: number;

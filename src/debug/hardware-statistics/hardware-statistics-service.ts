@@ -156,7 +156,6 @@ export class HardwareStatisticsService extends EventEmitter {
         if (generation !== this.generation || !this.visible || !this.lifecycle.connected) { return; }
         if (this.snapshotValue && snapshot.sessionId !== this.snapshotValue.sessionId) {
             this.generation++;
-            generation = this.generation;
         } else if (this.snapshotValue && snapshot.cpuCycles > this.snapshotValue.cpuCycles) {
             snapshot = {
                 ...snapshot,

@@ -23,7 +23,7 @@ tsconfig.browser-shared.json
 tsconfig.browser.json
 tsconfig.browser-ui.json
 .mocharc.yml
-.eslintrc.json
+eslint.config.js
 .editorconfig
 
 # Build and cache artifacts

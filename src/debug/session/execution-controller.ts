@@ -133,7 +133,7 @@ export class ExecutionController {
         await this.baseline(context);
         this.hooks.invalidate();
         try { await this.send(context, IpcCommand.RUN, 'Logpoint automatic resume failed'); }
-        catch (error) { context.assertCurrent(); this.state = 'paused'; this.hooks.running(false); return false; }
+        catch { context.assertCurrent(); this.state = 'paused'; this.hooks.running(false); return false; }
         this.state = 'running'; this.hooks.running(true); this.startPoll();
         return true;
     }
