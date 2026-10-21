@@ -8,9 +8,9 @@ One-time publish-related setup:
 
 - `npm ci` - clean dependencies installation.
 - `winget install Microsoft.AzureCLI` - Azure CLI installation.
-- `az login` - authentication setup.
-- `az account show` - Confirm that the signed-in identity has the publisher's
-  **Contributor** role on the `parallelno` Marketplace publisher.
+- `az login --use-device-code --allow-no-subscriptions` - authentication setup,
+   follow the instructions in the power shell, when press `Enter` on the question
+   `Select a subscription and tenant (Type a number or Enter for no changes):`
 
 If the publisher was created with a personal Microsoft account and has no Entra
 tenant, create or use an Entra tenant and add that identity to the publisher as
