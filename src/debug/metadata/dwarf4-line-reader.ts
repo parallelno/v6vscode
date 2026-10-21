@@ -327,8 +327,8 @@ function parseOneLineProgram(
                 case DW_LNE_define_file: {
                     let fname = ''; while (data[p] !== 0) { fname += String.fromCharCode(data[p++]); }
                     p++; // null
-                    const [dirIdx, di] = readULEB128(data, p); p += di;
-                    const [, ti] = readULEB128(data, p); p += ti;
+                    const [dirIdx, di] = readULEB128(data, p); // lint: unused; p += di;
+                    // lint: unused; const [, ti] = readULEB128(data, p); p += ti;
                     // lint: unused; const [, si] = readULEB128(data, p); p += si;
                     files.push(resolveFilePath(fname, dirIdx, dirs, compDir));
                     break;
@@ -372,7 +372,7 @@ function parseOneLineProgram(
                     isStmt = !isStmt;
                     break;
                 case DW_LNS_set_basic_block:
-                    basicBlock = true;
+                    // lint: unused; basicBlock = true;
                     break;
                 case DW_LNS_const_add_pc:
                     address += minInstrLen * ((255 - opcodeBase) / lineRange | 0);
@@ -381,7 +381,7 @@ function parseOneLineProgram(
                     address += data.readUInt16LE(p); p += 2;
                     break;
                 case DW_LNS_set_prologue_end:
-                    prologueEnd = true;
+                    // lint: unused; prologueEnd = true;
                     break;
                 case DW_LNS_set_epilogue_begin:
                     epilogueBegin = true;
