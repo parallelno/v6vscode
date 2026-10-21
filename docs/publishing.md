@@ -14,7 +14,7 @@
 
 If the publisher was created with a personal Microsoft account and has no Entra
 tenant, create or use an Entra tenant and add that identity to the publisher as
-a Contributor. This is the identity that replaces PATs.
+a Contributor.
 
 ### Publish a release
 
@@ -65,7 +65,7 @@ git pull
 5. **Publish**
 
    ```powershell
-   npm run publish
+   npm run publish:release
    ```
 
    This re-runs the full release gate, re-packages, re-validates, and uploads
@@ -101,7 +101,7 @@ npm ci
 npm version patch -m "Release %s"   # versioning step
 git push --follow-tags
 npm run publish:dry-run -- --verify
-npm run publish
+npm run publish:release
 ```
 
 ### Pre-release
@@ -116,7 +116,7 @@ declares `^1.90.0`.
 npm version 0.3.0 -m "Release %s"
 git push --follow-tags
 npm run publish:dry-run -- --verify
-npm run publish -- --pre-release
+npm run publish:release -- --pre-release
 ```
 
 The script passes `--pre-release` to both packaging and publishing. Users must
@@ -151,7 +151,7 @@ Local/interactive:
 2. Sign in: `az login` (add `--tenant <tenant id>` if needed), then
    `az account show`.
 3. Ensure the identity is a Contributor on `parallelno` (see above).
-4. Publish with `npm run publish`.
+4. Publish with `npm run publish:release`.
 
 `vsce` 3.7.1 (pinned here) tries credentials in this order:
 `EnvironmentCredential`, `AzureCliCredential`, `ManagedIdentityCredential`
@@ -174,11 +174,6 @@ Azure subscription):
 6. Add the identity to the publisher as a **Contributor**.
 7. In an `AzureCLI@2` task, install dependencies and run
    `vsce publish --azure-credential`.
-
-Legacy PAT publishing is intentionally not supported here: global PATs stop
-working on 2026-12-01, and keeping a second credential path would add an
-unmaintainable fallback. If `VSCE_PAT` is present in your shell, the script
-ignores it and warns.
 
 ### Listing and Marketplace constraints
 
@@ -204,7 +199,7 @@ The official quick start installs `vsce` globally
 (`npm install -g @vscode/vsce`). This repository pins `@vscode/vsce` **3.7.1**
 in `devDependencies` (the official CI guidance also recommends a devDependency),
 and `npm ci` installs it locally. The scripts use that local binary. A global
-install is optional and is not used by `npm run publish`; avoid mixing versions.
+install is optional and is not used by the publish scripts; avoid mixing versions.
 
 ### Hosting options
 
@@ -232,11 +227,14 @@ npx ovsx publish temp/publish/v6vscode-0.1.0.vsix -p $env:OVSX_PAT
 3. Run **Actions > Shipped release verification > Run workflow** and require the
    uploaded report to pass before publishing.
 
-For automated publishing, use the official Entra ID flow above; do not store a
-PAT. GitHub trusted publishing (`vsce publish --oidc`) exists in the current
+For automated publishing, use the official Entra ID flow above; do not store
+long-lived credentials. GitHub trusted publishing (`vsce publish --oidc`) exists in the current
 `vsce` line but is not supported by pinned 3.7.1 and is not wired here.
 
-## What `npm run publish` does
+## What the publish scripts do
+
+`npm run publish` stops after step 4. `npm run publish:release` continues with
+step 5 and publishes.
 
 1. **Preflight** — required manifest fields, repository URL, `engines.vscode`,
    plain `x.y.z` version, `README`/`LICENSE`, no `*` activation event, clean Git
@@ -255,8 +253,8 @@ PAT. GitHub trusted publishing (`vsce publish --oidc`) exists in the current
 6. **Report** — writes `temp/publish-report.json` with the commit, stage exits,
    VSIX path/entry count/SHA-256, auth method, and result.
 
-It does not bump the version, commit, tag, or push. It also ignores and removes
-any inherited `VSCE_PAT` so `vsce` cannot fall back to a PAT.
+It does not bump the version, commit, tag, or push. For the release command it
+strips `VSCE_*` environment variables so `vsce` can only use Entra ID.
 
 `--skip-verify` exists only for an intentional hotfix; the report records
 `"verified": "skipped"` and the script warns loudly.
@@ -281,18 +279,18 @@ any inherited `VSCE_PAT` so `vsce` cannot fall back to a PAT.
 
 | Command | Purpose |
 |---|---|
-| `npm run publish:dry-run` | Run `ci`, package, and validate. No upload. |
-| `npm run publish:dry-run -- --verify` | Full `verify:release` gate, package, validate. No upload. |
-| `npm run publish` | Full gate, package, validate, then publish with Entra ID. |
-| `npm run publish -- --pre-release` | Same as above, marked as a pre-release. |
-| `npm run publish -- --skip-verify` | Emergency hotfix publish without verification. |
-| `npm run publish:dry-run -- --allow-dirty` | Package from an unclean tree (dry run only recommended). |
-| `npm run publish:dry-run -- --out <dir>` | Change the package output directory. |
+| `npm run publish` | Default dry run: `ci`, package, validate. No upload. |
+| `npm run publish:dry-run` | Alias of `npm run publish`. |
+| `npm run publish:release` | Full gate, package, validate, then publish with Entra ID. |
+| `npm run publish -- --verify` | Full `verify:release` gate in a dry run. |
+| `npm run publish:release -- --pre-release` | Publish marked as a pre-release. |
+| `npm run publish:release -- --skip-verify` | Emergency hotfix publish without verification. |
+| `npm run publish -- --out <dir>` | Change the package output directory. |
 | `node scripts/publish.cjs --help` | All script flags. |
 
 Do not run `vsce publish` manually for a release: it would bypass the version
-check, VSIX validation, and audit report. `npm run publish` always uses Entra ID;
-no `--azure-credential` flag is needed on the npm command.
+check, VSIX validation, and audit report. `npm run publish:release` always uses
+Entra ID; no `--azure-credential` flag is needed on the npm command.
 
 ## Release report
 
@@ -331,7 +329,7 @@ release record.
 | `The Git working tree is dirty` | Commit or stash; `git status --short`. The release commit must exist before packaging. |
 | `Can not acquire a Microsoft Entra ID access token` | Run `az login` (or `Connect-AzAccount` / `azd auth login`). Check tenant/subscription and `AZURE_CLIENT_ID`/`AZURE_TENANT_ID` for managed identity. |
 | Entra publishes as the wrong identity | Add the exact identity to `parallelno` as a **Contributor** and rerun `az login`. |
-| `401`/`403` from the Marketplace | The Entra identity is not a publisher member/Contributor. Legacy `VSCE_PAT` values are ignored and removed by the script. |
+| `401`/`403` from the Marketplace | The Entra identity is not a publisher member/Contributor. |
 | `Publishing requires V6EMUL` | Set `V6EMUL`, or use `--skip-verify` for an intentional hotfix. |
 | `already exists` | The version is already published; bump with `npm version` and tag again. |
 | `name`/`displayName` already exists | Marketplace-wide names must be unique; change `name`/`displayName` before the first publish. |
@@ -339,7 +337,7 @@ release record.
 | README/CHANGELOG images rejected | Use HTTPS URLs; SVGs only from approved badge providers (`img.shields.io` is approved). |
 | More than 30 keywords | Remove keywords; the Marketplace limit is 30 (currently 8). |
 | Public page 404 after publish | Ingestion delay (5–15 minutes); check the manage page before changing the version. |
-| `Cannot use '--pre-release' flag` | Package and publish must both be pre-release; use `npm run publish -- --pre-release`. |
+| `Cannot use '--pre-release' flag` | Package and publish must both be pre-release; use `npm run publish:release -- --pre-release`. |
 | `doesn't support prerelease versions` | Use a plain `x.y.z`; semver pre-release tags are unsupported. |
 | `EPERM`/file lock on the VSIX | Close Explorer/VS Code previews of the VSIX and retry. |
 | `HEAD is not tagged` warning | Tag the release commit (`npm version` creates it; for 0.1.0 use `git tag -a v0.1.0`). |

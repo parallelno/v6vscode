@@ -25,7 +25,7 @@ Options:
   -h, --help           Show this help.
 
 Authentication (--publish only):
-  Microsoft Entra ID only. Sign in with az login (or Connect-AzAccount /
+  Microsoft Entra ID. Sign in with az login (or Connect-AzAccount /
   azd auth login), or provide workload identity / managed identity credentials.
 
 Environment:
@@ -39,7 +39,6 @@ function parseArgs(argv) {
         preRelease: false,
         verify: false,
         skipVerify: false,
-        allowDirty: false,
         out: path.join('temp', 'publish'),
         help: false,
     };
@@ -130,7 +129,7 @@ function validatePreflight(options, manifest) {
     if (insideWorkspace !== 'true') {
         failures.push('This directory is not a Git working tree, so the package cannot be tied to a commit.');
     } else {
-        if (!options.allowDirty && gitOutput(['status', '--porcelain'])) {
+        if (gitOutput(['status', '--porcelain'])) {
             failures.push('The Git working tree is dirty. Commit or stash changes.');
         }
         const branch = gitOutput(['rev-parse', '--abbrev-ref', 'HEAD']);
@@ -141,9 +140,6 @@ function validatePreflight(options, manifest) {
     }
     if (options.publish && !options.skipVerify && (!process.env.V6EMUL || !fs.existsSync(process.env.V6EMUL))) {
         failures.push('Publishing requires V6EMUL pointing to a debugger-enabled emulator for verify:release. Use --skip-verify only for an intentional hotfix.');
-    }
-    if (options.publish && process.env.VSCE_PAT) {
-        console.warn('VSCE_PAT is no longer supported and will be ignored. Publishing uses Microsoft Entra ID (az login).');
     }
     if (failures.length) { throw new Error(failures.join('\n')); }
 }
@@ -271,9 +267,13 @@ async function validateVsix(vsixPath, manifest, options) {
 function publishVsix(report, options, vsixPath) {
     const args = [resolveVsceEntry(), 'publish', '--packagePath', vsixPath, '--azure-credential'];
     if (options.preRelease) { args.push('--pre-release'); }
-    // Entra ID is the only supported path, and vsce would prefer VSCE_PAT if
-    // present, so remove any legacy token from the publish process.
-    runStage(report, 'publish-marketplace', args, { VSCE_PAT: null });
+    // vsce reads its own VSCE_* environment (including saved credentials);
+    // strip it so the publish process can only use Entra ID.
+    const clearedEnv = {};
+    for (const key of Object.keys(process.env)) {
+        if (key.startsWith('VSCE_')) { clearedEnv[key] = null; }
+    }
+    runStage(report, 'publish-marketplace', args, clearedEnv);
 }
 
 async function main() {
@@ -339,7 +339,7 @@ async function main() {
         saveReport(report);
         console.log('\nNo publication was performed (dry run).');
         console.log(`Install locally with: code --install-extension ${vsixPath}`);
-        console.log('Publish with: npm run publish (Microsoft Entra ID; run az login first)');
+        console.log('Publish with: npm run publish:release (Microsoft Entra ID; run az login first)');
         return;
     }
 
