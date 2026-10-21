@@ -6,7 +6,7 @@
  * register/memory state supplied by the caller.
  */
 
-import { readULEB128, readSLEB128 } from './elf32-reader';
+import { readULEB128 } from './elf32-reader';
 import { DwarfError, requireRange } from './dwarf-sections';
 import { CompilationUnit } from './dwarf-reader';
 import { AddressRange } from './dwarf-ranges';

@@ -9,11 +9,10 @@
 import { Elf32 } from './elf32-reader';
 import { DwarfSections } from './dwarf-sections';
 import { DwarfStrings } from './dwarf-strings';
-import { DwarfReader, CompilationUnit, Die, attribute, stringAttribute, DW_AT, DW_TAG } from './dwarf-reader';
+import { DwarfReader, CompilationUnit, Die, attribute, DW_AT } from './dwarf-reader';
 import { DwarfTypes, TypeInfo } from './dwarf-types';
 import { DwarfScopes, ScopeNode, SubprogramNode, VariableNode } from './dwarf-scopes';
 import { DwarfCfi, UnwindRow } from './dwarf-cfi';
-import { AddressRange } from './dwarf-ranges';
 import { evaluateDwarfExpression, DwarfEvalContext, EvaluatedLocation } from './dwarf-expression';
 import { locationAt } from './dwarf-locations';
 

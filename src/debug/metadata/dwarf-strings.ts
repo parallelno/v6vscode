@@ -25,8 +25,12 @@ export class DwarfStrings {
         return readCString(this.lineStrings, offset);
     }
 
-    /** Resolve a DWARF v5 indexed string for a given base offset and index. */
-    indexed(base: number, index: number, size: 1 | 2 | 4): string {
+    /**
+     * Resolve a DWARF v5 indexed string for a given base offset and index.
+     * `_size` is the width of the strx form that encoded the index; entries in
+     * .debug_str_offsets are always offset-size (4 bytes for 32-bit DWARF).
+     */
+    indexed(base: number, index: number, _size: 1 | 2 | 4): string {
         const entryOffset = base + index * 4;
         requireRange(this.stringOffsets, entryOffset, 4, 'DW_FORM_strx');
         const stringOffset = this.stringOffsets.readUInt32LE(entryOffset);

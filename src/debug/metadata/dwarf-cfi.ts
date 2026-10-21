@@ -113,12 +113,12 @@ export class DwarfCfi {
             throw new DwarfError(`Unsupported CIE version ${version}`, offset);
         }
         let addressSize = 8;
-        let segmentSize = 0;
         if (version === 4) {
             // DWARF4 CIE: address_size and segment_selector_size precede the
-            // alignment factors.
+            // alignment factors. V6C is unsegmented, so the selector size is
+            // consumed but not retained.
             addressSize = this.frame[cursor++];
-            segmentSize = this.frame[cursor++];
+            cursor++;
         }
         const [codeAlignment, caLen] = readULEB128(this.frame, cursor); cursor += caLen;
         const [dataAlignment, daLen] = readSLEB128(this.frame, cursor); cursor += daLen;
@@ -131,7 +131,7 @@ export class DwarfCfi {
             const augEnd = cursor + augLen;
             if (version !== 4 && augmentation.includes('a')) {
                 addressSize = this.frame[cursor++];
-                segmentSize = this.frame[cursor++];
+                cursor++; // segment_selector_size; V6C is unsegmented.
             }
             cursor = augEnd;
         }

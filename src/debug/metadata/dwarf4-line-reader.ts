@@ -278,9 +278,6 @@ function parseOneLineProgram(
     let line     = 1;
     let column   = 0;
     let isStmt   = defaultIsStmt;
-    let basicBlock = false;
-    let prologueEnd = false;
-    let epilogueBegin = false;
 
     let discriminator = 0;
     const emitRow = () => {
@@ -288,16 +285,12 @@ function parseOneLineProgram(
         if (file >= firstFileIndex && file < files.length) {
             rows.push({ address, file: files[file], line, column, isStmt, ...(discriminator ? { discriminator } : {}) });
         }
-        basicBlock = false;
-        prologueEnd = false;
-        epilogueBegin = false;
         discriminator = 0;
     };
 
     const resetState = () => {
         address = 0; opIndex = 0; file = version === 5 ? 0 : 1; line = 1; column = 0;
-        isStmt = defaultIsStmt; basicBlock = false;
-        prologueEnd = false; epilogueBegin = false;
+        isStmt = defaultIsStmt;
         discriminator = 0;
     };
 
@@ -327,9 +320,8 @@ function parseOneLineProgram(
                 case DW_LNE_define_file: {
                     let fname = ''; while (data[p] !== 0) { fname += String.fromCharCode(data[p++]); }
                     p++; // null
-                    const [dirIdx, di] = readULEB128(data, p); // lint: unused; p += di;
-                    // lint: unused; const [, ti] = readULEB128(data, p); p += ti;
-                    // lint: unused; const [, si] = readULEB128(data, p); p += si;
+                    const [dirIdx] = readULEB128(data, p);
+                    // The time and size fields that follow are not used by LineRow.
                     files.push(resolveFilePath(fname, dirIdx, dirs, compDir));
                     break;
                 }
@@ -372,7 +364,7 @@ function parseOneLineProgram(
                     isStmt = !isStmt;
                     break;
                 case DW_LNS_set_basic_block:
-                    // lint: unused; basicBlock = true;
+                    // LineRow has no basic-block flag; the row set is unchanged.
                     break;
                 case DW_LNS_const_add_pc:
                     address += minInstrLen * ((255 - opcodeBase) / lineRange | 0);
@@ -381,10 +373,10 @@ function parseOneLineProgram(
                     address += data.readUInt16LE(p); p += 2;
                     break;
                 case DW_LNS_set_prologue_end:
-                    // lint: unused; prologueEnd = true;
+                    // LineRow has no prologue-end flag; the row set is unchanged.
                     break;
                 case DW_LNS_set_epilogue_begin:
-                    epilogueBegin = true;
+                    // LineRow has no epilogue-begin flag; the row set is unchanged.
                     break;
                 case DW_LNS_set_isa: {
                     const [, i] = readULEB128(data, p); p += i;
