@@ -5,6 +5,7 @@
   "version": "0.1.0",
   "publisher": "parallelno",
   "license": "MIT",
+  "private": true,
   "repository": {
     "type": "git",
     "url": "https://github.com/parallelno/v6vscode.git"
@@ -560,9 +561,9 @@
     "ci": "npm run compile && npm run lint && npm run test:core && npm run test:all",
     "vscode:prepublish": "npm run compile",
     "package": "vsce package",
+    "publish": "node scripts/publish.cjs",
     "publish:dry-run": "node scripts/publish.cjs",
-    "publish:marketplace": "node scripts/publish.cjs --publish",
-    "publish:marketplace:entra": "node scripts/publish.cjs --publish --azure-credential"
+    "publish:release": "node scripts/publish.cjs --publish"
   },
   "devDependencies": {
     "@types/chai": "^5.2.3",

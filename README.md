@@ -100,8 +100,7 @@ npm run package          # produces v6vscode-<version>.vsix
 npm run publish:dry-run  # verify, package and validate; publishes nothing
 ```
 
-See [docs/publishing.md](docs/publishing.md) for the fail-closed Marketplace
-publishing workflow, Entra ID/PAT setup, pre-releases and rollback.
+See [docs/publishing.md](docs/publishing.md) for Marketplace publishing workflow.
 
 ## Tests
 
@@ -123,7 +122,7 @@ Full developer documentation is in [`docs/`](docs/README.md):
 - [Commands](docs/commands.md) — Create Project, Run Project, FDD persistence
 - [Settings and Error UX](docs/settings.md) — configuration, error notifications
 - [Development](docs/development.md) — building, packaging, testing
-- [Publishing](docs/publishing.md) — accounts, Entra ID/PAT setup, release gates, and the publish script
+- [Publishing](docs/publishing.md) — accounts, Entra ID setup, release gates, and the publish script
 
 ## License
 
