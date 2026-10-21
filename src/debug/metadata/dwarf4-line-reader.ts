@@ -329,7 +329,7 @@ function parseOneLineProgram(
                     p++; // null
                     const [dirIdx, di] = readULEB128(data, p); p += di;
                     const [, ti] = readULEB128(data, p); p += ti;
-                    const [, si] = readULEB128(data, p); // lint: unused; p += si;
+                    // lint: unused; const [, si] = readULEB128(data, p); p += si;
                     files.push(resolveFilePath(fname, dirIdx, dirs, compDir));
                     break;
                 }
