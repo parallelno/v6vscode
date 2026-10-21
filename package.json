@@ -26,7 +26,7 @@
     "retro computing",
     "debugger"
   ],
-  "icon": "images/icon2.png",
+  "icon": "images/icon.png",
   "main": "./out/extension.js",
   "activationEvents": [
     "workspaceContains:**/*.project.json",
@@ -561,7 +561,8 @@
     "vscode:prepublish": "npm run compile",
     "package": "vsce package",
     "publish:dry-run": "node scripts/publish.cjs",
-    "publish:marketplace": "node scripts/publish.cjs --publish"
+    "publish:marketplace": "node scripts/publish.cjs --publish",
+    "publish:marketplace:entra": "node scripts/publish.cjs --publish --azure-credential"
   },
   "devDependencies": {
     "@types/chai": "^5.2.3",

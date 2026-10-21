@@ -101,7 +101,7 @@ npm run publish:dry-run  # verify, package and validate; publishes nothing
 ```
 
 See [docs/publishing.md](docs/publishing.md) for the fail-closed Marketplace
-publishing workflow, token setup, pre-releases and rollback.
+publishing workflow, Entra ID/PAT setup, pre-releases and rollback.
 
 ## Tests
 
@@ -123,7 +123,7 @@ Full developer documentation is in [`docs/`](docs/README.md):
 - [Commands](docs/commands.md) — Create Project, Run Project, FDD persistence
 - [Settings and Error UX](docs/settings.md) — configuration, error notifications
 - [Development](docs/development.md) — building, packaging, testing
-- [Publishing](docs/publishing.md) — release gates, Marketplace token setup, and the publish script
+- [Publishing](docs/publishing.md) — accounts, Entra ID/PAT setup, release gates, and the publish script
 
 ## License
 

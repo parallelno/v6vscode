@@ -16,7 +16,10 @@ VS Code Marketplace. Without --publish this is a dry run: nothing is published,
 no version is bumped, and no commit, tag or push is created.
 
 Options:
-  --publish            Publish the validated VSIX. Requires VSCE_PAT.
+  --publish            Publish the validated VSIX.
+  --azure-credential   Authenticate with Microsoft Entra ID instead of a PAT
+                       (official recommendation; requires az/azd/Connect-AzAccount,
+                       workload identity, or a managed identity).
   --dry-run            Explicit dry run (default when --publish is absent).
   --pre-release        Mark the VSIX as a pre-release (package and publish).
   --verify             Run the full "npm run verify:release" gate in a dry run.
@@ -25,8 +28,12 @@ Options:
   --out <directory>    Package output directory (default: temp/publish).
   -h, --help           Show this help.
 
+Authentication (--publish only):
+  --azure-credential   Microsoft Entra ID. The official recommendation; Azure DevOps
+                       global PATs are retired on 2026-12-01.
+  VSCE_PAT             Legacy Marketplace personal access token (until retirement).
+
 Environment:
-  VSCE_PAT             Marketplace personal access token (only needed to publish).
   V6EMUL               Debugger-enabled emulator executable (needed by verify:release).
 `;
 
@@ -35,6 +42,7 @@ function parseArgs(argv) {
         publish: false,
         dryRun: false,
         preRelease: false,
+        azureCredential: false,
         verify: false,
         skipVerify: false,
         allowDirty: false,
@@ -47,6 +55,7 @@ function parseArgs(argv) {
             case '--publish': options.publish = true; break;
             case '--dry-run': options.dryRun = true; break;
             case '--pre-release': options.preRelease = true; break;
+            case '--azure-credential': options.azureCredential = true; break;
             case '--verify': options.verify = true; break;
             case '--skip-verify': options.skipVerify = true; break;
             case '--allow-dirty': options.allowDirty = true; break;
@@ -63,6 +72,9 @@ function parseArgs(argv) {
     }
     if (options.publish && options.dryRun) { throw new Error('--publish and --dry-run cannot be combined.'); }
     if (options.verify && options.skipVerify) { throw new Error('--verify and --skip-verify cannot be combined.'); }
+    if (options.azureCredential && !options.publish) {
+        throw new Error('--azure-credential only applies with --publish. Use --publish for a real release, or omit it for a dry run.');
+    }
     return options;
 }
 
@@ -86,10 +98,14 @@ function resolveVsceEntry() {
 function runStage(report, name, args, extraEnv = {}) {
     console.log(`\nPublish gate: ${name}`);
     const started = Date.now();
+    const env = { ...process.env, ...extraEnv };
+    for (const [key, value] of Object.entries(extraEnv)) {
+        if (value === null || value === undefined) { delete env[key]; }
+    }
     const result = spawnSync(process.execPath, args, {
         cwd: root,
         stdio: 'inherit',
-        env: { ...process.env, ...extraEnv },
+        env,
     });
     report.stages.push({ name, exit: result.error ? null : result.status, elapsedMs: Date.now() - started });
     saveReport(report);
@@ -137,8 +153,11 @@ function validatePreflight(options, manifest) {
     if (options.publish && !options.skipVerify && (!process.env.V6EMUL || !fs.existsSync(process.env.V6EMUL))) {
         failures.push('Publishing requires V6EMUL pointing to a debugger-enabled emulator for verify:release. Use --skip-verify only for an intentional hotfix.');
     }
-    if (options.publish && !process.env.VSCE_PAT) {
-        failures.push('Publishing requires the VSCE_PAT environment variable (Marketplace personal access token). Do not pass tokens on the command line.');
+    if (options.publish && !options.azureCredential && !process.env.VSCE_PAT) {
+        failures.push('Publishing requires authentication: pass --azure-credential for Microsoft Entra ID (official recommendation) or set VSCE_PAT (legacy; global PATs retire 2026-12-01).');
+    }
+    if (options.publish && options.azureCredential && process.env.VSCE_PAT) {
+        console.warn('VSCE_PAT is set, but --azure-credential was requested; VSCE_PAT is cleared for the publish call so Entra ID is used.');
     }
     if (failures.length) { throw new Error(failures.join('\n')); }
 }
@@ -266,7 +285,9 @@ async function validateVsix(vsixPath, manifest, options) {
 function publishVsix(report, options, vsixPath) {
     const args = [resolveVsceEntry(), 'publish', '--packagePath', vsixPath];
     if (options.preRelease) { args.push('--pre-release'); }
-    runStage(report, 'publish-marketplace', args);
+    if (options.azureCredential) { args.push('--azure-credential'); }
+    // vsce prefers a PAT when VSCE_PAT is present, so remove it for Entra ID.
+    runStage(report, 'publish-marketplace', args, options.azureCredential ? { VSCE_PAT: null } : {});
 }
 
 async function main() {
@@ -286,6 +307,7 @@ async function main() {
         node: process.version,
         mode: options.publish ? 'publish' : 'dry-run',
         preRelease: options.preRelease,
+        auth: options.azureCredential ? 'entra-id' : (options.publish && process.env.VSCE_PAT ? 'pat' : 'none'),
         verified: null,
         extension: `${manifest.publisher}.${manifest.name}`,
         version: manifest.version,
@@ -331,7 +353,7 @@ async function main() {
         saveReport(report);
         console.log('\nNo publication was performed (dry run).');
         console.log(`Install locally with: code --install-extension ${vsixPath}`);
-        console.log('Publish with: npm run publish:marketplace');
+        console.log('Publish with: npm run publish:marketplace:entra (Entra ID) or npm run publish:marketplace (legacy PAT)');
         return;
     }
 

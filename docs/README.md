@@ -12,4 +12,4 @@ VS Code extension for the Vector-06c retro computer.
 5. [Commands](commands.md) — V6: Create Project, V6: Run Project, and FDD persistence
 6. [Settings and Error UX](settings.md) — configuration keys, settings validation, and error notifications
 7. [Development](development.md) — building, packaging, and testing
-8. [Publishing](publishing.md) — release gates, Marketplace token setup, and the publish script
+8. [Publishing](publishing.md) — accounts, Entra ID/PAT setup, release gates, and the publish script
