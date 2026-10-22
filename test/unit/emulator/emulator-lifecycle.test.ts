@@ -148,14 +148,12 @@ describe('SessionCoordinator session ownership', () => {
 
         await lifecycle.startDebug({
             program: 'test.rom',
-            bootRomPath: 'boot.bin',
             loadAddr: '0x100',
         });
 
         expect(launchRequest).to.include({
             emulatorPath: 'v6emul',
             tcpPort: 4321,
-            bootRomPath: 'boot.bin',
         });
         expect(launchRequest).not.to.have.property('romPath');
         expect(launchRequest).not.to.have.property('fddPath');
@@ -242,7 +240,6 @@ describe('SessionCoordinator session ownership', () => {
         try {
             await lifecycle.loadDebugProgram({
                 program: romPath,
-                bootRomPath: 'boot.bin',
                 loadAddr: '0x200',
             });
         } finally {
@@ -279,7 +276,6 @@ describe('SessionCoordinator session ownership', () => {
         try {
             await lifecycle.reloadDebugRom({
                 program: romPath,
-                bootRomPath: 'boot.bin',
                 loadAddr: '0x200',
             });
         } finally {

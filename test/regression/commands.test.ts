@@ -151,7 +151,7 @@ describe('Commands and templates regression tests', () => {
             const manifest = JSON.parse(fs.readFileSync(path.join(EXTENSION_ROOT, 'package.json'), 'utf8'));
             const contributes = manifest.contributes;
             expect(contributes.viewsContainers.activitybar).to.deep.include({
-                id: 'v6emul', title: 'v6emul', icon: 'res/images/icon.png',
+                id: 'v6emul', title: 'v6emul', icon: 'res/images/activity-bar.png',
             });
             expect(contributes.views.v6emul).to.deep.include({ id: 'v6emul.panels', name: 'Panels' });
             expect(contributes.commands.filter((item: any) => item.category === 'v6emul').map((item: any) => item.command)).to.deep.equal([

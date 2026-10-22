@@ -40,15 +40,15 @@ describe('v6emul-launcher', () => {
             expect(args).to.include('9876');
         });
 
-        it('should include --boot-rom when bootRomPath is set', () => {
+        it('should default --boot-rom to the emulator preset default1', () => {
             const request: LaunchRequest = {
                 emulatorPath: '/path/to/v6emul',
-                bootRomPath: '/path/to/boot.bin',
                 tcpPort: 9876,
             };
             const args = buildArgs(request);
-            expect(args).to.include('--boot-rom');
-            expect(args).to.include('/path/to/boot.bin');
+            const index = args.indexOf('--boot-rom');
+            expect(index).to.be.greaterThan(-1);
+            expect(args[index + 1]).to.equal('default1');
         });
 
         it('should include --rom and --load-addr for ROM loading', () => {
@@ -136,7 +136,6 @@ describe('v6emul-launcher', () => {
                 emulatorPath: '/path/to/v6emul',
                 romPath: '/path/to/game.rom',
                 loadAddr: '0x200',
-                bootRomPath: '/path/to/boot.bin',
                 speed: '200%',
                 tcpPort: 12345,
             };
@@ -145,7 +144,7 @@ describe('v6emul-launcher', () => {
             expect(args).to.include('--tcp-port');
             expect(args).to.include('12345');
             expect(args).to.include('--boot-rom');
-            expect(args).to.include('/path/to/boot.bin');
+            expect(args).to.include('default1');
             expect(args).to.include('--rom');
             expect(args).to.include('/path/to/game.rom');
             expect(args).to.include('--load-addr');

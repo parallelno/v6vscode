@@ -15,7 +15,7 @@ A project can declare its executable and default companion ELF together:
 }
 ```
 
-Paths are resolved relative to the `*.project.json` file. Debug launches use the active project's `run.executable`, `run.debugArtifact`, `run.bootRom`, `run.loadAddr`, and `run.speed`; `launch.json` only needs the `v6` type, launch request, and a name.
+Paths are resolved relative to the `*.project.json` file. Debug launches use the active project's `run.executable`, `run.debugArtifact`, `run.loadAddr`, and `run.speed`; `launch.json` only needs the `v6` type, launch request, and a name. The boot ROM is always the emulator's `default1` preset.
 
 ## Starting A Session
 

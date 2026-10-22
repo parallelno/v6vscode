@@ -24,10 +24,6 @@
           "minLength": 1,
           "description": "Path to the companion ELF file containing debug metadata."
         },
-        "bootRom": {
-          "type": "string",
-          "description": "Path to the boot ROM image. Defaults to bundled boots.bin."
-        },
         "loadAddr": {
           "type": "string",
           "pattern": "^(?:0[xX])?[0-9a-fA-F]{1,4}$",

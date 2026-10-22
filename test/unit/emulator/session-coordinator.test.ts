@@ -103,10 +103,10 @@ describe('Session coordinator ownership and identity', () => {
 
     it('ignores a detached owned-process exit after a new process has connected', async () => {
         const { coordinator, client, processes } = fixture();
-        await coordinator.startDebug({ program: 'first.rom', bootRomPath: 'boot.bin' });
+        await coordinator.startDebug({ program: 'first.rom' });
         const old = coordinator.captureSession();
         coordinator.disconnect();
-        await coordinator.startDebug({ program: 'second.rom', bootRomPath: 'boot.bin' });
+        await coordinator.startDebug({ program: 'second.rom' });
         processes[0].exit.resolve(0);
         await Promise.resolve();
         assert.strictEqual(coordinator.owner, 'debug');
@@ -127,7 +127,7 @@ describe('Session coordinator ownership and identity', () => {
 
     it('does not replace an owned session with an attach request', async () => {
         const { coordinator, client } = fixture();
-        await coordinator.startDebug({ program: 'owned.rom', bootRomPath: 'boot.bin' });
+        await coordinator.startDebug({ program: 'owned.rom' });
         await assert.rejects(coordinator.attach(9876), /Stop the owned emulator/);
         assert.strictEqual(coordinator.owner, 'debug');
         assert.strictEqual(client.connected, true);
@@ -136,8 +136,8 @@ describe('Session coordinator ownership and identity', () => {
 
     it('rejects a launch superseded before execution and never allocates its process', async () => {
         const { coordinator, processes } = fixture();
-        const rejected = assert.rejects(coordinator.startDebug({ program: 'old.rom', bootRomPath: 'boot.bin' }), /inactive connection/);
-        const next = coordinator.startDebug({ program: 'new.rom', bootRomPath: 'boot.bin' });
+        const rejected = assert.rejects(coordinator.startDebug({ program: 'old.rom' }), /inactive connection/);
+        const next = coordinator.startDebug({ program: 'new.rom' });
         await rejected;
         await next;
         assert.strictEqual(processes.length, 1);

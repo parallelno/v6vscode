@@ -42,7 +42,6 @@ export type EmulatorSessionOwner = 'run' | 'debug' | null;
 
 export interface DebugLaunchRequest {
     program: string;
-    bootRomPath: string;
     loadAddr?: string;
     speed?: string;
     fddReadOnly?: boolean;
@@ -223,10 +222,6 @@ export class SessionCoordinator extends EventEmitter<SessionEvents> {
             const emulatorPath = this.locator.resolve();
             const port = DEFAULT_TCP_PORT;
 
-            const bootRomPath = project.run.bootRom
-                ? project.run.bootRom
-                : this.pathService.resolveExtensionPath('res/boot/boots.bin');
-
             const isRom = image.kind === 'rom';
             const romPath = isRom ? project.run.executable : undefined;
             const fddPath = !isRom ? project.run.executable : undefined;
@@ -235,7 +230,6 @@ export class SessionCoordinator extends EventEmitter<SessionEvents> {
                 emulatorPath,
                 romPath,
                 loadAddr: run.loadAddr,
-                bootRomPath,
                 fddPath,
                 fddAutoboot: fddPath ? true : undefined,
                 speed: run.speed,
@@ -306,7 +300,6 @@ export class SessionCoordinator extends EventEmitter<SessionEvents> {
             this.emulatorProcess = this.launcher.launch({
                 emulatorPath: this.locator.resolve(),
                 tcpPort: port,
-                bootRomPath: request.bootRomPath,
                 speed: normalizeRun({ executable: request.program, ...request }).speed,
             });
             const process = this.emulatorProcess;

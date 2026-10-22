@@ -46,7 +46,7 @@ describe('Awaited emulator stop participants', () => {
         fs.writeFileSync(executable, Buffer.from([0]));
         const project = { name: 'test', uri: {} as any, run: { executable } };
         if (debug) {
-            const request = { program: executable, bootRomPath: 'boot.bin' };
+            const request = { program: executable };
             await lifecycle.startDebug(request);
             await lifecycle.loadDebugProgram(request);
         } else { await lifecycle.start(project); }
@@ -90,7 +90,7 @@ describe('Awaited emulator stop participants', () => {
         assert.deepStrictEqual(fs.readFileSync(executable), Buffer.from([1, 2, 3]));
         assert.ok(calls.includes(IpcCommand.GET_FDD_IMAGE));
         const next = await fixture(true);
-        await next.lifecycle.loadDebugProgram({ program: next.executable, bootRomPath: 'boot.bin', fddReadOnly: true });
+        await next.lifecycle.loadDebugProgram({ program: next.executable, fddReadOnly: true });
         next.calls.length = 0;
         await next.lifecycle.stop();
         assert.ok(!next.calls.includes(IpcCommand.GET_FDD_IMAGE));

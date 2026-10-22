@@ -2,6 +2,7 @@ import * as readline from 'readline';
 import { ProcessRunner, SpawnResult } from '../../platform/process/process-runner';
 import { Logger } from '../../platform/logging/logger';
 import { SPEED_VALUES } from '../../shared/emulator-settings';
+import { DEFAULT_BOOT_ROM_PRESET } from '../../shared/boot-rom';
 
 interface ServerOutput {
     appendLine(value: string): void;
@@ -11,7 +12,6 @@ export interface LaunchRequest {
     emulatorPath: string;
     romPath?: string;
     loadAddr?: string;
-    bootRomPath?: string;
     fddPath?: string;
     fddDrive?: number;
     fddAutoboot?: boolean;
@@ -27,9 +27,8 @@ export interface EmulatorProcess {
 export function buildArgs(request: LaunchRequest): string[] {
     const args: string[] = ['--serve', '--tcp-port', String(request.tcpPort)];
 
-    if (request.bootRomPath) {
-        args.push('--boot-rom', request.bootRomPath);
-    }
+    // The emulator owns the boot ROM; the extension always uses its default preset.
+    args.push('--boot-rom', DEFAULT_BOOT_ROM_PRESET);
 
     if (request.romPath) {
         args.push('--rom', request.romPath);

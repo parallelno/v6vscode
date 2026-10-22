@@ -14,7 +14,6 @@ describe('project-validator', () => {
                 run: {
                     executable: 'game.rom',
                     debugArtifact: 'game.elf',
-                    bootRom: 'boot.bin',
                     loadAddr: '0x200',
                     fddReadOnly: true,
                     speed: '200%',
@@ -26,7 +25,6 @@ describe('project-validator', () => {
                 expect(result.name).to.equal('full');
                 expect(result.run.executable).to.equal('game.rom');
                 expect(result.run.debugArtifact).to.equal('game.elf');
-                expect(result.run.bootRom).to.equal('boot.bin');
                 expect(result.run.loadAddr).to.equal('0x200');
                 expect(result.run.fddReadOnly).to.equal(true);
                 expect(result.run.speed).to.equal('200%');
@@ -43,7 +41,6 @@ describe('project-validator', () => {
                 expect(result.run.speed).to.equal('100%');
                 expect(result.run.viewMode).to.equal('borderless');
                 expect(result.run.debugArtifact).to.be.undefined;
-                expect(result.run.bootRom).to.be.undefined;
             }
         });
 

@@ -293,13 +293,9 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             this.debugMetadataError = 'No debug artifact was configured in the active project.';
             this.lastResolvedSource = undefined;
             this.clearUnavailableSourceIndicator();
-            const bootRomPath = args.bootRom
-                ? String(args.bootRom)
-                : this.pathService.resolveExtensionPath('res/boot/boots.bin');
 
             this.launchRequest = {
                 program: String(args.program),
-                bootRomPath,
                 loadAddr: args.loadAddress ? String(args.loadAddress) : undefined,
                 speed: args.speed ?? '100%',
                 fddReadOnly: args.fddReadOnly === true,

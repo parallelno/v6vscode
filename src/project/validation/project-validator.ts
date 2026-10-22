@@ -11,7 +11,6 @@ export type ValidationResult =
 interface ValidatedRun {
     executable: string;
     debugArtifact?: string;
-    bootRom?: string;
     loadAddr: string;
     fddReadOnly: boolean;
     speed: string;
@@ -53,7 +52,7 @@ export function validate(data: unknown): ValidationResult {
         errors.push({ path: 'run', message: '"run" must be an object.' });
     } else {
         const run = obj.run as Record<string, unknown>;
-        const knownRunKeys = new Set(['executable', 'debugArtifact', 'bootRom', 'loadAddr', 'fddReadOnly', 'speed', 'viewMode']);
+        const knownRunKeys = new Set(['executable', 'debugArtifact', 'loadAddr', 'fddReadOnly', 'speed', 'viewMode']);
         for (const key of Object.keys(run)) {
             if (!knownRunKeys.has(key)) {
                 errors.push({ path: `run.${key}`, message: `Unknown property "run.${key}".` });
@@ -72,10 +71,6 @@ export function validate(data: unknown): ValidationResult {
             errors.push({ path: 'run.debugArtifact', message: '"run.debugArtifact" must be a string.' });
         } else if (run.debugArtifact === '') {
             errors.push({ path: 'run.debugArtifact', message: '"run.debugArtifact" must not be empty.' });
-        }
-
-        if ('bootRom' in run && typeof run.bootRom !== 'string') {
-            errors.push({ path: 'run.bootRom', message: '"run.bootRom" must be a string.' });
         }
 
         if ('loadAddr' in run && typeof run.loadAddr !== 'string') {
@@ -114,7 +109,6 @@ export function validate(data: unknown): ValidationResult {
         run: {
             executable: run.executable as string,
             debugArtifact: run.debugArtifact as string | undefined,
-            bootRom: run.bootRom as string | undefined,
             loadAddr: typeof run.loadAddr === 'string' ? run.loadAddr : DEFAULT_RUN_SETTINGS.loadAddr,
             fddReadOnly: typeof run.fddReadOnly === 'boolean' ? run.fddReadOnly : DEFAULT_RUN_SETTINGS.fddReadOnly,
             speed: typeof run.speed === 'string' ? run.speed : DEFAULT_RUN_SETTINGS.speed,

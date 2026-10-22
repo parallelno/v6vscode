@@ -32,7 +32,6 @@ export class ProjectRepository implements vscode.Disposable {
             run: {
                 executable: path.resolve(projectDir, result.run.executable),
                 debugArtifact: result.run.debugArtifact ? path.resolve(projectDir, result.run.debugArtifact) : undefined,
-                bootRom: result.run.bootRom ? path.resolve(projectDir, result.run.bootRom) : undefined,
                 loadAddr: run.loadAddr,
                 fddReadOnly: run.fddReadOnly,
                 speed: run.speed,
@@ -51,7 +50,6 @@ export class ProjectRepository implements vscode.Disposable {
             run: {
                 executable: path.relative(projectDir, project.run.executable),
                 ...(project.run.debugArtifact && { debugArtifact: path.relative(projectDir, project.run.debugArtifact) }),
-                ...(project.run.bootRom && { bootRom: path.relative(projectDir, project.run.bootRom) }),
                 ...(project.run.loadAddr && { loadAddr: project.run.loadAddr }),
                 ...(project.run.fddReadOnly !== undefined && { fddReadOnly: project.run.fddReadOnly }),
                 ...(project.run.speed && { speed: project.run.speed }),

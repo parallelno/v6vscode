@@ -55,7 +55,7 @@ describe('V6DebugAdapter restart actions', () => {
 
     it('reloads ROM data before resetting debugger state and running', async () => {
         const { adapter, requests, reloaded } = makeAdapter();
-        const request = { program: 'test.rom', bootRomPath: 'boot.bin' };
+        const request = { program: 'test.rom' };
         (adapter as any).launchRequest = request;
 
         await adapter.reloadRom();
@@ -73,7 +73,7 @@ describe('V6DebugAdapter restart actions', () => {
 
     it('rejects ROM reload for an FDD session', async () => {
         const { adapter } = makeAdapter();
-        (adapter as any).launchRequest = { program: 'test.fdd', bootRomPath: 'boot.bin' };
+        (adapter as any).launchRequest = { program: 'test.fdd' };
 
         let message = '';
         try {

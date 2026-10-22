@@ -23,7 +23,6 @@ describe('project-parser', () => {
         const result = parse(readFixture('all-fields.project.json')) as any;
         expect(result.name).to.equal('full-project');
         expect(result.run.executable).to.equal('build/game.rom');
-        expect(result.run.bootRom).to.equal('res/boot.bin');
         expect(result.run.loadAddr).to.equal('0x200');
         expect(result.run.fddReadOnly).to.equal(true);
         expect(result.run.speed).to.equal('200%');

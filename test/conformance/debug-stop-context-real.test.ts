@@ -4,9 +4,8 @@ import { PerformanceService } from '../../src/debug/performance/performance-serv
 import { MemoryEditService } from '../../src/debug/memory-edits/memory-edit-service';
 import { SessionState } from '../../src/emulator/session/session-operations';
 import { getServerInfo } from '../../src/emulator/protocol/ipc-server-info';
-import * as path from 'path';
 import * as net from 'net';
-import { fixturePath, fixtureRom, repositoryRoot } from '../helpers/fixture-paths';
+import { fixturePath, fixtureRom } from '../helpers/fixture-paths';
 import * as fs from 'fs';
 import { spawn, ChildProcess } from 'child_process';
 import { parseElf32 } from '../../src/debug/metadata/elf32-reader';
@@ -18,7 +17,6 @@ import { IpcCommand } from '../../src/emulator/protocol/ipc-commands';
 import { Logger } from '../../src/platform/logging/logger';
 import { SessionCoordinator } from '../../src/emulator/session/session-coordinator';
 
-const REPOSITORY_ROOT = repositoryRoot();
 const PROBE_ELF = fixturePath('cdbg', 'probe-O0.elf');
 const PROBE_ROM = fixtureRom(PROBE_ELF);
 const EMULATOR = process.env.V6EMUL;
@@ -45,7 +43,7 @@ describe('DebugStopContext real-emulator verification', function () {
         metadata = new DebugMetadataIndex(parseElf32(fs.readFileSync(PROBE_ELF)));
         emulator = spawn(EMULATOR!, [
             '--serve', '--tcp-port', String(port),
-            '--boot-rom', path.join(REPOSITORY_ROOT, 'res', 'boot', 'boots.bin'),
+            '--boot-rom', 'default1',
             '--speed', 'max',
         ], { stdio: ['ignore', 'pipe', 'pipe'] });
         emulator.stderr?.on('data', () => {});

@@ -17,20 +17,20 @@ describe('PathService', () => {
 
     describe('resolveExtensionPath', () => {
         it('should resolve a relative path from the extension root', () => {
-            const result = pathService.resolveExtensionPath('res/boot/boots.bin');
-            expect(result).to.equal(path.join(extensionRoot, 'res', 'boot', 'boots.bin'));
+            const result = pathService.resolveExtensionPath('res/images/icon.png');
+            expect(result).to.equal(path.join(extensionRoot, 'res', 'images', 'icon.png'));
         });
 
         it('should handle nested paths', () => {
-            const result = pathService.resolveExtensionPath('res/images/icon.png');
-            expect(result).to.equal(path.join(extensionRoot, 'res', 'images', 'icon.png'));
+            const result = pathService.resolveExtensionPath('res/syntaxes/v6vscode_8080.tmLanguage.json');
+            expect(result).to.equal(path.join(extensionRoot, 'res', 'syntaxes', 'v6vscode_8080.tmLanguage.json'));
         });
     });
 
     describe('expandTokens', () => {
         it('should replace ${extension} with extension root path', () => {
-            const result = pathService.expandTokens('${extension}/res/boot/boots.bin');
-            expect(result).to.equal(`${extensionRoot}/res/boot/boots.bin`);
+            const result = pathService.expandTokens('${extension}/res/images/icon.png');
+            expect(result).to.equal(`${extensionRoot}/res/images/icon.png`);
         });
 
         it('should replace multiple occurrences', () => {

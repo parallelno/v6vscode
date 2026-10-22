@@ -14,7 +14,7 @@ export function expandTemplate(template: string, vars: Record<string, string>): 
  * Read a template file from the extension's templates directory.
  */
 export function readTemplate(extensionPath: string, relativePath: string): string {
-    const fullPath = path.join(extensionPath, 'src', 'templates', relativePath);
+    const fullPath = path.join(extensionPath, 'res', 'templates', relativePath);
     return fs.readFileSync(fullPath, 'utf-8');
 }
 

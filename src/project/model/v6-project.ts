@@ -3,7 +3,6 @@ import type * as vscode from 'vscode';
 export interface V6ProjectRun {
     executable: string;
     debugArtifact?: string;
-    bootRom?: string;
     loadAddr?: string;
     fddReadOnly?: boolean;
     speed?: string;
