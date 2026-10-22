@@ -108,7 +108,7 @@ describe('Architecture and extension manifest contracts', () => {
 
     it('pins API types and lockfile to the truthful engine floor', () => {
         const floor = manifest.engines.vscode.slice(1);
-        assert.strictEqual(manifest.engines.vscode, '^1.90.0');
+        assert.strictEqual(manifest.engines.vscode, '^1.100.0');
         assert.strictEqual(manifest.devDependencies['@types/vscode'], floor);
         const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
         assert.strictEqual(lock.packages[''].engines.vscode, manifest.engines.vscode);

@@ -1,17 +1,26 @@
 # Compatibility and dependency gates
 
-## VS Code API floor
+## VS Code compatibility floor
 
-The extension requires **1.90.0**. The hover path uses `DebugStackFrame` and
-`debug.activeStackItem`; integration also observes `debug.onDidChangeActiveStackItem`.
-These are absent from the stable 1.89 declarations and present in 1.90:
+The extension requires **1.100.0**. The declared floor is the newer of two
+independent constraints:
 
-- https://github.com/microsoft/vscode/blob/1.89.0/src/vscode-dts/vscode.d.ts
-- https://github.com/microsoft/vscode/blob/1.90.0/src/vscode-dts/vscode.d.ts
+- **API floor — 1.90.0.** The hover path uses `DebugStackFrame` and
+  `debug.activeStackItem`; integration also observes
+  `debug.onDidChangeActiveStackItem`. These are absent from the stable 1.89
+  declarations and present in 1.90:
+  - https://github.com/microsoft/vscode/blob/1.89.0/src/vscode-dts/vscode.d.ts
+  - https://github.com/microsoft/vscode/blob/1.90.0/src/vscode-dts/vscode.d.ts
+- **Release-verification runtime — 1.100.0.** The minimum lane runs the
+  integration suites inside the VS Code extension host, whose Node version is
+  fixed by the VS Code build. The test runner (Mocha 12) requires
+  `^20.19.0 || >=22.12.0`. VS Code 1.99 and older ship Node 20.18 or older and
+  cannot load it; 1.100.0 is the first release with Node 20.19.0.
 
 `@types/vscode` is pinned exactly to the declared floor, so ordinary compilation
 checks production and integration code against that API rather than a newer
-version admitted by a caret range. Raise both intentionally when adopting APIs.
+version admitted by a caret range. Raise both intentionally when adopting APIs
+or when the verification toolchain raises the runtime floor.
 
 From the repository root (`C:\Work\Programming\v6vscode`):
 
@@ -78,7 +87,7 @@ deterministic DWARF existence-probe order/fallback, metadata matching ambiguity,
 local file keys, explicit project roots and injected source scanning. The import
 gate prohibits runtime host adapters in pure include/path/context modules.
 Provider tests cover URI/range projection and editor navigation; integration uses
-the registered `vscode.executeLinkProvider` (including VS Code 1.90), definitions
+the registered `vscode.executeLinkProvider` (including the declared minimum), definitions
 and hover commands. The integration workspace has two folders, with the second
 nested under the first; a real second-folder project launched from the first
 folder verifies DAP/source navigation agreement. Ordinary project discovery keeps

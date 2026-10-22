@@ -30,7 +30,7 @@
 
 ## Prerequisites
 
-VS Code **1.90.0 or later** is required (selected debug stack-frame APIs).
+VS Code **1.100.0 or later** is required (the verified extension-host runtime and selected debug stack-frame APIs).
 
 The extension no longer bundles any binary. The following tools must be installed separately:
 
