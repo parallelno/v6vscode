@@ -1,6 +1,6 @@
 # Publishing
 
-Publish the VS Code extension `parallelno.v6vscode` to the Marketplace.
+Publish the VS Code extension `AlexFedotovskikh.v6vscode` to the Marketplace.
 
 ## Prerequisites
 
@@ -59,24 +59,24 @@ This runs the release gate, packages and validates the VSIX, then publishes the
 validated artifact using Microsoft Entra ID. Do not publish manually with
 `vsce publish`, because that bypasses this repository's release checks.
 
-A successful run reports `Published parallelno.v6vscode@<version>` and the
+A successful run reports `Published AlexFedotovskikh.v6vscode@<version>` and the
 Marketplace URL.
 
 ### 7. Verify the Marketplace listing
 
-- [Publisher management](https://marketplace.visualstudio.com/manage/publishers/parallelno)
-- [Extension listing](https://marketplace.visualstudio.com/items?itemName=parallelno.v6vscode)
+- [Publisher management](https://marketplace.visualstudio.com/manage/publishers/AlexFedotovskikh)
+- [Extension listing](https://marketplace.visualstudio.com/items?itemName=AlexFedotovskikh.v6vscode)
 
 Marketplace ingestion usually takes 5–15 minutes.
 
 TODO: Once the listing is live, update the README Quick Start to use the Marketplace install command:
 ```powershell
-code --install-extension parallelno.v6vscode
+code --install-extension AlexFedotovskikh.v6vscode
 ```
 
 ## Publisher details
 
-- Publisher ID: `parallelno` (permanent).
-- Extension ID: `parallelno.v6vscode`.
+- Publisher ID: `AlexFedotovskikh`.
+- Extension ID: `AlexFedotovskikh.v6vscode`.
 - The release script writes `temp/publish-report.json`, including the commit, verification result, VSIX path and SHA-256, stage results, and publish status. Keep this report with the release record.
 - Official reference: [Publishing VS Code Extensions](https://code.visualstudio.com/api/working-with-extensions/publishing-extension)

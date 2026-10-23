@@ -34,8 +34,7 @@ From the repository root (`C:\Work\Programming\v6vscode`):
    Memory Edits entry points with their relative imports. Pass `--minimum` directly to the compiled
    runner after packaging to combine packaged and minimum testing.
 
-Live debugger tests require `V6EMUL`; startup/resource smoke runs without it.
-Network access is needed for uncached VS Code downloads. These explicit lanes
+Live debugger tests require `V6EMUL`. Network access is needed for uncached VS Code downloads. These explicit lanes
 are not silently part of `npm run ci`.
 
 The release lane is **`npm run verify:release`**: unlike standalone smoke, it
