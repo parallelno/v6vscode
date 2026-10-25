@@ -39,7 +39,7 @@ export class CreateProjectCommand {
         const langPick = await vscode.window.showQuickPick(
             [
                 { label: 'ASM', description: 'Intel 8080 assembly', value: 'asm' as Language },
-                { label: 'C', description: 'C via v6c compiler', value: 'c' as Language },
+                { label: 'C', description: 'C via v6clang compiler', value: 'c' as Language },
             ],
             { placeHolder: 'Select language' },
         );

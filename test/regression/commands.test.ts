@@ -92,10 +92,10 @@ describe('Commands and templates regression tests', () => {
             }
         });
 
-        it('C templates should contain v6c tool', () => {
+        it('C templates should contain v6clang tool', () => {
             for (const execType of ['rom', 'fdd']) {
                 const content = readTemplate(EXTENSION_ROOT, `makefiles/c-${execType}.Makefile.template`);
-                expect(content, `c-${execType}`).to.include('v6c');
+                expect(content, `c-${execType}`).to.include('v6clang');
             }
         });
     });

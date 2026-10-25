@@ -17,7 +17,7 @@ The local `.gitattributes` preserves LF source bytes and binary ELF contents acr
 
 1. Use the producer version recorded in the manifest (or review an intentional upgrade).
 2. From `baseline`, run `v6asm -g main.asm -o demo1.rom`. Running from that directory keeps ASM source paths relative.
-3. From `cdbg`, set `V6C` to the V6C compiler/driver and run `make -B -f Makefile.O0`, `Makefile.O1`, and `Makefile.O2`. Do not overwrite the C snapshots merely to exercise a transport change.
+3. From `cdbg`, set `V6CLANG` to the `v6clang` compiler/driver and run `make -B -f Makefile.O0`, `Makefile.O1`, and `Makefile.O2`. Do not overwrite the C snapshots merely to exercise a transport change.
 4. Inspect line/type/CFI behavior and run unit, metadata, conformance and Extension Host tests.
 5. Run `node test/fixtures/update-debug-fixture-manifest.js` from the repository root, update producer information if changed, and review binary/hash changes together.
 
@@ -25,6 +25,6 @@ The local `.gitattributes` preserves LF source bytes and binary ELF contents acr
 
 - `npm run test:conformance` requires `V6EMUL` and fails if it is missing. It is the direct live memory/unwind check formerly run conditionally inside unit tests.
 - `npm run test:integration` runs the VS Code Extension Host. Debug scenarios require `V6EMUL`; missing-emulator skips remain explicit in that integration-only suite.
-- `npm run test:feature:debug` additionally rebuilds producer artifacts and records conformance results. It requires `V6C` and the relevant external build tools.
+- `npm run test:feature:debug` additionally rebuilds producer artifacts and records conformance results. It requires `V6CLANG` and the relevant external build tools.
 
 Do not turn a required decoder test into an optional local-build test. Platform-specific tests may explicitly skip on unsupported platforms; live backend prerequisites belong in integration/conformance lanes.

@@ -5,12 +5,12 @@ SRC      := src/main.c
 TARGET   := i8080-unknown-v6c
 TEMPLATE := res/fdd/rds308.fdd
 
-V6C   ?= v6c
-V6FDD ?= v6fdd
+V6CLANG ?= v6clang
+V6FDD   ?= v6fdd
 
 $(FDD): $(ROM)
 	$(V6FDD) $(TEMPLATE) $(FDD) $(ROM)
 $(ROM): $(SRC)
-	$(V6C) -target $(TARGET) -O0 -g $(SRC) -o $(ROM)
+	$(V6CLANG) -target $(TARGET) -O0 -g $(SRC) -o $(ROM)
 clean:
 	rm -f $(ROM) $(ELF) $(FDD)

@@ -142,7 +142,7 @@ describe('template-utils', () => {
             for (const variant of variants) {
                 const content = readTemplate(EXTENSION_ROOT, `makefiles/${variant}.Makefile.template`);
                 expect(content, variant).to.include('{{name}}');
-                expect(content, variant).to.include(variant.startsWith('asm') ? 'v6asm' : 'v6c');
+                expect(content, variant).to.include(variant.startsWith('asm') ? 'v6asm' : 'v6clang');
             }
         });
 
@@ -185,7 +185,7 @@ describe('template-utils', () => {
             expect(expanded).to.include('out/game.rom');
             expect(expanded).to.include('out/game.elf');
             expect(expanded).to.include('out/game.fdd');
-            expect(expanded).to.include('v6c');
+            expect(expanded).to.include('v6clang');
             expect(expanded).to.include('v6fdd');
         });
     });

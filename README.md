@@ -21,7 +21,7 @@
 
 ## Quick Start
 
-1. Install the extension from a `.vsix` file: `code --install-extension v6vscode-0.1.0.vsix`
+1. Install the extension
 2. Open a folder in VS Code.
 3. Run **V6: Create Project** from the Command Palette (`Ctrl+Shift+P`).
 4. Enter a project name, choose a language (ASM or C), and an executable type (ROM or FDD).
@@ -30,20 +30,22 @@
 
 ## Prerequisites
 
-VS Code **1.100.0 or later** is required (the verified extension-host runtime and selected debug stack-frame APIs).
-
-The extension no longer bundles any binary. The following tools must be installed separately:
+The following tools must be installed separately:
 
 | Tool | Purpose | Download |
 |------|---------|----------|
 | `v6emul` | Vector-06c emulator | [Releases](https://github.com/parallelno/v6emul/releases) |
-| `v6asm` | Intel 8080 assembler | [Releases](https://github.com/parallelno/v6asm/releases) |
-| `v6fdd` | FDD image builder | [Releases](https://github.com/parallelno/v6asm/releases) |
-| `v6c` | C compiler (optional) | [Releases](https://github.com/parallelno/v6c/releases) |
+| `v6asm` (Optional) | Intel 8080 assembler | [Releases](https://github.com/parallelno/v6asm/releases) |
+| `v6fdd` (Optional) | FDD image builder | [Releases](https://github.com/parallelno/v6asm/releases) |
+| `v6clang` (Optional) | C compiler | [Releases](https://github.com/parallelno/v6clang/releases) |
 
-Set `V6EMUL` to the full path of the emulator executable. This is the extension's only external-tool configuration. Restart VS Code after changing a persistent environment variable.
+- Set `V6EMUL` env var to the full path of the executable.
+- (Optional) Set `V6ASM` env var to the full path of the executable.
+- (Optional) Set `V6FDD` env var to the full path of the executable.
+- (Optional) Set `V6CLANG` env var to the full path of the executable.
 
-The extension does not invoke `v6asm` or `v6fdd`. Generated Makefiles use the commands from `PATH` by default and accept optional `V6ASM` and `V6FDD` overrides in the build environment.
+`v6asm`, `v6fdd`, `v6clang` and corresponding env var setup only required by the teplate Makefiles.
+These tools enables entended debugging funtionality in this entention.
 
 ## Commands
 
@@ -51,16 +53,6 @@ The extension does not invoke `v6asm` or `v6fdd`. Generated Makefiles use the co
 |---------|-------------|
 | `V6: Create Project` | Scaffold a new Vector-06c project |
 | `V6: Run Project` | Build → launch → display emulator |
-| `v6emul: Settings` | Toggle emulator settings |
-| `v6emul: Display` | Toggle emulator display |
-| `v6emul: Hex Viewer` | Toggle the standalone memory viewer |
-| `v6emul: Memory Edits` | Add and manage tracked byte edits, Auto-update, and restore actions |
-| `v6emul: Performance` | Toggle server-owned CodePerf ranges and statistics |
-| `v6emul: Trace Log` | Filter and virtually scroll retained paused execution history |
-| `v6emul: Scripts` | Manage, compile, and run server-owned Lua scripts |
-| `v6emul: Symbols` | Toggle symbol search and navigation |
-| `v6emul: Ports` | Toggle the standalone I/O ports viewer |
-| `v6emul: Watchpoints` | Toggle the standalone watchpoint editor |
 
 ## Settings
 
@@ -91,24 +83,6 @@ Generated C projects use `-O0 -g` and create this companion ELF for source-level
 ```bash
 npm install
 npm run compile
-```
-
-### Packaging
-
-```bash
-npm run package          # produces v6vscode-<version>.vsix
-npm run publish:dry-run  # verify, package and validate; publishes nothing
-```
-
-See [docs/publishing.md](docs/publishing.md) for Marketplace publishing workflow.
-
-## Tests
-
-```bash
-npm test                 # unit tests
-npm run test:unit        # unit tests only
-npm run test:regression  # regression suite
-npm run verify:release  # fail-closed packaged current/minimum + live gates; requires V6EMUL
 ```
 
 ## Documentation

@@ -5,7 +5,7 @@
 Three-step interactive flow:
 
 1. **Project name** — `showInputBox` with validation (non-empty, filesystem-safe, max 100 chars).
-2. **Language** — `showQuickPick`: ASM (Intel 8080 assembly) or C (via v6c compiler).
+2. **Language** — `showQuickPick`: ASM (Intel 8080 assembly) or C (via v6clang compiler).
 3. **Executable type** — `showQuickPick`: ROM (direct binary) or FDD (floppy disk image).
 
 Generated files in workspace root:

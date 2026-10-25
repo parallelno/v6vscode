@@ -3,9 +3,9 @@ ELF    := out/{{name}}.elf
 SRC    := src/main.c
 TARGET := i8080-unknown-v6c
 
-V6C ?= v6c
+V6CLANG ?= v6clang
 
 $(ROM): $(SRC)
-	$(V6C) -target $(TARGET) -O0 -g $(SRC) -o $(ROM)
+	$(V6CLANG) -target $(TARGET) -O0 -g $(SRC) -o $(ROM)
 clean:
 	rm -f $(ROM) $(ELF)
