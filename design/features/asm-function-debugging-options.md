@@ -135,6 +135,42 @@ including those with no references in the current assembly input. Final linked
 metadata must not expose discarded sections as live regions or entries. Entry
 metadata itself must not create a retention root for otherwise unused code.
 
+### Relocations and discarded-code metadata
+
+A **relocation** associates an address field in object-file metadata with its
+owning code/data section and an offset within that section. A **tombstone** is
+the invalid-address marker the linker writes when that referenced section is
+discarded.
+
+Use the following agreed approach for linked object output:
+
+1. v6asm emits optional-region metadata and every global-label entry candidate.
+2. Every code/data address in that metadata uses a relocation to its owning
+   section. Under the default object-output strategy, this is the corresponding
+   optional-block section. Sizes and other non-address fields remain values.
+3. The linker resolves addresses for surviving sections and writes tombstones
+   for discarded ones. The associated DWARF records may remain in the final ELF.
+4. The extension recognizes tombstoned region/entry address records and excludes
+   them from live lookup indexes before range matching or entry-name resolution.
+   An invalid region must not acquire an apparently live range through arithmetic
+   on its size or through address wraparound.
+
+**Physically pruning metadata is outside scope.** Do not require the linker to
+delete individual DWARF records or introduce independently garbage-collected debug
+sections. Correctly excluding discarded-code metadata in the extension is the
+requirement, even when its bytes remain in the ELF file.
+
+For this 16-bit function-region/entry address contract, accept `0xFFFF` as the
+all-ones tombstone. **Accepted limitation:** real region starts or entry labels
+at address `0xFFFF` cannot be distinguished from that marker and may be excluded
+from these debug indexes. No alternate encoding or collision handling is required
+in this scope. Do not interpret `0xFFFF` in unrelated data, size fields, or live
+CPU registers as a tombstone. An ordinary half-open range end of `0xFFFF` is not
+by itself evidence of discarded code.
+
+Direct-ROM companions contain final addresses after assembler pruning and layout;
+there is no linker-generated discarded-section metadata to filter in that path.
+
 Preserve the whole block range even when several entries share it. A consumer
 must not depend on whichever overlapping function description was parsed first.
 The exact DWARF representation of block identity plus several entries remains an
@@ -408,7 +444,9 @@ handling for non-returning tail transfers are not implementation requirements.
 ## 8. Implementation Sequence
 
 1. Emit optional-region and entry-label metadata in both assembler output modes;
-   verify final addresses after pruning and relocation.
+   use owning-section relocations in object output and exclude linker-tombstoned
+   regions/entries from extension indexes. Verify final surviving addresses;
+   physical metadata removal is not required.
 2. Add a versioned raw-history boundary query, stable cursors, and execution-origin
    information to v6emul. Keep the protocol free of debug metadata.
 3. Implement and test raw chain reconstruction plus completed-excursion removal
@@ -430,6 +468,9 @@ handling for non-returning tail transfers are not implementation requirements.
 | Entry referenced only from another object file | Entry metadata exists before linking and resolves correctly when the block survives |
 | Indirect entry with no direct reference to that label in the assembly input | Candidate metadata exists; observed entrance selects it when the block is retained |
 | Unused optional block with object-mode linker garbage collection | Block removed; no discarded region/entry presented as live; debug metadata does not retain it |
+| DWARF records retained for a discarded optional section | Linker tombstones relocated addresses; extension filters records without requiring physical metadata removal |
+| Region start or entry label at `0xFFFF` | Accepted ambiguity: may be excluded as a tombstone; no collision workaround required |
+| Tombstoned start combined with nonzero region size | No wrapped or fabricated live range enters the index |
 | Shared tail or separate bodies in one optional block | One region frame; no guessed body partitioning |
 | A calls B inside the same optional block | No separate B frame; retain outside-entry name A and highlight B's current source line |
 | Later direct call to B from outside the same block | Region frame named B using the newly recovered entrance |
