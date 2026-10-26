@@ -11,7 +11,7 @@ Provide function debugging comparable to the existing macro experience:
 
 - Function names and caller sites in the Call Stack panel.
 - Clicking a caller navigates to the instruction that transferred execution to
-  its child, including a call, jump, indirect transfer, or fallthrough.
+  its child, including a call, jump, or indirect transfer.
 - Correct current body line and editor navigation, including nested macros.
 - Breakpoints on executable body lines and navigation to entry-label definitions.
 - Step In and one familiar Step Out command.
@@ -24,6 +24,7 @@ of calls, and indirect transfers such as `pchl`.
 Agreed constraints:
 
 - Use optional blocks as function boundaries and global labels as potential entries.
+- Optional blocks must not fall through into each other.
 - One optional block represents one function-region frame. Calls between entries
   inside that block are intentionally not registered or displayed separately.
 - Recursion is unsupported, including indirect recursion. All repeated-region
@@ -90,11 +91,6 @@ One optional block represents one function-region frame, even when one entry
 calls another entry inside that block. Such internal calls do not add frames or
 change the entry name recovered from the most recent outside-to-inside entrance.
 The current source line still follows actual execution inside the block.
-
-For example, if main calls A and A calls B inside the same optional block, show
-the region frame named A with B's executing source line, followed by main's call
-site. If main later calls B directly from outside the block, that entrance names
-the region frame B.
 
 Optional data blocks retain the same block metadata and participate in call-stack
 reconstruction when execution reaches their addresses.
@@ -164,10 +160,7 @@ behavior.
   the current section. Both settings retain the all-global-label metadata rule.
 - **Direct ROM output, current behavior:** v6asm performs assembler pruning based
   on identifiers referenced outside each block.
-- **Design requirement for both modes:** Retained code must retain its required
-  targets. In particular, fallthrough into another block is a dependency even
-  without an explicit symbol reference. Verify and implement this dependency in
-  each pruning path. Final debug ranges match the linked ELF or ROM companion
+- **Debug layout:** Final debug ranges match the linked ELF or ROM companion
   after pruning and layout.
 
 ## 5. Emulator History Query
@@ -199,7 +192,7 @@ replacement, or an execution-timeline change invalidates old cursors.
 
 The emulator only searches addresses and execution order. The extension retains
 all knowledge of region ownership, entry labels, macro chains, and source lines.
-The response supplies both addresses directly, including `pchl` and fallthrough.
+The response supplies both addresses directly, including transfers through `pchl`.
 
 ### Stop position: verified behavior and query rule
 
@@ -255,7 +248,7 @@ currently outside every optional block, show only the current machine/source
 context.
 
 Actual execution order makes the search independent of whether entry was reached
-by `call`, `jmp`, `pchl`, or fallthrough.
+by `call`, `jmp`, or `pchl`.
 
 ### 6.2 Remove completed subcall loops
 
@@ -328,7 +321,7 @@ For `pchl`, use the actual adjacent recorded destination as the entry PC.
 
 - Display the current function entry name and the recovered logical callers.
 - The active frame uses the current body line. Each caller uses its actual
-  predecessor/transfer site, including the source of a jump or fallthrough.
+  predecessor/transfer site, including the source of a jump.
 - Go to Definition resolves the recovered entry-label declaration.
 - Reuse existing macro inline metadata inside each function context, preserving
   nested macro body highlighting and invocation navigation.
@@ -364,7 +357,7 @@ Set the temporary breakpoint at `0x0203`. A terminal caller in unwrapped main/st
 code also supplies a valid site for requesting the successor.
 
 **Accepted limitation:** Assume the callee eventually reaches the next instruction
-after the caller. For tail jumps, fallthrough, or unusual manual calls, that
+after the caller. For tail jumps or unusual manual calls, that
 assumption may be false. Execution can continue indefinitely, leaving the temporary
 breakpoint pending until it is hit or the operation is interrupted/ended.
 
@@ -405,18 +398,17 @@ breakpoint pending until it is hit or the operation is interrupted/ended.
 | Shared tail or separate bodies in one optional block | One region frame |
 | A calls B inside the same optional block | No separate B frame; retain outside-entry name A and highlight B's current source line |
 | Later direct call to B from outside the same block | Region frame named B using the newly recovered entrance |
-| `jmp`, fallthrough, and `pchl` across regions | Actual predecessor and entry recovered without emulator metadata |
+| `jmp` and `pchl` across regions | Actual predecessor and entry recovered without emulator metadata |
 | Jump-only repeated-region loop | Deliberately collapses using the same policy as a completed helper excursion |
 | Macro inside function and call from macro body | Existing macro navigation and body highlighting preserved |
 | Optional data block never executed | No effect on reconstructed chain |
 | Object linking and direct-ROM output | Equivalent surviving-block metadata with final addresses |
-| Fallthrough dependency during pruning | Target retained in both output modes |
 | Non-default execution start and start address revisited | Origin identified from timeline, not a hardcoded or repeated PC |
 | Predecessor or current PC outside every optional block | Search stops immediately; no older region is invented as a parent |
 | Breakpoint on first instruction of a region | Emulator returns entrance from live stopped PC even though it is not recorded yet |
 | Reset/reload or unavailable older history | Stale cursors rejected; incomplete chain not presented as complete |
 | Normal return versus temporary helper during Step Out | Return completes; helper excursion does not |
-| Tail jump/fallthrough during Step Out | Same successor breakpoint policy; continued execution and a pending breakpoint are accepted if target is never reached |
+| Tail jump during Step Out | Same successor breakpoint policy; continued execution and a pending breakpoint are accepted if target is never reached |
 | Selecting historical caller | Correct source site; live CPU PC/registers unchanged |
 
 Recursion is intentionally outside acceptance coverage. Keep existing macro
