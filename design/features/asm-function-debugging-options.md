@@ -50,6 +50,9 @@ Agreed constraints:
   An **entry label** is a potential entry matched to the recovered entrance PC.
   Several potential entries can share one region.
 * A **history cursor** identifies one instruction occurrence in execution order.
+  Use its offset from the newest recorded instruction while history is unchanged.
+* A **history generation** is an invalidation token for the current buffer contents.
+  Continuing queries supply this token together with their cursor.
 * A **boundary transition** is an executed instruction outside a region followed
   immediately by arrival inside it. Its two addresses are the **predecessor PC**
   and **entry PC**.
@@ -165,36 +168,43 @@ behavior.
 
 ## 5. Emulator History Query
 
-The current v6emul trace history is a useful foundation: it stores instruction
-addresses and bytes in a circular buffer with 300,000 entries. Its `pchl` handling
-also records the resulting PC. The new request queries this raw execution history.
+The current v6emul trace history stores instruction addresses and bytes in a
+circular buffer with 300,000 entries. The new query scans this buffer while paused.
+
+### Existing Trace Log queries
+
+`DEBUG_TRACE_LOG_FILTER` scans the buffer and creates a filtered display vector,
+returning `filterId` and `totalMatches`. `DEBUG_TRACE_LOG_WINDOW` reads slices
+using `filterId`, `start`, and `lines`. Recording or resetting history invalidates
+the filter; creating another filter replaces the previous result.
+
+Caller recovery uses a separate history generation so display filtering and
+call-stack queries remain independent. Increment it when recorded history changes
+or is reset/replaced, and reject continuations with an old token. The extension
+discards its cursors on resume, reset, reload, or disconnect. The new protocol
+capability/schema version describes API support; the generation validates buffer
+positions.
 
 ### Proposed request
 
-- An address range `[start, end)`.
-- A history cursor at which to start searching backward, associated with the
-  stopped execution snapshot.
+- `rangeStart`, `rangeEnd`: half-open address range `[rangeStart, rangeEnd)`.
+- `callerCursor`: optional history offset; absent for the initial query.
+- `historyGeneration`: required when continuing from a returned cursor.
 
 ### Proposed response
 
-- Predecessor PC: the most recent instruction outside the supplied range.
-- Entry PC (entrance): the actual immediately following instruction address
-  inside the range, including a destination reached but not yet executed at a
-  breakpoint.
-- Cursors for both instruction occurrences, so the next query can continue
-  backward from exactly that transition.
-- A history epoch identifying the current execution timeline.
-- A status distinguishing a found transition, execution origin, and unavailable
-  older history.
-
-Queries run against a coherent stopped snapshot. Reset, image reload, history
-replacement, or an execution-timeline change invalidates old cursors.
+- `status`: `found` or `historyEnd`.
+- `historyGeneration`: token for the unchanged history.
+- For `found`:
+  - `callerPc`: most recent predecessor instruction outside the supplied range.
+  - `entrancePc`: its actual immediately following destination inside the range.
+  - `callerCursor`: offset of that outside instruction, used for parent lookup.
 
 The emulator only searches addresses and execution order. The extension retains
 all knowledge of region ownership, entry labels, macro chains, and source lines.
-The response supplies both addresses directly, including transfers through `pchl`.
+The response supplies both addresses regardless of the transferring instruction.
 
-### Stop position: verified behavior and query rule
+### Search initialization
 
 The current emulator completes an instruction before calling its debugger:
 `Hardware::ExecuteInstruction` executes machine cycles until the instruction is
@@ -206,49 +216,47 @@ Consequently, the live stopped PC need not already be a recorded instruction.
 For example, after executing `call B` at `0x0200`, a breakpoint at B's entry
 `0x0300` stops with live PC `0x0300`, while the newest trace item is `0x0200`.
 
-The new emulator query must therefore treat the stopped PC as the current
-destination after the newest completed instruction. It returns predecessor
-`0x0200` and entrance `0x0300` in this example, with a cursor representation for
-that stopped destination. Older queries use actual recorded instruction
-occurrences. Verify this behavior in breakpoint, watchpoint, and single-step tests.
+Initialize the first search with the live stopped PC as the destination and scan
+from the newest recorded instruction. For each item:
+
+1. If its PC is outside the supplied range, return that PC, the current destination,
+   and the item's cursor.
+2. Otherwise, set the destination to the item's PC and continue backward.
+
+This returns caller `0x0200` and entrance `0x0300` in the example using the
+existing recorded data. For a continuation, initialize the destination with the
+recorded PC at `callerCursor` and scan strictly older items. Verify initialization
+in breakpoint, watchpoint, and single-step tests.
 
 Keep request ranges and returned PCs in one declared address space. The current
 trace stores global instruction addresses; any CPU/global address conversion is
 the emulator protocol's responsibility.
 
-The **execution origin** is the actual start of the current execution timeline.
-v6emul must expose its configured initial PC and origin identity separately from
-the circular history. Identify the origin by timeline position and the configured
-launch/CLI address.
-
-Increase history capacity as needed. Report exhausted history and execution origin
-as distinct query outcomes.
+Return `historyEnd` when the scan exhausts valid retained entries. Increase history
+capacity as needed.
 
 ## 6. Reconstructing the Logical Caller Chain
 
 ### 6.1 Recover the raw chain
 
-1. Start with the live stopped PC and the matching history position.
+1. Start with the live stopped PC and an initial query without a cursor.
 2. Find the widest optional region containing that PC. Stop if none contains it.
 3. Ask v6emul for its preceding outside-to-inside boundary transition.
-4. Record the region, entry PC, predecessor PC, and both cursors. Refine the entry
-   name using the entry-label metadata.
+4. Record the region, entrance PC, caller PC, caller cursor, and history generation.
+   Refine the entry name using the entry-label metadata.
 5. Find the region containing the predecessor PC. If there is none, stop at that
    PC. Otherwise, repeat from that older instruction occurrence.
-6. Stop on the first of: a PC outside all optional blocks, the actual execution
-   origin, or the end of retained history. Preserve the termination reason.
+6. Stop at a PC outside all optional blocks or the end of retained history.
+   Preserve the termination reason.
    Retain repeated regions while gathering the raw chain; they are needed to
    recognize completed subcalls.
 
 An outside-all-blocks PC is the terminal source/address context. Unwrapped startup
-code calling A
-ends reconstruction at that call site. The same rule applies to unwrapped helpers
-or interrupt code. When execution is
-currently outside every optional block, show only the current machine/source
-context.
+code calling A ends reconstruction at that call site. The same rule applies to
+unwrapped helpers or interrupt code. When execution is currently outside every
+optional block, show only the current machine/source context.
 
-Actual execution order makes the search independent of whether entry was reached
-by `call`, `jmp`, or `pchl`.
+The same search applies to every instruction that transfers execution.
 
 ### 6.2 Remove completed subcall loops
 
@@ -313,8 +321,6 @@ For `main -> A -> B` where A jumps to B and never resumes, preserve the logical
 transfer chain `B -> A -> main`. It explains how execution reached B and lets
 the user navigate to A's jump.
 
-For `pchl`, use the actual adjacent recorded destination as the entry PC.
-
 ## 7. Debugger Presentation and Stepping
 
 ### Call Stack and source navigation
@@ -328,18 +334,14 @@ For `pchl`, use the actual adjacent recorded destination as the entry PC.
 - History frames supply PCs and navigation. Show historical caller registers as
   unavailable unless independently recovered.
 
-### Breakpoints and PC
+### Existing behavior to preserve
 
-- Reuse executable line-table mappings for body breakpoints, including all
-  emitted instances of a macro body statement.
-- The live register PC always remains the real stopped CPU PC. Selecting a
-  caller changes source context while preserving live register state.
+Breakpoints, source/instruction Step In, and macro stepping reuse their existing
+implementations. The new function work adds caller-history integration and
+function Step Out.
 
-### Step In
-
-Follow actual execution into the destination body, including alternate entries,
-conditional transfers, `jmp`, `pchl`, and nested macros. Preserve the current
-source/instruction stepping distinction.
+The live register PC remains the real stopped CPU PC. Selecting a caller changes
+source context while preserving live register state.
 
 ### Step Out
 
@@ -371,8 +373,9 @@ breakpoint pending until it is hit or the operation is interrupted/ended.
 1. Emit optional-region and entry-label metadata in both assembler output modes;
    use owning-section relocations in object output and exclude linker-tombstoned
    regions/entries from extension indexes. Verify final surviving addresses.
-2. Add a versioned raw-history boundary query, stable cursors, and execution-origin
-   information to v6emul. Keep the protocol free of debug metadata.
+2. Add the raw-history boundary query, one caller cursor per result, and independent
+   history-generation validation to v6emul. Add protocol capability/schema support
+   and tests using the existing recording buffer.
 3. Implement and test raw chain reconstruction plus completed-excursion removal
    as extension logic independent of editor UI.
 4. Integrate logical history frames with existing Call Stack, source navigation,
@@ -403,10 +406,12 @@ breakpoint pending until it is hit or the operation is interrupted/ended.
 | Macro inside function and call from macro body | Existing macro navigation and body highlighting preserved |
 | Optional data block never executed | No effect on reconstructed chain |
 | Object linking and direct-ROM output | Equivalent surviving-block metadata with final addresses |
-| Non-default execution start and start address revisited | Origin identified from timeline, not a hardcoded or repeated PC |
+| Retained history exhausted | `historyEnd` terminates reconstruction |
 | Predecessor or current PC outside every optional block | Search stops immediately; no older region is invented as a parent |
 | Breakpoint on first instruction of a region | Emulator returns entrance from live stopped PC even though it is not recorded yet |
-| Reset/reload or unavailable older history | Stale cursors rejected; incomplete chain not presented as complete |
+| History changes or resets during reconstruction | Stale generation/cursor continuations rejected |
+| Trace Log display filter replaced while paused | Caller-history generation and cursors remain valid |
+| Continuation from a returned caller cursor | Parent search starts strictly before that recorded instruction |
 | Normal return versus temporary helper during Step Out | Return completes; helper excursion does not |
 | Tail jump during Step Out | Same successor breakpoint policy; continued execution and a pending breakpoint are accepted if target is never reached |
 | Selecting historical caller | Correct source site; live CPU PC/registers unchanged |
