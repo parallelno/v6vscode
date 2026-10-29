@@ -129,6 +129,8 @@ export const enum IpcCommand {
     DEBUG_CODE_PERF_EDIT = 102,
     DEBUG_TRACE_LOG_FILTER = 103,
     DEBUG_TRACE_LOG_WINDOW = 104,
+    DEBUG_HISTORY_CALLER = 111,
+    DEBUG_HISTORY_SUCCESSOR = 112,
     DEBUG_SCRIPT_EDIT = 105,
     DEBUG_SCRIPT_COMPILE = 106,
     DEBUG_SCRIPT_RUN_ONCE = 107,
@@ -258,6 +260,7 @@ export interface ServerCapabilities {
     fddDismount?: boolean;
     runningHardwareMutations?: boolean;
     traceLogSchema?: number;
+    functionHistorySchema?: number;
     traceLogFilter?: boolean;
     traceLogWindowQuery?: boolean;
     traceLogLimits?: {

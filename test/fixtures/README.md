@@ -6,6 +6,8 @@ The ordinary unit/regression suite requires no emulator, assembler, compiler, or
 
 - `baseline/demo1.elf`: small ASM v4 line/symbol/constant fixture with executable and data-only includes. Source is `baseline/main.asm` and `baseline/sub/*.asm`.
 - `asmdbg/main.elf`: macro and nested-inline ASM metadata fixture.
+- `asmdbg/functions.elf`, `asmdbg/functions-linked.elf`: optional-region entries
+  and linked discarded-address metadata; regeneration is in `asmdbg/functions-README.md`.
 - `asm-values/main.elf`: individual structs, pool fields and one-byte-versus-word writes.
 - `cdbg/probe-O0.elf`, `probe-O1.elf`, `probe-O2.elf`: compact V6C producer fixtures for types, CFI, locations, optimized line ranges and inline frames. Their source and Makefile recipes are adjacent.
 

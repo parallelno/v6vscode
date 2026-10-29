@@ -40,6 +40,8 @@ import { BreakpointCoordinator } from '../session/breakpoint-coordinator';
 import { memoryCapabilities } from '../../emulator/memory/memory-backend';
 import { LogicalLocationIndex } from './logical-location-index';
 import { SourceStepService, SourceStepState } from './source-step-service';
+import { FunctionHistoryClient } from '../session/function-history-client';
+import { reconstructFunctionChain } from './function-call-chain-service';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -160,6 +162,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private cachedRegs: GetRegsResponse | null = null;
     private stoppedGeneration = 0;
     private stopContext: DebugStopContext | undefined;
+    private historyCapture: { generation: number; result: Promise<void> } | undefined;
     private readonly stackTraceService = new StackTraceService();
     private readonly scopeService = new ScopeService();
     private readonly variableService = new VariableService();
@@ -429,13 +432,38 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
     private async onStackTrace(req: DapRequest): Promise<void> {
         if (this.stopContext) {
-            await this.stackTraceService.capture(
-                this.stoppedGeneration,
-                this.stopContext,
-                pc => this.debugMetadata?.physicalSubprogramAt(pc)?.name ?? this.debugIndex?.symbolAtAddress(pc)?.name,
-                pc => this.resolveInlineFrameNames(pc),
-                frame => this.resolveFrameDisplayPc(frame),
-            );
+            const info = this.lifecycle.serverInfo;
+            const region = this.debugMetadata?.asmFunctions?.at(this.stopContext.pc);
+            if (region && this.client && info?.capabilities.functionHistorySchema === 1
+                && info.commands.includes(IpcCommand.DEBUG_HISTORY_CALLER)
+                && info.commands.includes(IpcCommand.DEBUG_HISTORY_SUCCESSOR)) {
+                const generation = this.stoppedGeneration;
+                const context = this.stopContext;
+                if (this.historyCapture?.generation !== generation) {
+                    const result = reconstructFunctionChain(this.debugMetadata!.asmFunctions,
+                        new FunctionHistoryClient(this.client), context.pc, () => {
+                            if (generation !== this.stoppedGeneration) { throw new Error('Inactive caller history'); }
+                        }).then(chain => {
+                        if (generation !== this.stoppedGeneration) { throw new Error('Inactive caller history'); }
+                        this.stackTraceService.captureHistory(generation, chain,
+                            { index: 0, pc: context.pc, sp: context.sp, registers: context.topRegisters },
+                            pc => this.resolveInlineFrameNames(pc), pc => this.debugIndex?.symbolAtAddress(pc)?.name);
+                    });
+                    this.historyCapture = { generation, result };
+                    void result.catch(() => {
+                        if (this.historyCapture?.result === result) { this.historyCapture = undefined; }
+                    });
+                }
+                await this.historyCapture.result;
+            } else {
+                await this.stackTraceService.capture(
+                    this.stoppedGeneration,
+                    this.stopContext,
+                    pc => this.debugMetadata?.physicalSubprogramAt(pc)?.name ?? this.debugIndex?.symbolAtAddress(pc)?.name,
+                    pc => this.resolveInlineFrameNames(pc),
+                    frame => this.resolveFrameDisplayPc(frame),
+                );
+            }
             const page = this.stackTraceService.page(req.arguments?.startFrame, req.arguments?.levels);
             this.sendResponseBody(req, {
                 stackFrames: page.frames.map((frame, index) => this.makeStackFrame(
@@ -557,6 +585,10 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             this.sendResponseBody(req, { scopes: [] });
             return;
         }
+        if (frame?.historyFrame && !frame.physicalFrame) {
+            this.sendResponseBody(req, { scopes: [] });
+            return;
+        }
         if (this.debugMetadata && frame) {
             const semanticScopes = this.scopeService.scopes(this.debugMetadata, frame);
             this.sendResponseBody(req, {
@@ -612,7 +644,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         const scope = handle;
         if ('scope' in scope) {
             const frame = this.stopContext && this.stackTraceService.frame(this.stoppedGeneration, scope.frameId);
-            if (!this.debugMetadata || !this.stopContext || !frame) {
+            if (!this.debugMetadata || !this.stopContext || !frame?.physicalFrame) {
                 this.sendResponseBody(req, { variables: [] });
                 return;
             }
@@ -799,7 +831,22 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         if (frame?.inlineDieIdentity !== undefined && await this.startInlineStepOut(frame, req)) {
             return;
         }
-        if (!frame?.physicalFrame.returnPc) {
+        if (frame?.historyFrame && frame.historyCaller && this.client) {
+            const generation = this.stoppedGeneration;
+            const target = await new FunctionHistoryClient(this.client).successor(frame.historyCaller);
+            if (generation !== this.stoppedGeneration) { throw new Error('Inactive caller history'); }
+            await this.cancelSourceStep();
+            if (!await this.breakpoints.acquireTemporary(target)) {
+                this.sendResponse(req, false, this.breakpoints.temporaryError ?? 'Unable to set step-out breakpoint');
+                return;
+            }
+            this.sourceStepAddresses = [target];
+            this.execution.pendingStep = true;
+            this.sendResponseBody(req, {});
+            await this.run();
+            return;
+        }
+        if (frame?.physicalFrame?.returnPc === undefined) {
             this.sendResponse(req, false, 'Selected frame has no verified caller');
             return;
         }
@@ -815,7 +862,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     }
 
     private async startInlineStepOut(frame: DapFrameContext, req: DapRequest): Promise<boolean> {
-        if (!this.debugIndex || !this.debugMetadata || !this.cachedRegs || frame.physicalFrame.index !== 0) {
+        if (!this.debugIndex || !this.debugMetadata || !this.cachedRegs || frame.physicalFrame?.index !== 0) {
             return false;
         }
         const subprogram = this.debugMetadata.subprogramAt(frame.instructionPc);
@@ -1031,6 +1078,10 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             : undefined;
         if (context && typeof frameId === 'number' && !frame) {
             this.sendResponse(req, false, 'The selected frame is no longer available');
+            return;
+        }
+        if (frame?.historyFrame && !frame.physicalFrame) {
+            this.sendResponse(req, false, 'Historical caller register state is unavailable');
             return;
         }
 
@@ -1390,6 +1441,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private invalidateStopContext(): void {
         this.stoppedGeneration++;
         this.stopContext = undefined;
+        this.historyCapture = undefined;
         this.stackTraceService.clear();
         this.variablesHandles.reset(this.stoppedGeneration);
     }

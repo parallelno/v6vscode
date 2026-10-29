@@ -173,13 +173,18 @@ export function decodeDebugArtifact(elfBuf: Buffer, rom?: Buffer): LoadResult {
     }
 
     // Build the legacy line/symbol index and optional semantic metadata independently.
-    const index = buildDebugIndex(rows, elf.symbols, compDir, declarations, files);
     let metadata: DebugMetadataIndex | undefined;
     try {
         metadata = new DebugMetadataIndex(elf);
     } catch {
         // Optional semantic metadata must not disable baseline source debugging.
     }
+    for (const region of metadata?.asmFunctions.regions ?? []) {
+        for (const entry of region.entries) {
+            declarations.push({ name: entry.name, value: entry.address, file: entry.file, line: entry.line });
+        }
+    }
+    const index = buildDebugIndex(rows, elf.symbols, compDir, declarations, files);
 
     // Validate ROM/ELF match
     const validationWarning = validateRomElf(elf, rom);

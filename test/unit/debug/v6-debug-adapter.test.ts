@@ -334,6 +334,23 @@ describe('V6DebugAdapter', () => {
         assert.deepStrictEqual(targets, [0x101]);
     });
 
+    it('uses the emulator historical successor for assembly Step Out including address zero', async () => {
+        const adapter = makeSourceStepAdapter();
+        const calls: Array<{ command: IpcCommand; data: any }> = [];
+        (adapter as any).stackTraceService.frame = () => ({ historyFrame: true,
+            historyCaller: { callerCursor: 7, historyGeneration: 3 } });
+        (adapter as any).client.send = async (command: IpcCommand, data: any) => {
+            calls.push({ command, data });
+            if (command === IpcCommand.DEBUG_HISTORY_SUCCESSOR) { return { ok: true, data: { address: 0 } }; }
+            return command === IpcCommand.DEBUG_BREAKPOINT_GET_ALL ? { ok: true, data: [] } : { ok: true };
+        };
+        (adapter as any).execution.startPoll = () => {};
+        await (adapter as any).onStepOut({ seq: 1, command: 'stepOut', arguments: {} });
+        assert.strictEqual(calls[0].command, IpcCommand.DEBUG_HISTORY_SUCCESSOR);
+        assert.deepStrictEqual(calls[0].data, { callerCursor: 7, historyGeneration: 3 });
+        assert.strictEqual(calls.find(call => call.command === IpcCommand.DEBUG_BREAKPOINT_ADD)?.data.addr, 0);
+    });
+
     it('uses only a verified caller return PC for physical Step Out', async () => {
         const adapter = makeSourceStepAdapter();
         const calls: Array<{ command: IpcCommand; data: any }> = [];

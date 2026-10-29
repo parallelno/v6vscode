@@ -1,10 +1,14 @@
 import { formatHex } from '../../shared/numbers';
 import { DebugStopContext, PhysicalFrame } from '../metadata/debug-stop-context';
 import { DapHandleStore } from './dap-handle-store';
+import { HistoryPosition } from '../session/function-history-client';
+import { FunctionHistoryFrame } from './function-call-chain-service';
 
 export interface DapFrameContext {
     id: number;
-    physicalFrame: PhysicalFrame;
+    physicalFrame?: PhysicalFrame;
+    historyFrame?: boolean;
+    historyCaller?: HistoryPosition;
     inlineDieIdentity?: number;
     /** Exact execution address; callers retain the verified return address. */
     instructionPc: number;
@@ -20,8 +24,8 @@ export interface StackTracePage {
 }
 
 /**
- * Owns DAP frame IDs for one stopped generation. Only frames supplied by the
- * CFI unwinder are included; callers are never inferred from raw stack words.
+ * Owns DAP frame IDs for one stopped generation. Frames come from CFI recovery
+ * or explicit execution-history chains; raw stack words are never guessed.
  */
 export class StackTraceService {
     private generation = -1;
@@ -29,6 +33,26 @@ export class StackTraceService {
     private readonly handles = new DapHandleStore<DapFrameContext>();
     private revision = 0;
     private pending: { generation: number; context: DebugStopContext; result: Promise<void> } | undefined;
+
+    captureHistory(generation: number, chain: readonly FunctionHistoryFrame[], top: PhysicalFrame,
+        inlineNames: (pc: number) => readonly { id: number; name: string; source?: { file: string; line: number; column: number } }[],
+        resolveName: (pc: number) => string | undefined): void {
+        const frames: DapFrameContext[] = [];
+        for (const [index, frame] of chain.entries()) {
+            const base = { historyFrame: true, physicalFrame: index === 0 ? top : undefined,
+                instructionPc: frame.pc, displayPc: frame.pc, historyCaller: frame.caller };
+            for (const inline of inlineNames(frame.pc)) {
+                frames.push({ ...base, id: generation * 1_000 + frames.length + 1,
+                    inlineDieIdentity: inline.id, name: inline.name, source: inline.source });
+            }
+            frames.push({ ...base, id: generation * 1_000 + frames.length + 1,
+                name: frame.name ?? resolveName(frame.pc) ?? hex4(frame.pc) });
+        }
+        this.frames = frames;
+        this.generation = generation;
+        this.handles.reset(generation);
+        for (const frame of frames) { this.handles.set(generation, frame.id, frame); }
+    }
 
     clear(): void {
         this.revision++;

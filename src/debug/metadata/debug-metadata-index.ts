@@ -15,6 +15,7 @@ import { DwarfScopes, ScopeNode, SubprogramNode, VariableNode } from './dwarf-sc
 import { DwarfCfi, UnwindRow } from './dwarf-cfi';
 import { evaluateDwarfExpression, DwarfEvalContext, EvaluatedLocation } from './dwarf-expression';
 import { locationAt } from './dwarf-locations';
+import { AsmFunctionIndex } from './asm-function-index';
 
 export interface DebugMetadataFeatures {
     lines: boolean;
@@ -27,6 +28,7 @@ export interface DebugMetadataFeatures {
 }
 
 export class DebugMetadataIndex {
+    readonly asmFunctions: AsmFunctionIndex;
     readonly units: CompilationUnit[];
     readonly types: DwarfTypes;
     readonly scopes: DwarfScopes;
@@ -41,6 +43,7 @@ export class DebugMetadataIndex {
         const reader = new DwarfReader(sections.info, sections.abbrev, strings, sections.addressTable);
         this.addressResolver = (unit, index) => reader.resolveAddress(unit, index);
         this.units = sections.hasInfo ? reader.readUnits() : [];
+        this.asmFunctions = new AsmFunctionIndex(this.units);
 
         // Index all DIEs by offset for type and origin resolution.
         for (const unit of this.units) {

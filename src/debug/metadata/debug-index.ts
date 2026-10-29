@@ -203,9 +203,7 @@ export function buildDebugIndex(
                 .find(candidate => candidate.address === s.value);
             if (duplicate) { continue; }
         }
-        const declaration = isAbsoluteConstant
-            ? normalizedDeclarations.find(item => item.name === s.name && item.value === s.value)
-            : undefined;
+        const declaration = normalizedDeclarations.find(item => item.name === s.name && item.value === s.value);
         const info: SymbolInfo = {
             name: s.name, address: s.value, size: s.size, type: s.type, binding: s.binding,
             absolute: s.section === SHN_ABS,

@@ -1,8 +1,37 @@
 # Assembly Function Debugging Implementation Plan
 
-**Status:** Ready for implementation planning gates; code changes pending.
+**Status:** Initial implementation complete across v6asm, v6emul, and v6vscode;
+extended acceptance checklist remains below.
 **Date:** 2026-10-24
 **Design:** `C:/Work/Programming/v6vscode/design/features/asm-function-debugging-options.md`
+
+## Implementation checkpoint
+
+Implemented producer contract: DWARF v4 region tag `0x4080` with address/size and
+standard entry-point children, carrying name/address, source-path attribute
+`0x3f01`, and declaration line. Object addresses use owning-section relocations;
+the extension filters `0xFFFF` starts/entries. Real linked GC fixtures verify it.
+
+Implemented backend contract: commands 111/112 with `functionHistorySchema: 1`,
+one caller cursor, independent generation validation, and recorded-opcode
+sequential successors. Region queries use 16-bit CPU coordinates, projecting
+stored global instruction addresses to their low 16 bits.
+
+Implemented extension: metadata indexing and definition declarations, raw caller
+reconstruction and loop collapse, explicit history frames, per-stop capture
+coalescing, macro frame presentation, and function Step Out through temporary
+breakpoints. Historical caller registers are unavailable. Reconstruction has a
+4096-occurrence safety bound.
+
+Project-owned tests cover producer regions/relocations and ROM pruning, backend
+IPC/history/generation behavior, linker tombstones, decoder/reduction behavior,
+and adapter successor targeting. A real Extension Host/emulator test verifies
+helper removal, source navigation, and function Step Out.
+
+The phase checklists are the full acceptance roadmap, not a claim that every
+edge-case test below has been implemented. Remaining extended coverage includes
+multi-object external-entry fixtures, full-buffer wrap tests, same-block internal
+call and indirect-transfer live scenarios, and never-hit tail-target live cleanup.
 
 ## 1. Outcome
 
@@ -338,8 +367,8 @@ local compiler/dependencies; use the existing configured preset where appropriat
 | v6vscode | `npm run compile`; `npm run lint`; `npm run test:core`; `npm run test:all`; `npm run test:integration` |
 | Linked fixtures | Toolchain `llvm-readelf -S -r` and `llvm-dwarfdump --debug-info --debug-line` on objects and final ELFs; inspect GC and non-GC outputs |
 
-These are implementation acceptance commands, not claims that implementation
-tests have already run. Plan-authoring validation checks this document only.
+These commands define the acceptance suites. The implementation checkpoint above
+distinguishes delivered coverage from remaining extended scenarios.
 
 ## 10. Delivery Order and Commit Boundaries
 
