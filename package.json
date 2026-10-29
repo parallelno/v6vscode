@@ -2,7 +2,7 @@
   "name": "v6vscode",
   "displayName": "Vector-06c Development",
   "description": "Vector-06c development environment, project management, syntax highlighting, and emulator integration.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "AlexFedotovskikh",
   "license": "MIT",
   "private": true,
