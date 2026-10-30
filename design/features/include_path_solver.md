@@ -43,13 +43,12 @@ find the same file.
 ## 2. Desired behavior
 
 R1. Unresolved operand of any of the three directives: **no link**, plus one `Error` diagnostic over
-the operand (`Cannot find include file "..."`; `Cannot find file "..."` for `.incbin`/`.filesize`),
-rendered as the usual squiggle — the same experience as a broken TypeScript import.
-R2. Resolved operand: **link only**, to the first existing candidate. No extra decoration: no warning,
-no custom hover, no candidate/anchor/path debug output.
-R3. One candidate list for `.include`, `.incbin` and `.filesize` (§3.1); the v6asm fix that makes this
-list true is a prerequisite (§12.1).
-R4. Precedence is deterministic and documented (§5.2); the user is not asked to understand it.
+the operand — red squiggle, message in the hover and in the Problems panel (`Cannot find include
+file "..."`; `.incbin`/`.filesize`: `Cannot find file "..."`). The mechanism is specified in §5.7.
+R2. Resolved operand: **link only**, to the highest-priority existing candidate (§5.2 defines the
+priority).
+R3. One candidate list for `.include`, `.incbin` and `.filesize` (§3.1).
+R4. Path candidates order is deterministic (§5.2).
 R5. Keep what is already correct: operand-only link ranges, emoji/CRLF offset handling, absolute
 operands used verbatim, and unchanged symbol/label navigation.
 
@@ -85,7 +84,7 @@ only steps 2 and 4 — no including-file step and no `-I` (`assembler.rs:3198-32
 All measurements below come from the sample ELF in `temp/project/build/09_sprite_frame_no_vsync/`
 and from running v6asm on the same source.
 
-### 4.1 `DW_AT_comp_dir` is the top-level source directory of that object
+### 4.1 `DW_AT_comp_dir` is the top-level source directory of a linked object
 
 `main.rs:339` derives `source_dir` from `source_path.parent()`, `main.rs:381` passes it to
 `Assembler::new`, and `output.rs:213` hands `asm.project_dir()` to the DWARF writer, which stores it as
@@ -101,16 +100,10 @@ So `comp_dir` is the "project dir" of §3.1 step 2, per compilation unit. The ex
 `LoadResult.compDir` exposes only the first absolute comp dir, which depends on link order
 (`main.o` happens to be linked first in the sample Makefile).
 
-### 4.2 `DW_AT_name` is not the main source path
-
-`dwarf.rs:348` sets `unit_name = files.first()` — the first file that emitted a line row. Measured: the
-first entry of the main CU's table is `../../engine/common/v6_consts.asm`, not `main.asm`. The main
-file is present in that table (`main.asm`), but nothing marks it as the entry compilation point.
-
-### 4.3 `.debug_line` entries record the operand spelling, not the resolved location
+### 4.2 `.debug_line` entries record the operand spelling, not the resolved location
 
 The writer stores each file as `(file_directory(file), file_name(file))` (`dwarf.rs:923-946`), with the
-directory relative to `comp_dir`. The main CU has nine such entries; three representative ones:
+directory relative to `comp_dir`. The testable main CU has nine such entries; three representative ones:
 
 | `.debug_line` entry (dir / file) | joined with the CU's `comp_dir` | exists? | where the file really is |
 |---|---|---|---|
@@ -129,14 +122,14 @@ file it read — not even at the build site. The extension joins entries to `com
 For files resolved by step 1, `comp_dir + operand` is correct; for files resolved by `-I` or CWD it is
 structurally wrong.
 
-### 4.4 What the extension exposes today
+### 4.3 What the extension exposes today
 
 `decodeDebugArtifact` publishes one merged `compDir` and one merged file list
 (`debug-artifact-loader.ts:147,156,187`); `DebugIndex.sourceFiles` is the union across CUs
 (`debug-symbol-service.ts:102-104`). The per-CU line tables and comp-dir map already exist inside the
 loader (`buildLineCompDirs`, `filesForUnit`); they are simply not published.
 
-### 4.5 Why label navigation works while include links do not
+### 4.4 Why label navigation works while include links do not
 
 `SymbolLinkProvider.provideDefinition` resolves the metadata file name with
 `resolveDebugSourcePath(source.file, projectSourceRoot(project))` (`symbol-link-provider.ts:159-163`),
@@ -152,12 +145,6 @@ which relocates foreign absolute paths by **longest existing trailing segment**
 Symbols reach into `build/...` files only because the suffix survives, not because the recorded path is
 usable.
 
-### 4.6 Conclusion
-
-The DWARF file table is a **membership oracle** (which files the build consumed) and a source of
-**per-CU `comp_dir`**, but it is **not a location oracle** for include operands. Anything derived from
-it must use only the tail of a recorded path, or `comp_dir` — never the recorded prefix.
-
 ## 5. Design
 
 ### 5.1 One candidate list for all three directives
@@ -165,14 +152,15 @@ it must use only the tail of a recorded path, or `comp_dir` — never the record
 The solver is a pure function with an injected existence predicate (the shape of
 `resolveDebugSourcePath(sourcePath, projectRoot, exists)`). It returns the resolved path, or nothing
 when no candidate exists. The list is identical for `.include`, `.incbin` and `.filesize`, in the
-order of §5.2.
+priority order of §5.2.
 
-### 5.2 Search order
+### 5.2 Search order and priority
 
-Candidates are tried in order; the **first existing one wins**. If none exists, the operand is
+The table is a **priority list**: candidate 1 has the highest priority, candidate 5 the lowest. The
+solver walks it from 1 to 5 and returns the first candidate that exists. If none exists, the operand is
 unresolved (§5.7).
 
-| # | Anchor | Source | Rationale |
+| Priority | Anchor | Source | Rationale |
 |---|---|---|---|
 | 1 | absolute operand, used verbatim | `path.isAbsolute` (platform-aware) | v6asm `Path::join` replaces the base for absolute inputs; preserves today's spelling rule |
 | 2 | directory of the containing document | `document.uri` | §3.1 step 1; already correct today |
@@ -185,7 +173,8 @@ Ordering rules:
 - **project dir before any workspace folder** — the reverse would undo the anchor correction recorded
   in `design/features/path-resolution-architecture-investigation.md` §7 and `docs/architecture.md:51-59`;
 - **`comp_dir` after project dir** — it is a build-site path and may point at another checkout (§4.1);
-- **first match wins, silently** — no ambiguity analysis, no candidate reporting (R2).
+- **the highest-priority existing candidate wins, silently** — no ambiguity analysis, no candidate
+  reporting (R2).
 
 ### 5.3 Per-CU data from the artifact loader
 
@@ -218,7 +207,7 @@ when one linker output contains several objects (here: the sample CU and the eng
 - the link range and the diagnostic range cover the original operand bytes, so emoji/CRLF offsets stay
   correct;
 - existence is checked with the injected predicate only; no other candidate property is inspected,
-  because the first existing candidate wins (§5.2).
+  because the highest-priority existing candidate wins (§5.2).
 
 ### 5.6 Workspace anchor policy
 
@@ -240,17 +229,50 @@ The provider has exactly two outcomes:
 
 | Outcome | Link | Diagnostic | Hover |
 |---|---|---|---|
-| a candidate exists | link to that file, nothing else | none | default VS Code link tooltip |
+| a candidate exists | link to that file | none | **unchanged**: VS Code's standard link tooltip showing the target path |
 | no candidate exists | **no link** (Ctrl+Click does nothing) | **Error** over the operand: `Cannot find include file "…"` (`.incbin`/`.filesize`: `Cannot find file "…"`) | the diagnostic message |
+
+#### How the message is displayed
+
+There is no toast and no notification, and no new hover content is added. The message **is** a VS Code
+diagnostic — we supply only the range and the text, and VS Code renders it:
+
+```ts
+const diagnostic = new vscode.Diagnostic(
+    operandRange,                            // the quoted operand only
+    `Cannot find include file "${operand}"`, // operand as written, never a resolved candidate
+    vscode.DiagnosticSeverity.Error,
+);
+diagnostic.source = 'v6asm';
+collection.set(document.uri, diagnostics);
+```
+
+| Surface | What the user sees | Provided by |
+|---|---|---|
+| inline decoration | red squiggle under the operand | VS Code diagnostic renderer |
+| hover over the squiggle | the message text, e.g. `Cannot find include file "build/…/lv0_gfx_meta.asm"` | VS Code built-in marker hover — **no `HoverProvider` is registered** |
+| Problems panel | one entry per unresolved operand with file/line, clickable | VS Code |
+| status bar | error count for the open file | VS Code |
+| Ctrl+Click on the operand | nothing happens (no link is emitted) | our link provider |
+
+Because no `DocumentLink` exists for that range, the hover contains only the diagnostic, which is
+exactly the broken-TypeScript-import experience.
 
 Rules:
 
+- messages: `.include` → `Cannot find include file "<operand>"`; `.incbin` / `.filesize` →
+  `Cannot find file "<operand>"`; the operand is reproduced exactly as written;
 - the diagnostic range is the quoted operand only, `source: 'v6asm'`, severity `Error`; no `Warning`
   severity is used anywhere in this feature;
-- one `DiagnosticCollection` (`v6-asm-directives`) owned by the provider; an entry is removed as soon
-  as the operand resolves, and on document close;
-- no custom tooltip, no directive hover provider, and no anchor or candidate text is shown to the user.
-  Which anchor matched is an implementation detail (§5.2) and is asserted in tests only.
+- diagnostics are recomputed with the same resolution as the links (on open and on change), so the
+  squiggle appears while typing — no save or build is required;
+- one `DiagnosticCollection` (`v6-asm-directives`) owned by the provider; its entries are replaced for
+  the document on every resolution pass and deleted when the document closes, so a stale squiggle
+  cannot survive an edit or a rename;
+- the document link keeps its `DocumentLink.tooltip` exactly as today (unset, so VS Code renders the
+  target path); no custom tooltip string is set, no directive hover provider is registered, and no
+  anchor/candidate text is shown. Which anchor matched is an implementation detail (§5.2) and is
+  asserted in tests only.
 
 ### 5.8 Caching and lifecycle
 
@@ -277,7 +299,7 @@ export interface DirectiveContext {
     workspaceDir?: string;
 }
 
-/** Absolute path of the first existing candidate, or undefined when none exists. */
+/** Absolute path of the highest-priority existing candidate, or undefined when none exists. */
 export function resolveDirectivePath(
     operand: string,
     context: DirectiveContext,
@@ -302,10 +324,12 @@ Constraints carried over from the existing boundary checks
   for a resolved operand (§5.7).
 - **Diagnostics** — a new adapter owning
   `languages.createDiagnosticCollection('v6-asm-directives')`, registered and disposed with the other
-  language services. It uses the same solver and cache and reports `Error` only (§5.7). This adapter
-  produces the squiggle and the message shown on hover.
-- **No directive hover provider** — the existing `SymbolLinkProvider` hover stays untouched, and no
-  new hover content is added for include operands.
+  language services. Per document it calls `collection.set(uri, diagnostics)` with one `Error` per
+  unresolved operand and `collection.delete(uri)` on close (§5.7).
+- **Hover is kept, not rebuilt** — a resolved operand keeps the standard `DocumentLink` tooltip
+  (target path). For an unresolved operand the hover text comes from VS Code's built-in marker hover
+  over the diagnostic above. The existing `SymbolLinkProvider` hover (value, Go to Definition) is
+  untouched; no directive hover provider is registered and no extra hover content is added.
 - **Parsing** — one function returning `directive`, `operand` and `range` for all three directives;
   ranges cover only the quoted operand, not `, offset, length`.
 - `.filesize` has two spellings (`NAME .filesize "path"`, `.filesize "path"`), so the parser must not
@@ -322,12 +346,12 @@ Constraints carried over from the existing boundary checks
 | D1 | project dir before workspace root | **yes** — consistent with the DAP/source-anchor correction |
 | D2 | workspace anchor = folder containing the document only | **yes**; the multi-root alternative is recorded in §5.6 |
 | D3 | unresolved operand: no link, `Error` diagnostic | **yes** — replaces today's "always emit a link" |
-| D4 | first existing candidate wins silently | **yes** — no ambiguity analysis, no candidate reporting (R2) |
+| D4 | highest-priority existing candidate wins silently | **yes** — no ambiguity analysis, no candidate reporting (R2) |
 | D5 | DWARF data supplies `comp_dir` only, never a location | **yes** (§4.6); suffix/membership matching is not implemented |
 | D6 | one candidate list for all three directives | **yes** — depends on the v6asm fix (§12.1) |
 | D7 | `-I` include dirs | not modeled here (§12.2, §13) |
 | D8 | publish per-CU `units` from the loader | **yes** — additive (§5.3) |
-| D9 | diagnostics collection, `Error` only; no custom tooltip, no directive hover | **yes** (§5.7) |
+| D9 | diagnostics collection, `Error` only; link tooltip and symbol hover preserved | **yes** (§5.7) |
 
 ## 9. Behavior changes and compatibility
 
@@ -346,7 +370,7 @@ Unchanged, and asserted by existing tests:
 - link and diagnostic ranges cover only the quoted operand, with emoji/CRLF-safe offsets;
 - symbol/label/constant navigation and `resolveDebugSourcePath` semantics are untouched;
 - without a project or artifact, candidate 4 is skipped;
-- no new tooltip or hover content is introduced.
+- the link tooltip and the existing symbol hover are preserved; no new hover content is introduced.
 
 Two documented statements are superseded and must be updated in the same change (§11):
 `docs/language-support.md:41-49` ("missing targets still produce links") and the "behaviors not to
@@ -369,9 +393,10 @@ Parser (`test/unit/language/include-resolution.test.ts`): `.include`, `.incbin` 
 (`NAME` and bare), `'...'` vs `"..."`, `, offset, length`, CRLF, emoji offsets, comment handling
 unchanged.
 
-Provider (`test/unit/language/include-link-provider.test.ts`): operand-only ranges; URI is the solver
-result; no custom tooltip and no hover contribution; resolved → link; unresolved → no link plus exactly
-one `Error` diagnostic with the expected range, source and message; no `Warning` diagnostics.
+Provider (`test/unit/language/include-link-provider.test.ts`): operand-only ranges; URI is the
+highest-priority existing candidate; `link.tooltip` stays unset so VS Code's default path tooltip is
+kept; resolved → link; unresolved → no link plus exactly one `Error` diagnostic with the expected
+range, source and message; no `Warning` diagnostics.
 
 Shipped integration (`src/test/integration/suite/source-paths.test.ts:9-24`, via
 `vscode.executeLinkProvider` and `vscode.languages.getDiagnostics`) over a temporary project:
