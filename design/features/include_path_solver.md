@@ -30,5 +30,17 @@ I am thinking of improiving the include path solution:
     - a debug source path from DWARF anchored at the `*.project.json` directory when DWARF file table avaiable.
 - the extension must not resolve relative paths relative any other workspace dirs.
 
+## Issues Outside of Scope
+
+Do not requires solution for now. It will be fixed outside of this plan.
+
+- Mismatch path resolver in v6asm:
+
+.include	1) dir of the including file 2) "project dir" = dir of the top-level .asm 3) -I dirs 4) process CWD (preprocessor.rs:447-471)
+.incbin / .filesize	1) project dir (top-level asm dir) 2) CWD — no including-file step, no -I (assembler.rs:3198-3208)
+
+- Mismatch case sensitivity between v6asm and v6vscode
+
+Operand must be a quoted string (`parse_string_arg`), `.incbin` may add `, offset, length`, `.filesize` may be written `NAME .filesize "path"`, and directive names are upper-cased before dispatch (case-insensitive) — while the extension's `.include` regex is case-sensitive and also matches inside `;` comments (documented as intentional).
 
 ## Open Questions
