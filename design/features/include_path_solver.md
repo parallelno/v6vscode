@@ -1,9 +1,9 @@
 # Unified Include Path Solver
 
-**Status:** Design agreed; not implemented.
-**Verified against:** v6vscode `752bf00` (0.3.1) and the `v6asm` sources
-(`crates/v6_core/src/preprocessor.rs`, `assembler.rs`, `object/dwarf.rs`), using the real
-artifact in `temp/project/build/09_sprite_frame_no_vsync/`.
+**Status:** Draft; not implemented.
+**Verified against:** v6vscode `752bf00` (0.3.1) and the v6asm sources
+(`crates/v6_core/src/preprocessor.rs`, `assembler.rs`, `object/dwarf.rs`), using the real artifact in
+`temp/project/build/09_sprite_frame_no_vsync/`.
 **Owner area:** `src/language/includes/`, `src/debug/metadata/`, `src/platform/files/`.
 **Related:** `design/features/path-resolution-architecture-investigation.md`,
 `docs/architecture.md` (Source path ownership), `docs/language-support.md` (Source Links),
@@ -11,60 +11,85 @@ artifact in `temp/project/build/09_sprite_frame_no_vsync/`.
 
 ## 1. Problems
 
-- The extension include path solver does not match the v6asm path solver.
-- The extension does not support the `.incbin` and `.filesize` directives; they exist only
-  as keywords in `res/syntaxes/v6vscode_8080.tmLanguage.json:144`.
-- `.include` is anchored to the containing document only, and a link is emitted even when the
-  target does not exist (`include-link-provider.ts:10-21`, `include-resolution.ts:38-41`).
-- The winning rule is invisible: nothing tells the user why a link points where it points.
+### 1.1 A broken `.include` looks exactly like a working one
 
-Concrete case: `samples/common/09_sprite_frame_no_vsync/main.asm:17`
-(`../../engine/...`, intended file-relative) and `:28` (`build/...`, intended root-relative).
-With the extension host workspace `temp/project`, both operands are joined to the document
-directory: line 17 becomes `...\samples\engine\common\v6_macros.asm` and line 28 becomes
-`...\samples\common\09_sprite_frame_no_vsync\build\09_sprite_frame_no_vsync\levels\asm\lv0_gfx_meta.asm`.
-Neither exists; the real targets are `temp\project\engine\common\v6_macros.asm` and
-`temp\project\build\09_sprite_frame_no_vsync\levels\asm\lv0_gfx_meta.asm`.
+`IncludeLinkProvider` anchors every operand to the directory of the containing document
+(`include-link-provider.ts:10-21`, `include-resolution.ts:38-41`) and always emits a link, even when
+the target does not exist. Following such a link opens nothing, and no error is reported anywhere.
 
-## 2. Prerequisites
+Reproduction in the extension host workspace `temp/project`, file
+`samples/common/09_sprite_frame_no_vsync/main.asm`:
 
-- **workspace directory** — the folder opened in the Extension Development Host; for this
-  repository `C:\Work\Programming\v6vscode\temp\project\` (`.vscode/launch.json:12`).
-- **project file** (optional) — the selected `*.project.json`. Its directory is the documented
-  source anchor (`projectSourceRoot`, `src/project/model/source-context.ts:4-6`).
-- **debug artifact** (optional) — the ELF from `project.run.debugArtifact`, already loaded and
-  cached by `ArtifactRepository`/`DebugSymbolService`. `ArtifactHandle.version`
-  (`artifact-repository.ts:6-10`) is available as a cache key.
+| Line | Operand | Link target built by the extension | Target that exists |
+|---|---|---|---|
+| 17 | `../../engine/common/v6_macros.asm` | `...\samples\engine\common\v6_macros.asm` | `temp\project\engine\common\v6_macros.asm` |
+| 28 | `build/09_sprite_frame_no_vsync/levels/asm/lv0_gfx_meta.asm` | `...\09_sprite_frame_no_vsync\build\09_sprite_frame_no_vsync\levels\asm\lv0_gfx_meta.asm` | `temp\project\build\09_sprite_frame_no_vsync\levels\asm\lv0_gfx_meta.asm` |
 
-## 3. Assembler (authority)
+Line 17 is additionally affected by this copy's layout, which places the sample one directory deeper
+than v6asm expects; line 28 is structural (`build/...` is root-relative by design, see §3.1 and §4.3).
 
-| Directive | v6asm search order |
-|---|---|
-| `.include` | 1) dir of the including file 2) "project dir" = **dir of the top-level `.asm`** 3) `-I` dirs 4) **process CWD** (`preprocessor.rs:447-471`) |
-| `.incbin` / `.filesize` | 1) project dir (top-level asm dir) 2) CWD — **no** including-file step, **no** `-I` (`assembler.rs:3198-3208`) |
+### 1.2 `.incbin` and `.filesize` have no support
 
-Operand parsing:
+Both directives exist only as keywords in `res/syntaxes/v6vscode_8080.tmLanguage.json:144`. Their
+operands get no link, no definition, no hover and no diagnostic, even though every generated
+`*_meta.asm` uses `.filesize` on its asset.
+
+### 1.3 The editor and v6asm search different places
+
+The editor uses one anchor (the document directory); v6asm uses four (§3.1). A project that builds
+correctly can therefore show broken links, and a link that works does not prove that the build will
+find the same file.
+
+## 2. Desired behavior
+
+R1. Unresolved operand of any of the three directives: **no link**, plus one `Error` diagnostic over
+the operand (`Cannot find include file "..."`; `Cannot find file "..."` for `.incbin`/`.filesize`),
+rendered as the usual squiggle — the same experience as a broken TypeScript import.
+R2. Resolved operand: **link only**, to the first existing candidate. No extra decoration: no warning,
+no custom hover, no candidate/anchor/path debug output.
+R3. One candidate list for `.include`, `.incbin` and `.filesize` (§3.1); the v6asm fix that makes this
+list true is a prerequisite (§12.1).
+R4. Precedence is deterministic and documented (§5.2); the user is not asked to understand it.
+R5. Keep what is already correct: operand-only link ranges, emoji/CRLF offset handling, absolute
+operands used verbatim, and unchanged symbol/label navigation.
+
+## 3. v6asm behavior (reference)
+
+### 3.1 Target contract: one candidate list for all three directives
+
+The design target is a single search list shared by `.include`, `.incbin` and `.filesize`:
+
+1. directory of the file containing the directive;
+2. "project dir" = directory of the top-level `.asm`;
+3. each `-I` include directory, in order;
+4. process CWD.
+
+### 3.2 Current v6asm behavior
+
+`.include` already uses the list of §3.1 (`preprocessor.rs:447-471`). `.incbin` and `.filesize` use
+only steps 2 and 4 — no including-file step and no `-I` (`assembler.rs:3198-3208`).
+
+### 3.3 Operand parsing
 
 - quoted string only (`parse_string_arg`, `parser.rs:1072-1081`);
 - `.incbin` may add `, offset, length` (`parser.rs:508-523`);
 - `.filesize` may be written `NAME .filesize "path"` or `.filesize "path"`
   (`parser.rs:204-210`, `:734-737`);
-- `.include` is recognised by the preprocessor only as `.include` / `.INCLUDE`, only at the start
-  of the line, after `;` comment stripping; `'...'` quotes are accepted too
-  (`preprocessor.rs:395-412`);
-- other directives are upper-cased before dispatch (`parser.rs:159-161`), so `.incbin`/`.filesize`
-  are case-insensitive there.
+- `.include` is recognised by the preprocessor only as `.include` / `.INCLUDE`, only at the start of
+  the line, after `;` comment stripping; `'...'` quotes are accepted too (`preprocessor.rs:395-412`);
+- other directives are upper-cased before dispatch (`parser.rs:159-161`), so `.incbin` and
+  `.filesize` are case-insensitive there.
 
-Because the search lists differ per directive family, "one solver" means one *mechanism*, not
-necessarily one identical candidate list (see §5.1).
+## 4. Verification results
 
-## 4. Verified facts that constrain the design
+All measurements below come from the sample ELF in `temp/project/build/09_sprite_frame_no_vsync/`
+and from running v6asm on the same source.
 
 ### 4.1 `DW_AT_comp_dir` is the top-level source directory of that object
 
 `main.rs:339` derives `source_dir` from `source_path.parent()`, `main.rs:381` passes it to
-`Assembler::new`, and `output.rs:213` hands `asm.project_dir()` to the DWARF writer, which stores it
-as `DW_AT_comp_dir` (`dwarf.rs:349`). Measured on the sample ELF:
+`Assembler::new`, and `output.rs:213` hands `asm.project_dir()` to the DWARF writer, which stores it as
+`DW_AT_comp_dir` (`dwarf.rs:349`). Measured:
 
 ```
 CU count = 2
@@ -72,183 +97,176 @@ CU count = 2
   CU1 compDir="C:/Work/Programming/v6gel/engine"                          stmtList=2103
 ```
 
-### 4.2 DWARF file entries record the operand spelling, not the resolved location
+So `comp_dir` is the "project dir" of §3.1 step 2, per compilation unit. The extension's
+`LoadResult.compDir` exposes only the first absolute comp dir, which depends on link order
+(`main.o` happens to be linked first in the sample Makefile).
 
-The writer stores `(file_directory(file), file_name(file))` (`dwarf.rs:923-946`), i.e. the path the
-assembler saw, relative to `comp_dir`. Measured raw strings in the artifact:
+### 4.2 `DW_AT_name` is not the main source path
 
-```
-../../engine/common                               ../../engine/controls
-build/09_sprite_frame_no_vsync/levels/asm         build/09_sprite_frame_no_vsync/palettes/asm
-build/09_sprite_frame_no_vsync/sprites/asm        main.asm
-```
+`dwarf.rs:348` sets `unit_name = files.first()` — the first file that emitted a line row. Measured: the
+first entry of the main CU's table is `../../engine/common/v6_consts.asm`, not `main.asm`. The main
+file is present in that table (`main.asm`), but nothing marks it as the entry compilation point.
 
-After the extension joins entries with `comp_dir` (`dwarf4-line-reader.ts:472-501`), the `build/...`
-entries become
-`...\v6gel\samples\09_sprite_frame_no_vsync\build\09_sprite_frame_no_vsync\levels\asm\lv0_gfx_meta.asm`
-— and that path **does not exist even at the build site**. The real file is
-`...\v6gel\build\09_sprite_frame_no_vsync\levels\asm\lv0_gfx_meta.asm`, found by v6asm's CWD step.
-Confirmed with the assembler itself:
+### 4.3 `.debug_line` entries record the operand spelling, not the resolved location
 
-For files resolved by step 1 (including-file dir), `comp_dir + operand` is correct. For files
-resolved by `-I` or CWD it is structurally wrong.
+The writer stores each file as `(file_directory(file), file_name(file))` (`dwarf.rs:923-946`), with the
+directory relative to `comp_dir`. The main CU has nine such entries; three representative ones:
 
-### 4.3 What the extension exposes today
+| `.debug_line` entry (dir / file) | joined with the CU's `comp_dir` | exists? | where the file really is |
+|---|---|---|---|
+| `../../engine/common` / `v6_consts.asm` | `...\v6gel\samples\09_...\..\..\engine\common\v6_consts.asm` → `...\v6gel\engine\common\v6_consts.asm` | yes | same path |
+| `build/09_sprite_frame_no_vsync/levels/asm` / `lv0_gfx_meta.asm` | `...\v6gel\samples\09_...\build\09_sprite_frame_no_vsync\levels\asm\lv0_gfx_meta.asm` | **no** | `...\v6gel\build\09_sprite_frame_no_vsync\levels\asm\lv0_gfx_meta.asm` |
+| *(none)* / `main.asm` | `...\v6gel\samples\09_...\main.asm` | yes | same path |
+
+The second row was satisfied by the CWD step, so v6asm recorded `comp_dir + operand`, which is not the
+file it read — not even at the build site. The extension joins entries to `comp_dir`
+(`dwarf4-line-reader.ts:472-501`) and therefore inherits that path. Confirmed by running v6asm:
+
+- from the repository root → preprocessing succeeds (it only stops later on unresolved linker
+  symbols, which need `-D`);
+- from `samples\09_sprite_frame_no_vsync` → `error: Cannot find include file: build/09_sprite_frame_no_vsync/palettes/asm/pal_lv0_meta.asm --> main.asm:25`.
+
+For files resolved by step 1, `comp_dir + operand` is correct; for files resolved by `-I` or CWD it is
+structurally wrong.
+
+### 4.4 What the extension exposes today
 
 `decodeDebugArtifact` publishes one merged `compDir` and one merged file list
 (`debug-artifact-loader.ts:147,156,187`); `DebugIndex.sourceFiles` is the union across CUs
-(`debug-symbol-service.ts:102-104`). Per-CU line tables and the comp-dir map already exist inside
-the loader (`buildLineCompDirs`, `filesForUnit`), they are just not published.
+(`debug-symbol-service.ts:102-104`). The per-CU line tables and comp-dir map already exist inside the
+loader (`buildLineCompDirs`, `filesForUnit`); they are simply not published.
 
-### 4.4 Why label navigation works today while include links do not
+### 4.5 Why label navigation works while include links do not
 
 `SymbolLinkProvider.provideDefinition` resolves the metadata file name with
-`resolveDebugSourcePath(source.file, projectSourceRoot(project))`
-(`symbol-link-provider.ts:159-163`), which relocates foreign absolute paths by **longest existing
-trailing segment** (`debug-source-path.ts:23-52,66-74`). Measured for `temp/project`:
+`resolveDebugSourcePath(source.file, projectSourceRoot(project))` (`symbol-link-provider.ts:159-163`),
+which relocates foreign absolute paths by **longest existing trailing segment**
+(`debug-source-path.ts:23-52,66-74`). Measured for `temp/project`:
 
 | Token | Metadata path | Opened |
 |---|---|---|
 | `lv0_gfx_init` | `...\v6gel\samples\09_...\build\...\lv0_gfx_meta.asm:23` | `temp\project\build\09_...\lv0_gfx_meta.asm` (exists) |
 | `PALETTE_UPD_REQ_YES` | `...\v6gel\engine\common\v6_consts.asm:25` | `temp\project\engine\common\v6_consts.asm` (exists) |
-| `room_init` | `...\v6gel\samples\09_sprite_frame_no_vsync\main.asm:410` | the **v6gel** copy (suffix `main.asm` has no workspace match) |
+| `room_init` | `...\v6gel\samples\09_sprite_frame_no_vsync\main.asm:410` | the **v6gel** copy (the suffix `main.asm` has no workspace match) |
 
-So symbols reach into `build/...` files only because the *suffix* survives, not because the recorded
-path is usable. The same suffix trick applied to an include operand is the useful part of the DWARF
-steps; the recorded prefix is not.
+Symbols reach into `build/...` files only because the suffix survives, not because the recorded path is
+usable.
 
-## 5. Proposed solution
+### 4.6 Conclusion
 
-Use one unified path solver for the `.include`, `.incbin` and `.filesize` directives.
+The DWARF file table is a **membership oracle** (which files the build consumed) and a source of
+**per-CU `comp_dir`**, but it is **not a location oracle** for include operands. Anything derived from
+it must use only the tail of a recorded path, or `comp_dir` — never the recorded prefix.
 
-### 5.1 One mechanism, per-directive candidate lists
+## 5. Design
 
-The solver is a pure function with an injected existence predicate (same shape as
-`resolveDebugSourcePath(sourcePath, projectRoot, exists)`), and it returns both the path and the
-anchor that produced it. The provider selects the candidate list:
+### 5.1 One candidate list for all three directives
 
-| Directive | Candidates (in order) | Mirrors |
-|---|---|---|
-| `.include` | 1 absolute · 2 source dir · 3 project dir · 4 owning-CU comp dir · 5 workspace dir | superset of v6asm (adds 3/5, which v6asm reaches only via CWD when they coincide) |
-| `.incbin`, `.filesize` | 1 absolute · 3 project dir · 4 owning-CU comp dir · 5 workspace dir | superset of v6asm (adds 2 by sharing the mechanism; documented divergence) |
+The solver is a pure function with an injected existence predicate (the shape of
+`resolveDebugSourcePath(sourcePath, projectRoot, exists)`). It returns the resolved path, or nothing
+when no candidate exists. The list is identical for `.include`, `.incbin` and `.filesize`, in the
+order of §5.2.
 
-Sharing the mechanism is the goal; pretending the two directives have the same search list is not.
-The `.incbin`/`.filesize` superset must be stated in the docs: a resolved link no longer proves that
-the assembler will find the file.
+### 5.2 Search order
 
-### 5.2 Search order (the ladder)
+Candidates are tried in order; the **first existing one wins**. If none exists, the operand is
+unresolved (§5.7).
 
-| # | Anchor | Source | Why / mirrors |
+| # | Anchor | Source | Rationale |
 |---|---|---|---|
-| 1 | absolute operand, used verbatim | `path.isAbsolute` (platform-aware) | v6asm `Path::join` replaces the base for absolute inputs; preserves today's `resolveAgainstDirectory` spelling rule |
-| 2 | directory of the containing document | `document.uri` | exact v6asm step 1; already correct today |
-| 3 | `*.project.json` directory | `ActiveProjectService` + `projectSourceRoot` | v6asm step 4 (CWD) in this repository — this is what fixes `build/...`; the documented source anchor for nested/multi-root projects |
-| 4 | `comp_dir` of the **owning CU** | new per-CU data from the loader | v6asm step 2 (top-level asm dir). The only anchor that cannot be derived from the document, the project file or the workspace, and the only way to reproduce "`.include "x.inc"` inside `engine/misc/v6_utils.asm` means *next to the top-level asm*" |
-| 5 | workspace directory (see §5.6) | `WorkspaceService` | last lexical resort for projects without a `*.project.json`; **never before 3** |
-| 6 | artifact membership check (filter, not a path source) | merged CU file table | prefer the candidate whose tail the last build actually consumed; report when none matches |
+| 1 | absolute operand, used verbatim | `path.isAbsolute` (platform-aware) | v6asm `Path::join` replaces the base for absolute inputs; preserves today's spelling rule |
+| 2 | directory of the containing document | `document.uri` | §3.1 step 1; already correct today |
+| 3 | `*.project.json` directory | `ActiveProjectService` + `projectSourceRoot` | §3.1 step 4 (CWD) in this repository — this is what fixes `build/...`; also the documented source anchor for nested/multi-root projects |
+| 4 | `comp_dir` of the owning CU | per-CU data from the loader (§5.3) | §3.1 step 2 (top-level asm dir); the only anchor that cannot be derived from the document, the project file or the workspace |
+| 5 | workspace folder containing the document | `WorkspaceService` | editor-only last resort when no project file exists; v6asm has no equivalent step |
 
-Ordering rules that follow from the repo's existing decisions:
+Ordering rules:
 
-- **project dir before any workspace folder.** Putting the workspace root first would undo the anchor
-  correction recorded in `design/features/path-resolution-architecture-investigation.md` §7 and
-  `docs/architecture.md:51-59` (DAP/source tools moved from first-workspace to selected-project).
-- **comp_dir after project dir.** `comp_dir` is a build-site path; when the workspace mirrors the
-  build layout it agrees with 3, and when it does not (e.g. the `temp/project` copy) it may point at
-  another checkout. It must never win over the project dir.
-- **membership last.** It proves nothing about location (§4.3, §4.6), so it may only confirm or warn.
+- **project dir before any workspace folder** — the reverse would undo the anchor correction recorded
+  in `design/features/path-resolution-architecture-investigation.md` §7 and `docs/architecture.md:51-59`;
+- **`comp_dir` after project dir** — it is a build-site path and may point at another checkout (§4.1);
+- **first match wins, silently** — no ambiguity analysis, no candidate reporting (R2).
 
-### 5.3 Publish per-CU data from the artifact loader
+### 5.3 Per-CU data from the artifact loader
 
-Small, additive change to `decodeDebugArtifact`/`LoadResult`:
+Additive change to `decodeDebugArtifact`/`LoadResult`:
 
 ```ts
 interface SourceUnit { compDir: string; files: readonly string[] }
 // LoadResult gains:  units: readonly SourceUnit[]
 ```
 
-`buildLineCompDirs` and `filesForUnit` already produce exactly this internally
-(`debug-artifact-loader.ts:47-72`); keep `compDir` and the merged `sourceFiles` for existing
-consumers (symbol/label navigation, Trace Log, DAP) so this change cannot regress them.
+`buildLineCompDirs` and `filesForUnit` already produce this internally
+(`debug-artifact-loader.ts:47-72`). Keep `compDir` and the merged `sourceFiles` for existing consumers
+(symbol/label navigation, Trace Log, DAP) so this change cannot regress them.
 
 ### 5.4 Selecting the owning CU
 
-1. the CU whose file table contains the current document (compare with `localPathKey`, after
+1. the CU whose file table contains the current document (compare with `localPathKey` after
    relocation, so build-site and workspace spellings both match); else
 2. the CU whose `comp_dir` is contained in the project directory; else
 3. the first CU with an absolute `comp_dir`; else
-4. no step 4 at all (skip the anchor).
+4. candidate 4 is skipped.
 
-Step 1 makes the anchor per-document instead of per-project, which is what makes nested includes
-work when one linker output contains several objects (here: the sample CU and the engine CU).
+Step 1 makes the anchor per-document instead of per-project, which is what makes nested includes work
+when one linker output contains several objects (here: the sample CU and the engine CU).
 
-### 5.5 Operand normalization and membership matching
+### 5.5 Operand handling
 
-- normalize separators for comparison only; keep the operand text untouched for the link range;
-- drop leading `./` and `../` segments when deriving a membership key, so `../../engine/common/v6_consts.asm`
-  matches the recorded tail `engine/common/v6_consts.asm`;
-- require the **whole** remaining operand to be a tail of the artifact entry — do **not** degrade to
-  basename-only matching the way `debug-source-path.ts:66-74` does, or `v6_consts.asm` from an
-  unrelated module will match;
-- when several entries match, prefer the one from the owning CU, then the longest tail, then the
-  first in file-table order (deterministic);
-- compare with `localPathKey` so Windows case differences and separator differences do not create
-  false "missing" results.
+- the operand text is never rewritten; candidate paths are built with `path.resolve`, which normalizes
+  `.`/`..` and duplicate separators for the existence probe only;
+- the link range and the diagnostic range cover the original operand bytes, so emoji/CRLF offsets stay
+  correct;
+- existence is checked with the injected predicate only; no other candidate property is inspected,
+  because the first existing candidate wins (§5.2).
 
 ### 5.6 Workspace anchor policy
 
-The doc's constraint stands: **relative operands are never resolved against any other workspace
-folder.** Concretely:
+Relative operands are never resolved against any workspace folder other than the one containing the
+document:
 
-- candidate 5 is the workspace folder that **contains the current document**; if the document is
-  outside every folder, the anchor is skipped;
-- a second, nested project therefore resolves through candidate 3 (its own `*.project.json`), not
-  through the outer folder;
-- multi-root is not "try folder 1, then folder 2". If a future case needs that, it must be an
-  explicit, documented change with its own tests.
+- candidate 5 is the workspace folder that contains the current document; if the document is outside
+  every folder, the candidate is skipped;
+- a nested project resolves through candidate 3 (its own `*.project.json`), not through the outer
+  folder;
+- multi-root is not "try folder 1, then folder 2". Supporting that later is an explicit, tested change.
 
-Rejected alternative, recorded for review: "all workspace folders in order after the project dir".
-It would help documents that live outside the project folder, and it is exactly the policy that was
-previously removed from DAP; the narrower rule is kept until a concrete need appears.
+Rejected alternative, recorded for review: "all workspace folders in order, after the project dir". It
+is the policy that was previously removed from DAP and is not needed by any current case.
 
-### 5.7 Result, tooltip and failure behavior
+### 5.7 UI outcome
 
-The solver returns `{ path, anchor, matchedArtifact?: boolean }`. The provider then:
+The provider has exactly two outcomes:
 
-- emits a `DocumentLink` whose range is **only the quoted operand** (existing behavior, including
-  emoji-safe offsets — see `test/unit/language/include-link-provider.test.ts`);
-- sets `DocumentLink.tooltip` to the resolved absolute path plus the anchor name, e.g.
-  `Resolved via project dir` — this makes the precedence visible and debuggable;
-- reports (tooltip/`Information` diagnostic, not an error dialog) when the artifact says the operand
-  was not part of the last build, or when more than one candidate exists;
-- **still emits a link when nothing exists**, pointing at the first non-absolute candidate of that
-  directive's list (source dir for `.include`, project dir for `.incbin`/`.filesize`). For
-  `.include` this preserves today's documented behavior and the existing regression tests; an
-  unresolved link is more useful than a disappearing one, and it keeps the diff reviewable.
+| Outcome | Link | Diagnostic | Hover |
+|---|---|---|---|
+| a candidate exists | link to that file, nothing else | none | default VS Code link tooltip |
+| no candidate exists | **no link** (Ctrl+Click does nothing) | **Error** over the operand: `Cannot find include file "…"` (`.incbin`/`.filesize`: `Cannot find file "…"`) | the diagnostic message |
 
-Anchor names to be used in tooltips and tests: `absolute`, `source-dir`, `project-dir`,
-`compilation-dir`, `workspace`, `artifact-membership`.
+Rules:
+
+- the diagnostic range is the quoted operand only, `source: 'v6asm'`, severity `Error`; no `Warning`
+  severity is used anywhere in this feature;
+- one `DiagnosticCollection` (`v6-asm-directives`) owned by the provider; an entry is removed as soon
+  as the operand resolves, and on document close;
+- no custom tooltip, no directive hover provider, and no anchor or candidate text is shown to the user.
+  Which anchor matched is an implementation detail (§5.2) and is asserted in tests only.
 
 ### 5.8 Caching and lifecycle
 
-- `provideDocumentLinks` runs on open and on every change; cache per
-  `(document.uri, document.version, artifact.version, operand)` and invalidate on
+- cache per `(document.uri, document.version, artifact.version, operand)`; invalidate on
   `onDidChangeTextDocument`, `onDidCloseTextDocument`, `onDidChangeWorkspaceFolders` and artifact
-  reload — the same invalidation shape already used by `DebugSourceSymbolLinkService`
-  (`symbol-link-service.ts:130-135`, `language-services.ts:34-35`).
-- The artifact is already versioned by content hash (`artifact-repository.ts:70-92`), so a rebuild
-  invalidates naturally; no new file watching is required.
-- Without an active project or artifact, candidates 4 and 6 are skipped. Results then match today's
-  behavior whenever the source-dir candidate exists (today's only case); when it does not, the
-  workspace anchor may now produce a different — and, for a file inside the workspace, better —
-  target. That is the intended behavior change, not an accident.
+  reload — the shape already used by `DebugSourceSymbolLinkService` (`symbol-link-service.ts:130-135`,
+  `language-services.ts:34-35`);
+- the artifact is versioned by content hash (`artifact-repository.ts:70-92`), so a rebuild invalidates
+  naturally and no file watching is required;
+- diagnostics are derived from the same cached resolution, so one walk per change serves both features;
+  a resolved operand must clear its previous diagnostic.
 
 ## 6. Solver interface (host-free)
 
 ```ts
-export type IncludeAnchor =
-    | 'absolute' | 'source-dir' | 'project-dir' | 'compilation-dir' | 'workspace';
-
-export interface DirectiveCandidateContext {
+export interface DirectiveContext {
     /** Directory of the document containing the directive. */
     sourceDir: string;
     /** Directory of the selected *.project.json, when a project is available. */
@@ -257,194 +275,219 @@ export interface DirectiveCandidateContext {
     compilationDir?: string;
     /** Workspace folder containing the document, if any. */
     workspaceDir?: string;
-    /** Artifact file table entries (per-CU), for the membership filter. */
-    artifactFiles?: readonly string[];
 }
 
-export interface DirectiveResolution {
-    path: string;                 // last-resort lexical candidate when nothing exists
-    anchor: IncludeAnchor;
-    exists: boolean;
-    matchedArtifact: boolean;
-}
-
+/** Absolute path of the first existing candidate, or undefined when none exists. */
 export function resolveDirectivePath(
     operand: string,
-    context: DirectiveCandidateContext,
+    context: DirectiveContext,
     exists: (candidate: string) => boolean,
-): DirectiveResolution;
+): string | undefined;
 ```
 
 Constraints carried over from the existing boundary checks
-(`test/unit/platform/architecture-contracts.test.ts:79-93`,
-`docs/architecture-verification.md:82-90`):
+(`test/unit/platform/architecture-contracts.test.ts:79-93`, `docs/architecture-verification.md:82-90`):
 
-- the solver stays in the pure set (`language/includes/…` or `platform/files/local-path.ts` already
-  are), so no runtime `vscode` import — the provider injects everything;
-- `resolveIncludePath(sourceDir, operand)` stays as a thin wrapper so existing callers/tests keep
-  compiling during the transition;
-- `resolveDebugSourcePath` must **not** be reused as the operand solver (opposite direction:
-  metadata → local), only its relocation helper/pattern.
+- the solver stays host-free (`language/includes/…` and `platform/files/local-path.ts` are already in
+  the pure set), so the provider injects everything;
+- `resolveIncludePath(sourceDir, operand)` stays as a thin wrapper during the transition;
+- `resolveDebugSourcePath` is not reused as the operand solver (opposite direction: metadata → local);
+  only its relocation pattern is reused.
 
 ## 7. Provider integration
 
-- `IncludeLinkProvider` gains constructor dependencies: active project service, a workspace accessor
-  (`platform/files/workspace-service.ts`), and the artifact index (via `DebugSymbolService` or the
-  repository). `src/extension.ts:328-330` must construct it from the composition root.
-- Directive parsing becomes one function returning, for each match: `directive`, `operand`,
-  `range`, so `.include`, `.incbin` and `.filesize` share the projection code.
-  `.incbin`/`.filesize` ranges cover only the quoted operand, not `, offset, length`.
+- **Link provider** — `IncludeLinkProvider` gains the active project service, a workspace accessor
+  (`platform/files/workspace-service.ts`) and the artifact index (`DebugSymbolService` or the
+  repository); `src/extension.ts:328-330` constructs it from the composition root. It emits a link only
+  for a resolved operand (§5.7).
+- **Diagnostics** — a new adapter owning
+  `languages.createDiagnosticCollection('v6-asm-directives')`, registered and disposed with the other
+  language services. It uses the same solver and cache and reports `Error` only (§5.7). This adapter
+  produces the squiggle and the message shown on hover.
+- **No directive hover provider** — the existing `SymbolLinkProvider` hover stays untouched, and no
+  new hover content is added for include operands.
+- **Parsing** — one function returning `directive`, `operand` and `range` for all three directives;
+  ranges cover only the quoted operand, not `, offset, length`.
 - `.filesize` has two spellings (`NAME .filesize "path"`, `.filesize "path"`), so the parser must not
   assume a leading dot at the start of the line.
-- The `.include` dialect (case sensitivity, comment matching, "anywhere in the line") is **not**
-  changed by this work; see §11.
+- Only `file:` documents are handled (the current code already works from `uri.fsPath`); untitled and
+  remote schemes are skipped.
+- The `.include` dialect (case sensitivity, comment matching, "anywhere in the line") is unchanged by
+  this work (§12.3).
 
-## 8. Decisions to make
+## 8. Decisions
 
-| # | Decision | Recommendation |
+| # | Decision | Resolution |
 |---|---|---|
-| D1 | project dir before workspace root | **yes** — required to stay consistent with the DAP/source-anchor correction |
-| D2 | workspace anchor = folder containing the document only | **yes** (doc constraint); record the rejected multi-root alternative |
-| D3 | missing target still produces a link | **yes**, with tooltip; add a diagnostic later if noisy |
-| D4 | DWARF step is membership-only, not a path source | **yes** — §4.3/§4.6; keep the data available for a future "unresolved include" diagnostic |
-| D5 | `.incbin`/`.filesize` accept the source-dir candidate too | **yes** for UX, documented as a superset of v6asm |
-| D6 | `-I` include dirs | out of scope here; needs project settings or v6asm build context (§12) |
-| D7 | expose per-CU `units` from the loader | **yes** — additive, needed for candidate 4 and for a correct "no artifact" path |
+| D1 | project dir before workspace root | **yes** — consistent with the DAP/source-anchor correction |
+| D2 | workspace anchor = folder containing the document only | **yes**; the multi-root alternative is recorded in §5.6 |
+| D3 | unresolved operand: no link, `Error` diagnostic | **yes** — replaces today's "always emit a link" |
+| D4 | first existing candidate wins silently | **yes** — no ambiguity analysis, no candidate reporting (R2) |
+| D5 | DWARF data supplies `comp_dir` only, never a location | **yes** (§4.6); suffix/membership matching is not implemented |
+| D6 | one candidate list for all three directives | **yes** — depends on the v6asm fix (§12.1) |
+| D7 | `-I` include dirs | not modeled here (§12.2, §13) |
+| D8 | publish per-CU `units` from the loader | **yes** — additive (§5.3) |
+| D9 | diagnostics collection, `Error` only; no custom tooltip, no directive hover | **yes** (§5.7) |
 
-## 9. Tests
+## 9. Behavior changes and compatibility
 
-Host-free matrix (extend `test/core/path-policies.test.ts`, injected `exists`):
+Intended changes:
 
-- each anchor wins, and each anchor loses, in the documented order (one case per row of §5.2);
-- absolute operands are returned unchanged (spelling preserved), for POSIX and Windows shapes;
-- `..`/`.` normalization for the membership key (`../../engine/common/v6_consts.asm`);
-- membership matching never degrades to basename-only;
-- ambiguity: two existing candidates → documented winner; two artifact entries → deterministic pick;
-- nothing exists → documented fallback path and `exists: false`;
-- no project → candidates 3 and 6 skipped; no artifact → candidates 4 and 6 skipped;
-- workspace anchor: document inside folder / outside every folder;
-- Windows case-only differences handled through `localPathKey`.
+| # | Before | After |
+|---|---|---|
+| B1 | every operand gets a link; a missing target is silent | missing target: no link, `Error` diagnostic (§5.7) |
+| B2 | `.incbin` / `.filesize` operands are inert text | same link/diagnostic treatment as `.include` |
+| B3 | resolution anchored to the document directory only | ordered candidates (§5.2); the project dir or `comp_dir` may now win where the document directory holds no file |
+| B4 | no workspace anchor at all | workspace anchor added, limited to the folder containing the document and used only when no project file exists (§5.6) |
 
-Parser tests (`test/unit/language/include-resolution.test.ts`): `.include`, `.incbin`,
-`.filesize` (`NAME` and bare), `'...'` vs `"..."`, `, offset, length`, CRLF, emoji offsets, comment
-handling unchanged.
+Unchanged, and asserted by existing tests:
 
-Provider tests (`test/unit/language/include-link-provider.test.ts`): range still covers only the
-operand; URI is the solver result; tooltip contains the anchor name.
+- absolute operands are returned verbatim;
+- link and diagnostic ranges cover only the quoted operand, with emoji/CRLF-safe offsets;
+- symbol/label/constant navigation and `resolveDebugSourcePath` semantics are untouched;
+- without a project or artifact, candidate 4 is skipped;
+- no new tooltip or hover content is introduced.
 
-Shipped integration test (`src/test/integration/suite/source-paths.test.ts:9-24` via
-`vscode.executeLinkProvider`): a temporary project with
+Two documented statements are superseded and must be updated in the same change (§11):
+`docs/language-support.md:41-49` ("missing targets still produce links") and the "behaviors not to
+change implicitly" list in `design/features/path-resolution-architecture-investigation.md`
+(source-dir anchor, missing-target links).
+
+## 10. Tests
+
+Solver matrix (extend `test/core/path-policies.test.ts`, injected `exists`):
+
+- each candidate wins and loses in the documented order (one case per row of §5.2);
+- absolute operands returned unchanged (POSIX and Windows shapes);
+- `.` / `..` and duplicate separators normalized by `path.resolve`;
+- two existing candidates → the earlier anchor wins, deterministically;
+- nothing exists → `undefined`;
+- no project → candidate 3 skipped; no artifact → candidate 4 skipped;
+- workspace anchor: document inside a folder / outside every folder.
+
+Parser (`test/unit/language/include-resolution.test.ts`): `.include`, `.incbin` and `.filesize`
+(`NAME` and bare), `'...'` vs `"..."`, `, offset, length`, CRLF, emoji offsets, comment handling
+unchanged.
+
+Provider (`test/unit/language/include-link-provider.test.ts`): operand-only ranges; URI is the solver
+result; no custom tooltip and no hover contribution; resolved → link; unresolved → no link plus exactly
+one `Error` diagnostic with the expected range, source and message; no `Warning` diagnostics.
+
+Shipped integration (`src/test/integration/suite/source-paths.test.ts:9-24`, via
+`vscode.executeLinkProvider` and `vscode.languages.getDiagnostics`) over a temporary project:
 
 ```
-main.asm                     .include "sub/existing.inc"   .include "build/meta.inc"   .incbin "build/data.bin"
-sub/existing.inc             build/meta.inc                build/data.bin
+main.asm                .include "sub/existing.inc"  .include "build/meta.inc"  .incbin "build/data.bin"
+sub/existing.inc        build/meta.inc               build/data.bin
 ```
 
-must produce links that resolve to the files actually created, with the project dir winning for
-`build/...`, and a missing operand still producing a link. Keep the emoji/CRLF assertions.
+assertions: links resolve to the created files, project dir wins for `build/...`, the missing operand
+yields no link and one `Error`, and the `.incbin` operand behaves like `.include`.
 
-Regression (`test/regression/include-links.test.ts`): whatever behavior changes, this lane collects
-the new expectations instead of silently drifting.
+Regression (`test/regression/include-links.test.ts`): records B1 explicitly, so the flip from "link"
+to "diagnostic" is reviewable rather than incidental.
 
-Manual/feature check (optional, gated like the live lanes): run `v6asm` from the project dir and from
-the sample dir on a fixture with nested includes, and assert the editor resolves the same set of
-files the assembler accepts.
+Optional live parity check (gated like the other live lanes): run v6asm from the project dir and from
+the sample dir on a nested-include fixture and compare the set of files v6asm accepts with the set the
+editor resolves.
 
-## 10. Documentation to update in the same change
+## 11. Documentation to update in the same change
 
-- `docs/language-support.md:39-49` — replace "resolve against the containing source document
-  directory, not the project/workspace root" with the ladder, the `.incbin`/`.filesize` support, the
-  tooltip, and the "editor is a superset of the assembler" caveat.
-- `docs/architecture.md:36-42` (Source path ownership) — state that include resolution now has an
-  ordered anchor list and why the project dir precedes the workspace.
-- `docs/architecture-owners.md:19` — owner row for include resolution/local paths.
-- `docs/architecture-verification.md:82-90` — add the new host-free vectors and the integration case.
-- `design/features/path-resolution-architecture-investigation.md` — append a short closeout note:
-  the "behaviors not to change implicitly" list (source-dir vs project vs workspace vs compilation
-  anchors, missing-target links) is now deliberately changed, with the reason (assembly of
-  `build/...` includes only works because of CWD).
-- `README.md:12` — include navigation line still accurate; mention `.incbin`/`.filesize` if space allows.
+- `docs/language-support.md:39-49` — candidate list, `.incbin`/`.filesize` support, the `Error`
+  diagnostic for unresolved operands, and the replacement of "missing targets still produce links".
+- `docs/architecture.md:36-42` (Source path ownership) — ordered candidates and why the project dir
+  precedes the workspace folder.
+- `docs/architecture-owners.md:19` — owner row for include resolution and local paths.
+- `docs/architecture-verification.md:82-90` — new host-free vectors and the integration case.
+- `design/features/path-resolution-architecture-investigation.md` — closeout note for the deliberate
+  change of the "behaviors not to change implicitly" list (§9).
+- `README.md:12` — include navigation line; mention `.incbin`/`.filesize` if it fits.
 
-## 11. Outside of this Scope
+## 12. Dependencies, limitations and out of scope
 
-It does not require solutions for now. It will be fixed outside of this plan.
+### 12.1 Prerequisite: one search list in v6asm (bug)
 
-- Mismatch path resolver in v6asm:
+The design requires v6asm to use the single list of §3.1 for all three directives. Current difference:
 
-| Directive | v6asm |
-|---|---|
-| `.include` | 1) dir of the including file 2) "project dir" = dir of the top-level `.asm` 3) `-I` dirs 4) process CWD (`preprocessor.rs:447-471`) |
-| `.incbin` / `.filesize` | 1) project dir (top-level asm dir) 2) CWD — no including-file step, no `-I` (`assembler.rs:3198-3208`) |
+| Directive | current v6asm | target |
+|---|---|---|
+| `.include` | §3.1 (`preprocessor.rs:447-471`) | §3.1 |
+| `.incbin` / `.filesize` | project dir, then CWD; no including-file step, no `-I` (`assembler.rs:3198-3208`) | §3.1 |
 
-  Consequence accepted by this design: the editor resolves a superset of what the assembler accepts,
-  so a working link is not proof that the build will succeed (documented in §10).
+The second row is a v6asm bug, fixed outside this plan. The editor implements the target list
+immediately; until the fix lands, an `.incbin`/`.filesize` link may point at a file the current v6asm
+would reject. That window is temporary and must not become documented editor policy.
 
-- Mismatch in directive dialects between v6asm and v6vscode:
+### 12.2 Limitation: `-I` directories are not modeled
+
+The editor cannot see v6asm's `-I` flags, so an operand that only an `-I` directory satisfies is
+reported as `Error` (§5.7) although the build succeeds. By design there is no user-facing mitigation
+(R2); the limitation is documented here and removed by §13.
+
+### 12.3 Out of scope: directive dialects
+
+Unchanged by this plan:
 
 | Aspect | v6asm | extension today | this change |
 |---|---|---|---|
 | `.include` spelling | `.include` / `.INCLUDE` only (`preprocessor.rs:400`) | `.include` only (case-sensitive regex) | unchanged |
 | position | must start the trimmed line | matches anywhere in the line | unchanged |
 | comments | `;` comment stripped before matching | matches inside `;` comments too (documented as intentional) | unchanged |
-| quotes | `"..."` and `'...'` | `"..."` only | unchanged for `.include`; `.incbin`/`.filesize` accept `"..."` only (matches what the sample generates) |
-| `.incbin` / `.filesize` | case-insensitive, quoted operand, optional args | not parsed at all | parsed as equals of `.include` in the solver |
+| quotes | `"..."` and `'...'` | `"..."` only | unchanged for `.include`; `.incbin`/`.filesize` accept `"..."` only (matches the generated files) |
+| `.incbin` / `.filesize` | case-insensitive, quoted operand, optional args | not parsed at all | parsed exactly like `.include` |
 
-- Emitting the build context from v6asm is not required by this plan (§12).
-
-## 12. Future: exact build context (not part of this change)
+## 13. Future: exact build context
 
 **v6asm `-g` emits the build context** (a vendor DWARF attribute/section: main file, CWD, include
-dirs). You own the assembler; this makes the editor exact and cheap.
+dirs). You own v6asm; this makes the editor exact and cheap.
 
-Until then, the two facts the editor cannot recover are the **build CWD** and the **`-I` dirs**;
-candidates 3 and 4 are approximations of them. Two acceptable ways to close the gap later:
+Until then the editor cannot recover the **build CWD** and the **`-I` dirs**; candidates 3 and 4
+approximate them. Two acceptable ways to close the gap:
 
 1. **v6asm metadata** — one extra DWARF attribute (or a small `.debug_v6asm` section) carrying
-   `{ mainFile, cwd, includeDirs }`. The editor then mirrors the assembler exactly with no heuristics
-   and the ladder becomes a fallback for never-built projects.
-2. **Project settings** — `asm.buildCwd` / `asm.includeDirs` / `asm.sourceRoot` in
-   `*.project.json` (schema in `config/schemas/v6.project.schema.json`), with the ladder as fallback.
+   `{ mainFile, cwd, includeDirs }`; the editor then mirrors v6asm exactly and the candidate list
+   remains only as a fallback for never-built projects.
+2. **Project settings** — `asm.buildCwd` / `asm.includeDirs` / `asm.sourceRoot` in `*.project.json`
+   (schema in `config/schemas/v6.project.schema.json`), with the candidate list as fallback.
 
-Either option also fixes workspaces whose layout differs from the build layout (e.g. the
-`temp/project` copy where `../../engine` cannot map into `temp/project/engine` by any heuristic).
+Either option also fixes workspaces whose layout differs from the build layout (for example the
+`temp/project` copy, where `../../engine` cannot map into `temp/project/engine` by any heuristic) and
+removes the false-positive risk described in §12.2.
 
-## 13. Implementation outline
+## 14. Implementation outline
 
-Not started. Proposed order, each step independently reviewable:
+Not started. Each step is independently reviewable:
 
-1. **Pure solver + parser** — `resolveDirectivePath`, unified directive parsing for `.include`,
-   `.incbin`, `.filesize`, host-free tests (`test/core`, `test/unit/language`). No behavior change in
-   the provider yet: the provider keeps calling the legacy wrapper.
-2. **Loader exposure** — add `units: { compDir, files }[]` to `LoadResult`, keep the merged fields,
-   add unit tests for per-CU resolution (`test/unit/debug/dwarf4-line-*`).
-3. **Provider wiring** — construct `IncludeLinkProvider` with project/workspace/artifact access,
-   switch resolution to the ladder, add tooltips and the resolution cache.
-4. **Adapter tests** — extend `include-link-provider.test.ts`, `test/regression/include-links.test.ts`
-   and the shipped `source-paths` integration case (including `.incbin`/`.filesize`).
-5. **Docs** — the files listed in §10, in the same commit.
-6. **Optional follow-up** — unresolved-include diagnostic, then §12 (build context).
+1. **Solver + parser** — `resolveDirectivePath` returning the resolved path (or `undefined`); unified
+   parsing for `.include`, `.incbin`, `.filesize`; host-free tests (§10). The provider keeps using the
+   legacy wrapper, so no behavior changes yet.
+2. **Loader exposure** — `units: { compDir, files }[]` in `LoadResult` (§5.3), merged fields kept,
+   per-CU unit tests.
+3. **Link provider** — constructor dependencies, candidate list and cache (§5.2, §5.8); unresolved
+   operands stop producing links in this step.
+4. **Diagnostics** — `DiagnosticCollection` with the single `Error` rule (§5.7), sharing the cache.
+5. **Adapter tests** — unit, regression and shipped integration lanes (§10), including the B1 flip.
+6. **Documentation** — the files listed in §11, in the same commit.
+7. **Follow-up** — optional quick fix, then §13.
 
-Verification gates to keep green: `npm run compile`, `npm run lint`, `npm run test:core`,
-`npm run test:unit`, `npm run test:regression`, and the packaged integration lane.
+Gates to keep green: `npm run compile`, `npm run lint`, `npm run test:core`, `npm run test:unit`,
+`npm run test:regression`, and the packaged integration lane.
 
-## 14. Open Questions
+## 15. Open Questions
 
-1. Should the artifact-membership mismatch produce a visible diagnostic (squiggle/Problems entry) or
-   only a tooltip note? A diagnostic is user-visible noise; a tooltip is easy to miss.
-2. Should `.incbin`/`.filesize` link ranges cover only the quoted operand, or the whole directive
-   including `, offset, length`? (Recommendation: operand only, consistent with `.include`.)
-3. When the active project is not the project that produced the document being edited, should
-   candidates 3/4/6 be used at all, or should the ladder degrade to 1/2/5 for foreign documents?
-   Current proposal: use them only when the document lies under the project dir or appears in the
-   artifact file table.
-4. Should a hover (or the link tooltip) state "the last build did not include this file" when the
-   artifact exists but the operand is absent from it?
-5. Is a "why is this include unresolved" quick-fix worth it (open `${workspace}/build`, run make,
-   show the assembler command from the Makefile)? Out of scope, but the natural next step.
-6. POSIX: v6asm treats `\` as a literal character there; should the editor normalize `\` to `/` in
-   operands on POSIX for navigation, or mirror the assembler exactly? (Recommendation: mirror.)
-7. After migration, `resolveIncludePath` has only test callers — remove it, or keep it as the
-   documented wrapper? The `PathService.resolveRelative` duplicate has the same question.
-8. The `temp/project` copy has a layout (`samples/common/09_...`) that no heuristic can map to the
-   build layout (`samples/09_...`). Is that copy expected to keep working for manual UI checks, and
-   if so, should it be rebuilt from the repository root layout (or given `asm.sourceRoot` later)?
+1. While `-I` is not modeled (§12.2), should "not found" stay an `Error` (TypeScript parity) or be
+   suppressed to avoid false positives? Current proposal: keep `Error`.
+2. The parser matches `.include` inside `;` comments (§12.3). Should commented operands be excluded
+   from diagnostics, or should a link inside a comment keep working?
+3. If the active project did not produce the document being edited, should candidates 3 and 4 apply at
+   all? Current proposal: only when the document is under the project dir or appears in the artifact
+   file table.
+4. Is a "why is this include unresolved" quick fix worth building (open the project `build/` folder,
+   run `make`, show the generated command)?
+5. POSIX: v6asm treats `\` literally. Should the editor normalize `\` to `/` for navigation, or mirror
+   v6asm exactly? (Recommendation: mirror.)
+6. After migration `resolveIncludePath` has only test callers — remove it, or keep it as the documented
+   wrapper? `PathService.resolveRelative` raises the same question.
+7. The `temp/project` copy does not mirror the build layout (`samples/common/09_...` vs
+   `samples/09_...`), so no heuristic can map it. Should that copy be rebuilt to match the repository
+   layout, or receive `asm.sourceRoot` when §13 lands?
