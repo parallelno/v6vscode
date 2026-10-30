@@ -169,26 +169,25 @@ priority order of §5.2.
 
 ### 5.2 Search order and priority
 
-Priority *N* is §3.1 step *N*: the table mirrors the v6asm list one-to-one and never promotes a later
-step above an earlier one. Candidate 4 (`-I`) is not modeled (§12.2), so the solver walks 1, 2, 3, 5 and
-returns the first candidate that exists. If none exists, the operand is unresolved (§5.6).
+The list follows the v6asm order of §3.1. The solver returns the first candidate that exists; if none
+exists, the operand is unresolved (§5.6).
 
 | Priority | Anchor | Source | Rationale |
 |---|---|---|---|
 | 1 | absolute operand, used verbatim | `path.isAbsolute` | §3.1 step 1; an absolute operand is never anchored and keeps its spelling |
 | 2 | directory of the containing document | `document.uri` | §3.1 step 2; already correct today |
 | 3 | `comp_dir` of **every unit that lists the document** (in unit order) | per-unit data (§5.3) | §3.1 step 3 of each such build: `comp_dir` is the directory of the `.asm` v6asm was invoked on (`main.rs:339` → `main.rs:381` → `output.rs:213` → `dwarf.rs:349`). A unit whose `comp_dir` is not absolute contributes nothing. |
-| 4 | `-I` include directories | not modeled (§12.2) | §3.1 step 4 |
-| 5 | **CWD directory** | the extension host's current working directory (`process.cwd()`) | §3.1 step 5. The project is built from this directory — the Makefile runs v6asm from it — so `build/...` resolves against it. |
+| 4 | **CWD directory** | the extension host's current working directory (`process.cwd()`) | the last step of §3.1. The project is built from this directory — the Makefile runs v6asm from it — so `build/...` resolves against it. |
 
 Ordering rules:
 
-- **the order is §3.1's order** — no step is ever promoted; the editor and v6asm agree whenever both
-  see the same anchors;
+- **the order is §3.1's order** — among the modeled candidates no step is ever promoted; the editor and
+  v6asm agree whenever both see the same anchors;
 - **the highest-priority existing candidate wins, silently** — no ambiguity analysis, no candidate
   reporting (R2);
-- **`comp_dir` is a build-site path** — relocate it before probing (§4.1); being tried before the CWD is
-  intended, because that is the order v6asm uses.
+- **`comp_dir` is a build-site path** — relocate it to the extension host CWD
+  before probing (§4.1); being tried before the CWD is intended, because that is
+  the order v6asm uses.
 
 ### 5.3 Unit model: one CU is one v6asm build
 
@@ -409,7 +408,7 @@ Unchanged, and asserted by existing tests:
 - absolute operands are returned verbatim;
 - link and diagnostic ranges cover only the quoted operand, with emoji/CRLF-safe offsets;
 - constant navigation (DWARF declaration) and `resolveDebugSourcePath` semantics are untouched;
-- without an artifact, candidate 3 (`comp_dir`) is skipped; candidate 5 (CWD) never is;
+- without an artifact, candidate 3 (`comp_dir`) is skipped; candidate 4 (CWD) never is;
 - the link tooltip and the existing symbol hover are preserved; no new hover content is introduced.
 
 Two documented statements are superseded and must be updated in the same change (§11):
@@ -426,7 +425,7 @@ Solver matrix (extend `test/core/path-policies.test.ts`, injected `exists`):
 - `.` / `..` and duplicate separators normalized by `path.resolve`;
 - two existing candidates → the earlier anchor wins, deterministically;
 - nothing exists → `undefined`;
-- no project → candidate 5 (CWD) is still available; no artifact → candidate 3 (`comp_dir`) is skipped;
+- no project → candidate 4 (CWD) is still available; no artifact → candidate 3 (`comp_dir`) is skipped;
 
 Unit model (`test/unit/debug/debug-index-file-resolution.test.ts`, `dwarf4-line-compdirs.test.ts`):
 
@@ -453,7 +452,7 @@ main.asm                .include "sub/existing.inc"  .include "build/meta.inc"  
 sub/existing.inc        build/meta.inc               build/data.bin
 ```
 
-assertions: links resolve to the created files, candidate 5 (CWD) wins for `build/...`, the missing operand
+assertions: links resolve to the created files, candidate 4 (CWD) wins for `build/...`, the missing operand
 yields no link and one `Error`, and the `.incbin` operand behaves like `.include`.
 
 Regression (`test/regression/include-links.test.ts`): records B1 explicitly, so the flip from "link"
@@ -513,7 +512,7 @@ Unchanged by this plan:
 dirs). You own v6asm; this makes the editor exact and cheap.
 
 Today the build inputs are taken from the running host and from conventions: the CWD is the extension
-host's working directory (candidate 5), and `-I` directories are not known at all. Two acceptable ways
+host's working directory (candidate 4), and `-I` directories are not known at all. Two acceptable ways
 to make them explicit:
 
 1. **v6asm metadata** — one extra DWARF attribute (or a small `.debug_v6asm` section) carrying
@@ -552,7 +551,7 @@ Gates to keep green: `npm run compile`, `npm run lint`, `npm run test:core`, `np
    suppressed to avoid false positives? Current proposal: keep `Error`.
 2. The parser matches `.include` inside `;` comments (§12.3). Should commented operands be excluded
    from diagnostics, or should a link inside a comment keep working?
-3. If the active project did not produce the document being edited, should candidates 3 and 5 apply at
+3. If the active project did not produce the document being edited, should candidates 3 and 4 apply at
    all? Current proposal: only when the document appears in a unit's file table or lies under the CWD.
 4. Is a "why is this include unresolved" quick fix worth building (open the project `build/` folder,
    run `make`, show the generated command)?
