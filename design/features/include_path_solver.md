@@ -59,7 +59,7 @@ operands used verbatim, and unchanged symbol/label navigation.
 The design target is a single search list shared by `.include`, `.incbin` and `.filesize`:
 
 1. directory of the file containing the directive;
-2. "project dir" = directory of the top-level `.asm`;
+2. directory of the top-level `.asm` ("top-level asm dir");
 3. each `-I` include directory, in order;
 4. process CWD.
 
@@ -96,7 +96,7 @@ CU count = 2
   CU1 compDir="C:/Work/Programming/v6gel/engine"                          stmtList=2103
 ```
 
-So `comp_dir` is the "project dir" of §3.1 step 2, per compilation unit. The extension's
+So `comp_dir` is the top-level asm dir of §3.1 step 2, per compilation unit. The extension's
 `LoadResult.compDir` exposes only the first absolute comp dir, which depends on link order
 (`main.o` happens to be linked first in the sample Makefile).
 
@@ -164,17 +164,27 @@ unresolved (§5.7).
 |---|---|---|---|
 | 1 | absolute operand, used verbatim | `path.isAbsolute` (platform-aware) | v6asm `Path::join` replaces the base for absolute inputs; preserves today's spelling rule |
 | 2 | directory of the containing document | `document.uri` | §3.1 step 1; already correct today |
-| 3 | `*.project.json` directory | `ActiveProjectService` + `projectSourceRoot` | §3.1 step 4 (CWD) in this repository — this is what fixes `build/...`; also the documented source anchor for nested/multi-root projects |
-| 4 | `comp_dir` of the owning CU | per-CU data from the loader (§5.3) | §3.1 step 2 (top-level asm dir); the only anchor that cannot be derived from the document, the project file or the workspace |
-| 5 | workspace folder containing the document | `WorkspaceService` | editor-only last resort when no project file exists; v6asm has no equivalent step |
+| 3 | **CWD directory** | the extension host's current working directory (`process.cwd()`) | v6asm step 4. The project is built from this directory (the Makefile runs v6asm from the workspace root), so `build/...` resolves against it. |
+| 4 | `comp_dir` of the owning CU | per-CU data from the loader (§5.3) | §3.1 step 2 **of that CU's own build**: v6asm sets `comp_dir` to the directory of the `.asm` it was invoked on (`main.rs:339` → `main.rs:381` → `output.rs:213` → `dwarf.rs:349`). Unavailable when that directory is not absolute. |
+| 5 | workspace folder containing the document | `WorkspaceService` | multi-root windows have no single CWD, so the folder that contains the document is used; in a single-folder window it is the same directory as candidate 3 |
+
+**Mapping to §3.1:** candidate 2 = step 1 exactly; candidate 3 = step 4 for a build whose CWD is the
+host CWD; candidate 4 = step 2 of the owning CU's build; candidate 5 = editor-only. Step 3 (`-I`) is
+not modeled (§12.2).
 
 Ordering rules:
 
-- **project dir before any workspace folder** — the reverse would undo the anchor correction recorded
-  in `design/features/path-resolution-architecture-investigation.md` §7 and `docs/architecture.md:51-59`;
-- **`comp_dir` after project dir** — it is a build-site path and may point at another checkout (§4.1);
+- **CWD directory before any other workspace folder** — the build runs from the CWD; a folder that
+  merely contains the document is a weaker anchor. Resolving against a workspace folder first would
+  also undo the anchor correction recorded in
+  `design/features/path-resolution-architecture-investigation.md` §7 and `docs/architecture.md:51-59`;
+- **`comp_dir` after the CWD directory** — it is a build-site path and may point at another checkout
+  (§4.1);
 - **the highest-priority existing candidate wins, silently** — no ambiguity analysis, no candidate
-  reporting (R2).
+  reporting (R2);
+- **candidate 3 outranks candidate 4 even when they belong to different builds** — for an object built
+  separately (the engine `v6.o`), the build's real step 2 is `comp_dir`, while the host CWD is that
+  build's step 4 only if the host happens to run there (§15).
 
 ### 5.3 Per-CU data from the artifact loader
 
@@ -193,7 +203,7 @@ interface SourceUnit { compDir: string; files: readonly string[] }
 
 1. the CU whose file table contains the current document (compare with `localPathKey` after
    relocation, so build-site and workspace spellings both match); else
-2. the CU whose `comp_dir` is contained in the project directory; else
+2. the CU whose `comp_dir` is contained in the CWD directory; else
 3. the first CU with an absolute `comp_dir`; else
 4. candidate 4 is skipped.
 
@@ -216,11 +226,11 @@ document:
 
 - candidate 5 is the workspace folder that contains the current document; if the document is outside
   every folder, the candidate is skipped;
-- a nested project resolves through candidate 3 (its own `*.project.json`), not through the outer
-  folder;
+- a nested project resolves through its own folder, not through the outer root; in a multi-root window
+  this is candidate 5 (the folder containing the document), see §15;
 - multi-root is not "try folder 1, then folder 2". Supporting that later is an explicit, tested change.
 
-Rejected alternative, recorded for review: "all workspace folders in order, after the project dir". It
+Rejected alternative, recorded for review: "all workspace folders in order, after the CWD directory". It
 is the policy that was previously removed from DAP and is not needed by any current case.
 
 ### 5.7 UI outcome
@@ -343,11 +353,11 @@ Constraints carried over from the existing boundary checks
 
 | # | Decision | Resolution |
 |---|---|---|
-| D1 | project dir before workspace root | **yes** — consistent with the DAP/source-anchor correction |
+| D1 | CWD directory before workspace root | **yes** — consistent with the DAP/source-anchor correction |
 | D2 | workspace anchor = folder containing the document only | **yes**; the multi-root alternative is recorded in §5.6 |
 | D3 | unresolved operand: no link, `Error` diagnostic | **yes** — replaces today's "always emit a link" |
 | D4 | highest-priority existing candidate wins silently | **yes** — no ambiguity analysis, no candidate reporting (R2) |
-| D5 | DWARF data supplies `comp_dir` only, never a location | **yes** (§4.6); suffix/membership matching is not implemented |
+| D5 | DWARF data supplies `comp_dir` only, never a location | **yes** (§4.1, §4.2); suffix/membership matching is not implemented |
 | D6 | one candidate list for all three directives | **yes** — depends on the v6asm fix (§12.1) |
 | D7 | `-I` include dirs | not modeled here (§12.2, §13) |
 | D8 | publish per-CU `units` from the loader | **yes** — additive (§5.3) |
@@ -361,7 +371,7 @@ Intended changes:
 |---|---|---|
 | B1 | every operand gets a link; a missing target is silent | missing target: no link, `Error` diagnostic (§5.7) |
 | B2 | `.incbin` / `.filesize` operands are inert text | same link/diagnostic treatment as `.include` |
-| B3 | resolution anchored to the document directory only | ordered candidates (§5.2); the project dir or `comp_dir` may now win where the document directory holds no file |
+| B3 | resolution anchored to the document directory only | ordered candidates (§5.2); the CWD directory or `comp_dir` may now win where the document directory holds no file |
 | B4 | no workspace anchor at all | workspace anchor added, limited to the folder containing the document and used only when no project file exists (§5.6) |
 
 Unchanged, and asserted by existing tests:
@@ -406,21 +416,21 @@ main.asm                .include "sub/existing.inc"  .include "build/meta.inc"  
 sub/existing.inc        build/meta.inc               build/data.bin
 ```
 
-assertions: links resolve to the created files, project dir wins for `build/...`, the missing operand
+assertions: links resolve to the created files, candidate 3 (CWD) wins for `build/...`, the missing operand
 yields no link and one `Error`, and the `.incbin` operand behaves like `.include`.
 
 Regression (`test/regression/include-links.test.ts`): records B1 explicitly, so the flip from "link"
 to "diagnostic" is reviewable rather than incidental.
 
-Optional live parity check (gated like the other live lanes): run v6asm from the project dir and from
-the sample dir on a nested-include fixture and compare the set of files v6asm accepts with the set the
-editor resolves.
+Optional live parity check (gated like the other live lanes): run v6asm from the CWD used by the
+Makefile and from the sample dir on a nested-include fixture, and compare the set of files v6asm
+accepts with the set the editor resolves.
 
 ## 11. Documentation to update in the same change
 
 - `docs/language-support.md:39-49` — candidate list, `.incbin`/`.filesize` support, the `Error`
   diagnostic for unresolved operands, and the replacement of "missing targets still produce links".
-- `docs/architecture.md:36-42` (Source path ownership) — ordered candidates and why the project dir
+- `docs/architecture.md:36-42` (Source path ownership) — ordered candidates and why the CWD directory
   precedes the workspace folder.
 - `docs/architecture-owners.md:19` — owner row for include resolution and local paths.
 - `docs/architecture-verification.md:82-90` — new host-free vectors and the integration case.
@@ -437,7 +447,7 @@ The design requires v6asm to use the single list of §3.1 for all three directiv
 | Directive | current v6asm | target |
 |---|---|---|
 | `.include` | §3.1 (`preprocessor.rs:447-471`) | §3.1 |
-| `.incbin` / `.filesize` | project dir, then CWD; no including-file step, no `-I` (`assembler.rs:3198-3208`) | §3.1 |
+| `.incbin` / `.filesize` | top-level asm dir, then CWD; no including-file step, no `-I` (`assembler.rs:3198-3208`) | §3.1 |
 
 The second row is a v6asm bug, fixed outside this plan. The editor implements the target list
 immediately; until the fix lands, an `.incbin`/`.filesize` link may point at a file the current v6asm
@@ -466,8 +476,9 @@ Unchanged by this plan:
 **v6asm `-g` emits the build context** (a vendor DWARF attribute/section: main file, CWD, include
 dirs). You own v6asm; this makes the editor exact and cheap.
 
-Until then the editor cannot recover the **build CWD** and the **`-I` dirs**; candidates 3 and 4
-approximate them. Two acceptable ways to close the gap:
+Today the build inputs are taken from the running host and from conventions: the CWD is the extension
+host's working directory (candidate 3), and `-I` directories are not known at all. Two acceptable ways
+to make them explicit:
 
 1. **v6asm metadata** — one extra DWARF attribute (or a small `.debug_v6asm` section) carrying
    `{ mainFile, cwd, includeDirs }`; the editor then mirrors v6asm exactly and the candidate list
@@ -505,7 +516,7 @@ Gates to keep green: `npm run compile`, `npm run lint`, `npm run test:core`, `np
 2. The parser matches `.include` inside `;` comments (§12.3). Should commented operands be excluded
    from diagnostics, or should a link inside a comment keep working?
 3. If the active project did not produce the document being edited, should candidates 3 and 4 apply at
-   all? Current proposal: only when the document is under the project dir or appears in the artifact
+   all? Current proposal: only when the document is under the CWD directory or appears in the artifact
    file table.
 4. Is a "why is this include unresolved" quick fix worth building (open the project `build/` folder,
    run `make`, show the generated command)?
@@ -516,3 +527,9 @@ Gates to keep green: `npm run compile`, `npm run lint`, `npm run test:core`, `np
 7. The `temp/project` copy does not mirror the build layout (`samples/common/09_...` vs
    `samples/09_...`), so no heuristic can map it. Should that copy be rebuilt to match the repository
    layout, or receive `asm.sourceRoot` when §13 lands?
+8. In a multi-root window, candidate 3 (the host CWD) outranks candidate 5 (the folder containing the
+   document), so a document in a second folder can resolve against the wrong root. Should the containing
+   folder come first when the window has more than one folder?
+9. For a document that belongs to a separately built object (for example the engine `v6.o`), candidate 3
+   (host CWD) outranks candidate 4 (`comp_dir`) although `comp_dir` is that build's real top-level asm
+   dir. Should candidate 4 come first when the owning CU is not the project's own CU?
