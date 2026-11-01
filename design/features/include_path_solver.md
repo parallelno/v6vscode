@@ -59,11 +59,9 @@ For each valid, nonempty operand value:
 3. Probe relative to each `-I` directory in original CLI order.
 4. Probe relative to the compilation directory.
 
-Resolve relative `-I` directories against the compilation directory, never the document,
-entry source, extension process CWD, or first workspace folder. Select the first regular
-file; directories are not targets. Preserve order when deduplicating normalized candidates.
-Do not recursively scan directories, expand environment variables or `~`, or apply
-debug-source suffix relocation to directive operands.
+Resolve each relative `-I` directory against the compilation directory.
+Absolute `-I` directories remain unchanged. Search the include directories in
+the order specified on the command line.
 
 Return a structured result: resolved target and winning search step, missing with
 attempted candidates, or filesystem error. Missing candidates advance the search;
