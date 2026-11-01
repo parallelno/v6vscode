@@ -32,7 +32,7 @@ References identify functions rather than relying on unstable line numbers.
 | Assembler `.include` | `C:\Work\Programming\v6asm\crates\v6_core\src\preprocessor.rs`: `resolve_include_path` tries current source directory, `project_dir`, each `-I` directory, then the operand relative to process working directory. |
 | Meaning of `project_dir` | `C:\Work\Programming\v6asm\crates\v6asm\src\main.rs`: `cmd_assemble` passes the entry source's parent directory to preprocessing and `Assembler::new`. This is not necessarily process CWD. |
 | Assembler binary paths | `C:\Work\Programming\v6asm\crates\v6_core\src\assembler.rs`: `resolve_file_path` tries `project_dir`, then process CWD. `.incbin` and `.filesize` call it in assembly passes; neither gets the include-directory list or containing source directory. |
-| Parsing | `C:\Work\Programming\v6asm\crates\v6_core\src\preprocessor.rs`: `parse_include_directive` accepts `.include` / `.INCLUDE` at the trimmed line start and either quote style, stripping `;` and `//` comments. `C:\Work\Programming\v6asm\crates\v6_core\src\parser.rs` dispatches other directives case-insensitively; `.filesize` supports `NAME .filesize "path"`. |
+| Parsing | `C:\Work\Programming\v6asm\crates\v6_core\src\preprocessor.rs`: `parse_include_directive` accepts `.include` / `.INCLUDE` at the trimmed line start, with no label prefix, and either quote style, stripping `;` and `//` comments. `C:\Work\Programming\v6asm\crates\v6_core\src\parser.rs` dispatches other directives case-insensitively; `.filesize` supports `NAME .filesize "path"`. |
 | String values | `C:\Work\Programming\v6asm\crates\v6_core\src\lexer.rs`: double-quoted string literals decode escapes. Single quotes produce character literals, not general path strings. The include preprocessor slices quotes instead of using this decoder. |
 | DWARF producer | `C:\Work\Programming\v6asm\crates\v6_core\src\output.rs` passes `asm.project_dir()` to `debug_sections` for object and direct-ROM debug output. `C:\Work\Programming\v6asm\crates\v6_core\src\object\dwarf.rs` writes that directory as `DW_AT_comp_dir`, chooses the first sorted source file as `DW_AT_name`, and builds line-file directories from source paths. It does not serialize ordered CLI `-I` arguments. |
 | DWARF consumer | `C:\Work\Programming\v6vscode\src\debug\metadata\dwarf4-info-reader.ts` exposes only `compDir` and `stmtList` for a CU. `C:\Work\Programming\v6vscode\src\debug\metadata\debug-artifact-loader.ts` resolves line programs using per-CU directories, then merges files and rows into `DebugIndex`. There is no retained include-resolution context per CU. |
@@ -47,12 +47,15 @@ is also the compilation directory or an explicit `-I`.
 
 ### 3.1 Search order
 
-For an absolute operand, use that path directly. For a relative operand, try these
-paths in order and use the first one that exists:
+If absolute operand does not exist, operand is unresolved. Do not perform any
+further searches.
+For a relative operand, try these paths in order and use the first one that exists.
+If no file is found, the operand is unresolved.
 
 1. `join(source_directory, operand)`.
-2. `join(include_directory, operand)` for each `-I` directory, in command-line order.
-3. `join(compilation_directory, operand)`.
+2. `join(include_directory, operand)` for each `-I` directory, in command-line
+   order. Optional. Used when ELF is avaiable.
+3. `join(compilation_directory, operand)`. Optional. Used when ELF is avaiable.
 
 Relative `-I` directories are resolved against the compilation directory; absolute
 ones are used unchanged.
@@ -65,9 +68,6 @@ For example, with compilation directory `/project`, source `/project/src/main.as
 /project/libs/common.inc
 /project/common.inc
 ```
-
-If no file is found, the operand is unresolved. An absolute operand that does not
-exist is also unresolved; it is not searched under the directories above.
 
 ### 3.2 Finding the document's CU
 
@@ -99,22 +99,23 @@ spelling/value, and the original quoted-content range.
 
 - Ignore `;`, `//`, and block comments outside strings while preserving positions.
 - Require directive token boundaries; do not match `.includeExtra` or text inside strings.
-- Make `.include` case-insensitive in both projects as an explicit grammar improvement.
-- Keep `.include` at statement start after whitespace; do not silently add label-prefixed
-  include support. For `.incbin` and `.filesize`, honor existing parser label handling
-  and `NAME .filesize "path"` syntax.
-- Match the assembler's quote and escape handling: `.include` currently accepts either
-  quote style without decoding escapes; `.incbin` / `.filesize` require double-quoted
-  strings and use the lexer's escape decoding. This proposal does not change those rules.
+- Make all three directives case-insensitive in both projects.
+- Accept an optional label before every one of them: `label: .include "x"`,
+  `label: .incbin "x.bin"`, and `label: SIZE .filesize "x.bin"`. The existing
+  `NAME .filesize "path"` form remains valid. v6asm's preprocessor must recognize
+  `.include` after a label, as the parser already does for `.incbin` and `.filesize`.
+- Use one path-literal rule for all three directives: a path is a double-quoted
+  string (`"..."`) with the lexer's escape decoding. The extension scanner applies
+  the same decoding and keeps the range on the original quoted text.
 - For `.incbin "path", offset, length`, select only the path.
 - Empty/unclosed/invalid literals are syntax problems, not missing files. Emit no path
   link or duplicate missing-file diagnostic for them.
 - Use original UTF-16 offsets for editor ranges, including escaped spellings, CRLF,
   Unicode, and text before the operand. Decoded value length is not range length.
 
-Conditional assembly and macro substitution can affect whether a binary directive
-is used and what its operand becomes. The editor's scanner alone cannot determine
-that. Diagnostic behavior for those cases remains open (§9).
+v6asm currently accepts single-quoted `.include` paths; this proposal removes that
+form so all three directives require double quotes. The extension scanner already
+matches only double-quoted operands.
 
 ## 4. Extension behavior
 
@@ -124,10 +125,7 @@ When the resolution context is known:
 
 - Resolved operand: a link to the file and a hover showing its path.
 - Unresolved operand: no link and exactly one `Error` diagnostic on the path inside
-  the quotes, with message `Cannot find file "..."`.
-
-This retains the original missing-file Error requirement. A file-read failure should
-be reported as a read failure, not incorrectly described as a missing file.
+  the quotes, with hover message `Cannot find file "..."`.
 
 Resolution requires the compilation directory and `-I` list from the ELF. Without a
 matching CU context, the extension cannot reproduce the assembler's search and must
@@ -164,9 +162,9 @@ collection, and both passes handling `.incbin` / `.filesize`.
 - Give binary directives their originating source directory, not just `Assembler.project_dir`.
   Library callers and tests must supply equivalent context.
 - Use the same resolver for original-source collection and actual preprocessing.
-- For macro-expanded lines, `SourceLine.file` identifies the invocation file while
-  `SourceLine.origin` identifies the macro body location. Decide which directory
-  binary directives should use (§9); this cannot be inferred from `file` alone.
+- For a line written inside a macro body, the source directory is that of the macro
+  definition file: `SourceLine.origin` records the body location while `SourceLine.file`
+  records the invocation. This matches what the editor scans in the document.
 
 ## 6. DWARF and ELF metadata
 
@@ -229,10 +227,10 @@ These are implementation requirements, not tests already added by this design re
 
 | Layer | Required cases |
 |---|---|
-| Scanner | Three directives; mixed case; supported quotes; label/constant prefixes; all comment forms and quoted comment markers; directive prefixes; empty/malformed operands; escaped value versus original range; CRLF/Unicode. |
+| Scanner | Three directives; mixed case; double-quoted strings with escapes; optional labels and `NAME .filesize`; all comment forms and quoted comment markers; directive prefixes; empty/malformed/single-quoted operands; escaped value versus original range; CRLF/Unicode. |
 | Resolver, both languages | Absolute and relative operands; source directory before `-I`; `-I` command-line order; compilation-directory fallback; relative `-I` paths; nested source with a different entry directory; paths containing spaces and `..`. |
 | Cross-project parity | Shared fixture tree/context with colliding names at every search tier; compare extension target with assembler bytes or `.filesize` value. Run actual CLI subprocesses with explicit CWD, not only core tests whose project root equals source root. |
-| Assembler | Both passes, recursive includes, listing/original-source collection, macro origin, conditional binary directives, include-once, library callers, direct-ROM and object modes. |
+| Assembler | Both passes, recursive includes, listing/original-source collection, label-prefixed directives, double-quoted strings with escapes, macro-body directives using the definition file's directory, include-once, library callers, direct-ROM and object modes. |
 | Metadata | Correct compilation directory and entry name when an include sorts first; ordered `-I`, including unused directories; empty list versus absent information; source paths still resolve correctly after changing `comp_dir`. |
 | Linked ELF / consumer | Two objects with different CWDs/`-I` lists retain the correct directories and source files for each CU after linking; a document listed only by the second CU resolves with that CU's context; old ELF and C-produced ELF still work. |
 | Providers / lifecycle | Link/definition/hover ranges and targets; one missing diagnostic and no link; target creation/deletion and search-priority changes; document edits and project/ELF changes; no link or diagnostic when the ELF has no matching CU context. |
@@ -248,8 +246,9 @@ Existing baselines to retain or deliberately update:
 - `C:\Work\Programming\v6asm\crates\v6_core\tests\assembler_tests.rs`
 - `C:\Work\Programming\v6asm\crates\v6_core\tests\object_tests.rs`
 
-Current tests intentionally assert comment matches, missing-target links, and lexical-only
-resolution. Update those assertions as approved behavior changes, not incidental cleanup.
+Current tests intentionally assert comment matches, rejection of single-quoted `.include`,
+missing-target links, and lexical-only resolution. Update those assertions as approved
+behavior changes, not incidental cleanup.
 
 Implementation gates: `npm run ci` and relevant real Extension Host suites from
 `C:\Work\Programming\v6vscode`; `cargo test --workspace` from
@@ -268,7 +267,8 @@ Update `C:\Work\Programming\v6asm\docs\directives.md` and
 `C:\Work\Programming\v6asm\docs\cli.md` with exact precedence and migration guidance:
 add `-I src` if nested sources relied on implicit entry-directory fallback. Document
 that binary directives can now select a nearer source-relative file instead of the
-old root-relative file. Add a release note: filename collisions can silently change output.
+old root-relative file. Document that single-quoted directive paths must be rewritten
+with double quotes. Add a release note: filename collisions can silently change output.
 
 Update `C:\Work\Programming\v6asm\docs\debug-metadata.md` with CU fields and the
 chosen include-directory encoding. Update `C:\Work\Programming\v6vscode\README.md`
@@ -282,14 +282,11 @@ the extension.
 ## 9. Open questions
 
 1. **Compatibility:** §3.1 removes implicit entry-source-directory fallback for nested
-   files. Confirm that migration rather than retaining the old fallback. The current
-   `.include` resolver already tries `-I` before process CWD; that ordering is not new.
+   files, and §3.3 requires double-quoted directive paths. Confirm those migrations
+   rather than retaining the old fallbacks. The current `.include` resolver already
+   tries `-I` before process CWD; that ordering is not new.
 2. **Metadata encoding:** how should ordered per-CU `-I` lists be stored in the ELF?
    Select a format and verify that it survives linking before implementing the reader.
-3. **Macro origin:** choose definition-site or invocation-site source-directory semantics
-   for macro-expanded binary directives; record the chosen physical origin explicitly.
-4. **Conditional and macro operands:** when should missing-file diagnostics be shown
-   for binary directives whose execution or substituted operand the editor cannot determine?
 
 The ELF records the last build's options. If build flags change without rebuilding,
 the extension cannot infer the new search directories from that ELF.
