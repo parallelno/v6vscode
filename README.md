@@ -9,7 +9,7 @@
 ## Features
 
 - **Syntax highlighting** for Intel 8080 assembly (`.asm`, `.inc` files)
-- **Include navigation** — Ctrl+click on `.include "..."` directives
+- **Directive navigation** — Ctrl+click on `.include`, `.incbin`, and `.filesize` paths; unresolved paths are reported in the Problems panel
 - **V6: Create Project** — scaffolds a new project (source, Makefile, project config) with ASM/C and ROM/FDD options
 - **V6: Run Project** — launches or hot-reloads the emulator, opens the display panel
 - **v6emul tools view** — the `v6emul` Activity Bar container, also available through **View > Open View... > v6emul**, toggles Settings, Display, Hex Viewer, Memory Edits, Performance, Trace Log, Scripts, Symbols, Ports, and Watchpoints editor panels

@@ -1,7 +1,8 @@
 import * as assert from 'assert';
 import * as path from 'path';
 import { describe, it } from 'mocha';
-import { findIncludes, resolveIncludePath } from '../../src/language/includes/include-resolution';
+import { scanDirectives } from '../../src/language/includes/directive-scan';
+import { DirectiveLookupContext, resolveDirectiveOperand } from '../../src/language/includes/directive-lookup';
 import { localPathKey, resolveAgainstDirectory } from '../../src/platform/files/local-path';
 import { resolveDebugSourcePath } from '../../src/debug/metadata/debug-source-path';
 import { splitSourcePathSegments } from '../../src/debug/metadata/source-path-segments';
@@ -20,31 +21,58 @@ describe('Path policies without VS Code or a host mock', () => {
         return { calls, exists: (file: string) => { calls.push(file); return existing.includes(file); } };
     }
 
-    it('retains case, commented directives, repeated calls and UTF-16/CRLF include ranges', () => {
+    const lookup: DirectiveLookupContext = { documentDirectory: sourceDir, workspaceRoots: [] };
+
+    function lookupProbe(existing: string[] = [], found: string[] = []) {
+        const calls: string[] = [];
+        const searches: string[] = [];
+        return {
+            calls,
+            searches,
+            dependencies: {
+                fileExists: async (candidate: string) => { calls.push(candidate); return existing.includes(candidate); },
+                findFilesByBaseName: async (workspaceRoot: string, baseName: string) => {
+                    searches.push(`${workspaceRoot}|${baseName}`);
+                    return found;
+                },
+            },
+        };
+    }
+
+    it('scans directives case-insensitively outside comments, with UTF-16 ranges', () => {
         const text = '😀 .include "a.inc" .include "b.inc"\r\n; .include "comment.inc"\r\n.INCLUDE "upper.inc"';
-        const includes = findIncludes(text);
-        assert.deepStrictEqual(includes.map(item => [item.path, item.line, item.startChar]),
-            [['a.inc', 0, 13], ['b.inc', 0, 30], ['comment.inc', 1, 12]]);
-        assert.deepStrictEqual(findIncludes(text), includes);
-        for (const item of includes) { assert.strictEqual(text.split('\n')[item.line].slice(item.startChar, item.startChar + item.path.length), item.path); }
-        assert.deepStrictEqual(findIncludes('.include ""\n.include \'single.inc\'\n.include "unclosed'), []);
+        const includes = scanDirectives(text);
+        assert.deepStrictEqual(includes.map(item => [item.value, item.line, item.startChar]),
+            [['a.inc', 0, 13], ['b.inc', 0, 30], ['upper.inc', 2, 10]]);
+        assert.deepStrictEqual(scanDirectives(text), includes);
+        for (const item of includes) {
+            assert.strictEqual(text.split('\n')[item.line].slice(item.startChar, item.startChar + item.length), item.value);
+        }
+        assert.deepStrictEqual(scanDirectives('.include ""\n.include \'single.inc\'\n.include "unclosed'), []);
     });
 
-    it('preserves absolute include spelling and host-native relative/backslash semantics', () => {
+    it('preserves absolute spelling and host-native relative/backslash semantics', async () => {
         const absolute = `${path.parse(root).root}elsewhere${path.sep}..${path.sep}missing.inc`;
-        assert.strictEqual(resolveIncludePath(sourceDir, absolute), absolute);
+        const acceptAll = lookupProbe([absolute]);
+        assert.deepStrictEqual(await resolveDirectiveOperand(absolute, lookup, acceptAll.dependencies),
+            { status: 'resolved', path: absolute });
         assert.strictEqual(resolveAgainstDirectory(sourceDir, absolute), absolute);
-        for (const input of ['main.inc', '../common.inc', 'sub\\main.inc', 'sub/main.inc', '']) {
-            assert.strictEqual(resolveIncludePath(sourceDir, input), path.resolve(sourceDir, input));
+        const permissive = { fileExists: async () => true, findFilesByBaseName: async () => [] };
+        for (const input of ['main.inc', '../common.inc', 'sub\\main.inc', 'sub/main.inc']) {
+            assert.deepStrictEqual(await resolveDirectiveOperand(input, lookup, permissive),
+                { status: 'resolved', path: path.resolve(sourceDir, input) });
             assert.strictEqual(resolveAgainstDirectory(sourceDir, input), path.resolve(sourceDir, input));
         }
     });
 
-    it('keeps include source anchoring distinct from metadata project anchoring, even for missing files', () => {
-        const p = probe();
-        assert.strictEqual(resolveIncludePath(sourceDir, 'missing.asm'), path.join(sourceDir, 'missing.asm'));
-        assert.strictEqual(resolveDebugSourcePath('missing.asm', root, p.exists), path.join(root, 'missing.asm'));
-        assert.deepStrictEqual(p.calls, [path.join(root, 'missing.asm'), path.normalize('missing.asm')]);
+    it('keeps directive lookup anchored to the document, not to metadata project paths', async () => {
+        const p = lookupProbe();
+        assert.deepStrictEqual(await resolveDirectiveOperand('missing.asm', lookup, p.dependencies),
+            { status: 'unresolved' });
+        assert.deepStrictEqual(p.calls, [path.resolve(sourceDir, 'missing.asm')]);
+        const metadata = probe();
+        assert.strictEqual(resolveDebugSourcePath('missing.asm', root, metadata.exists), path.join(root, 'missing.asm'));
+        assert.deepStrictEqual(metadata.calls, [path.join(root, 'missing.asm'), path.normalize('missing.asm')]);
     });
 
     it('prefers an existing project-relative candidate without probing a CWD-relative fallback', () => {
@@ -75,7 +103,7 @@ describe('Path policies without VS Code or a host mock', () => {
         }
     });
 
-    it('tries foreign-path suffixes in order and accepts the existing predicate contract, not file kind', () => {
+    it('tries foreign-path suffixes in order and accepts the existing predicate contract, not file kind', async () => {
         const recorded = 'Q:/build/engine/common/main.asm';
         const deep = path.join(root, 'engine', 'common', 'main.asm');
         const shallow = path.join(root, 'common', 'main.asm');
@@ -85,7 +113,11 @@ describe('Path policies without VS Code or a host mock', () => {
         const directoryLike = probe([path.join(root, 'main.asm')]);
         assert.strictEqual(resolveDebugSourcePath(recorded, root, directoryLike.exists), path.join(root, 'main.asm'));
         assert.strictEqual(resolveDebugSourcePath(recorded, root, () => false), path.normalize(recorded));
-        assert.notStrictEqual(resolveIncludePath(sourceDir, recorded), deep);
+        const foreign = lookupProbe();
+        assert.deepStrictEqual(await resolveDirectiveOperand(recorded, lookup, foreign.dependencies),
+            { status: 'unresolved' });
+        assert.deepStrictEqual(foreign.searches, [], 'Directive lookup never suffix-matches metadata paths');
+        assert.notStrictEqual(deep, path.normalize(recorded));
     });
 
     it('keeps UNC segments and foreign missing paths without recursive or realpath lookup', () => {

@@ -1,134 +1,89 @@
 import { expect } from 'chai';
-import * as path from 'path';
-import { findIncludes, resolveIncludePath } from '../../../src/language/includes/include-resolution';
+import { scanDirectives } from '../../../src/language/includes/directive-scan';
 
-describe('findIncludes', () => {
-    it('should find a single .include directive', () => {
-        const text = '.include "hardware.inc"';
-        const matches = findIncludes(text);
-        expect(matches).to.have.length(1);
-        expect(matches[0].path).to.equal('hardware.inc');
-        expect(matches[0].line).to.equal(0);
-    });
-
-    it('should find .include with extra whitespace', () => {
-        const text = '.include   "lib/io.inc"';
-        const matches = findIncludes(text);
-        expect(matches).to.have.length(1);
-        expect(matches[0].path).to.equal('lib/io.inc');
-    });
-
-    it('should find .include with tab whitespace', () => {
-        const text = '.include\t"data.asm"';
-        const matches = findIncludes(text);
-        expect(matches).to.have.length(1);
-        expect(matches[0].path).to.equal('data.asm');
-    });
-
-    it('should find multiple .include directives on separate lines', () => {
+describe('scanDirectives', () => {
+    it('finds all three directives with their operands', () => {
         const text = [
-            '; header',
-            '.include "a.inc"',
-            'nop',
-            '.include "b.inc"',
+            '.include "lib/io.inc"',
+            'data: .incbin "assets/data.bin", 0, 16',
+            'SIZE .filesize "assets/data.bin"',
         ].join('\n');
-        const matches = findIncludes(text);
-        expect(matches).to.have.length(2);
-        expect(matches[0].path).to.equal('a.inc');
-        expect(matches[0].line).to.equal(1);
-        expect(matches[1].path).to.equal('b.inc');
-        expect(matches[1].line).to.equal(3);
+        expect(scanDirectives(text).map(match => [match.kind, match.value, match.line])).to.deep.equal([
+            ['include', 'lib/io.inc', 0],
+            ['incbin', 'assets/data.bin', 1],
+            ['filesize', 'assets/data.bin', 2],
+        ]);
     });
 
-    it('should return correct startChar pointing inside the quotes', () => {
-        const text = '.include "foo.asm"';
-        const matches = findIncludes(text);
-        expect(matches).to.have.length(1);
-        // .include "foo.asm"
-        // 0123456789...
-        // The quote at index 9, path starts at 10
-        expect(matches[0].startChar).to.equal(10);
-    });
-
-    it('should find .include with leading whitespace (indented)', () => {
-        const text = '    .include "lib.inc"';
-        const matches = findIncludes(text);
-        expect(matches).to.have.length(1);
-        expect(matches[0].path).to.equal('lib.inc');
-    });
-
-    it('preserves the existing commented-include match', () => {
+    it('accepts labels, constant names, and mixed case', () => {
         const text = [
-            '; .include "commented.inc"',
-            'mov a, b',
-            'label:',
+            'part: .Include "part.asm"',
+            'size_label: SIZE .FileSize "data.bin"',
+            'blob: .INCBIN "blob.bin"',
         ].join('\n');
-        const matches = findIncludes(text);
-        expect(matches.map(match => match.path)).to.deep.equal(['commented.inc']);
+        expect(scanDirectives(text).map(match => [match.kind, match.value])).to.deep.equal([
+            ['include', 'part.asm'],
+            ['filesize', 'data.bin'],
+            ['incbin', 'blob.bin'],
+        ]);
     });
 
-    it('should return empty for text with no includes', () => {
-        const text = 'mov a, b\nnop\nhlt\n';
-        const matches = findIncludes(text);
-        expect(matches).to.have.length(0);
+    it('ignores directives inside comments and inside strings', () => {
+        const text = [
+            '; .include "semicolon.inc"',
+            '// .include "slash.inc"',
+            '/* .include "block.inc"',
+            '   .incbin "block.bin" */',
+            'db ".include \\"quoted.inc\\""',
+            '.include "real.inc"',
+        ].join('\n');
+        expect(scanDirectives(text).map(match => match.value)).to.deep.equal(['real.inc']);
     });
 
-    it('should return empty for empty text', () => {
-        expect(findIncludes('')).to.have.length(0);
+    it('requires a directive name boundary', () => {
+        expect(scanDirectives('.includeExtra "no.inc"')).to.deep.equal([]);
+        expect(scanDirectives('.included "no.inc"')).to.deep.equal([]);
     });
 
-    it('should handle .include with path containing subdirectory', () => {
-        const text = '.include "sub/dir/file.asm"';
-        const matches = findIncludes(text);
+    it('reports the raw quoted range while decoding escapes for lookup', () => {
+        const text = '😀 .include "lib\\\\io.inc"';
+        const [match] = scanDirectives(text);
+        expect(match.value).to.equal('lib\\io.inc');
+        expect(text.split('\n')[match.line].slice(match.startChar, match.startChar + match.length))
+            .to.equal('lib\\\\io.inc');
+    });
+
+    it('skips empty, single-quoted, unclosed, and unknown-escape operands', () => {
+        const text = [
+            '.include ""',
+            ".include 'single.inc'",
+            '.include "unclosed',
+            '.include "bad\\q.inc"',
+        ].join('\n');
+        expect(scanDirectives(text)).to.deep.equal([]);
+    });
+
+    it('keeps line and character positions for CRLF and Unicode text', () => {
+        const matches = scanDirectives('nop\r\n😀.include "a.inc"\r\n');
         expect(matches).to.have.length(1);
-        expect(matches[0].path).to.equal('sub/dir/file.asm');
+        expect(matches[0]).to.include({ value: 'a.inc', line: 1, startChar: 12, length: 5 });
     });
 
-    it('should handle .include with relative parent path', () => {
-        const text = '.include "../shared/common.inc"';
-        const matches = findIncludes(text);
-        expect(matches).to.have.length(1);
-        expect(matches[0].path).to.equal('../shared/common.inc');
+    it('finds several directives across non-adjacent lines', () => {
+        const lines = new Array(100).fill('nop');
+        lines[10] = '.include "first.inc"';
+        lines[90] = '.incbin "second.bin"';
+        expect(scanDirectives(lines.join('\n')).map(match => [match.line, match.value])).to.deep.equal([
+            [10, 'first.inc'],
+            [90, 'second.bin'],
+        ]);
     });
 
-    it('should not match include without dot prefix', () => {
-        const text = 'include "nope.inc"';
-        const matches = findIncludes(text);
-        expect(matches).to.have.length(0);
-    });
-
-    it('should not match .include with single quotes', () => {
-        const text = ".include 'nope.inc'";
-        const matches = findIncludes(text);
-        expect(matches).to.have.length(0);
-    });
-
-    it('should not match .include without quotes', () => {
-        const text = '.include nope.inc';
-        const matches = findIncludes(text);
-        expect(matches).to.have.length(0);
-    });
-});
-
-describe('resolveIncludePath', () => {
-    it('should resolve a relative path from the source directory', () => {
-        const result = resolveIncludePath('/project/src', 'lib/io.inc');
-        expect(result).to.equal(path.resolve('/project/src', 'lib/io.inc'));
-    });
-
-    it('should resolve a parent-relative path', () => {
-        const result = resolveIncludePath('/project/src', '../shared/common.inc');
-        expect(result).to.equal(path.resolve('/project/src', '../shared/common.inc'));
-    });
-
-    it('should return absolute paths unchanged', () => {
-        const abs = path.resolve('/absolute/path/file.inc');
-        const result = resolveIncludePath('/project/src', abs);
-        expect(result).to.equal(abs);
-    });
-
-    it('should resolve a simple filename in the same directory', () => {
-        const result = resolveIncludePath('/project/src', 'hardware.inc');
-        expect(result).to.equal(path.resolve('/project/src', 'hardware.inc'));
+    it('handles long paths and text without directives', () => {
+        const longPath = 'a/'.repeat(100) + 'file.inc';
+        expect(scanDirectives(`.include "${longPath}"`)[0].value).to.equal(longPath);
+        expect(scanDirectives('mov a, b\nnop\nhlt\n')).to.deep.equal([]);
+        expect(scanDirectives('   \r\n   \r\n')).to.deep.equal([]);
+        expect(scanDirectives('')).to.deep.equal([]);
     });
 });

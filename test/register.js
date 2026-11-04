@@ -50,13 +50,21 @@ const mockVscode = {
     },
     workspace: {
         workspaceFolders: undefined,
+        textDocuments: [],
         getConfiguration: (_section) => ({
             get: (_key, defaultValue) => defaultValue,
         }),
         findFiles: async () => [],
         onDidChangeTextDocument: () => ({ dispose: () => {} }),
+        onDidOpenTextDocument: () => ({ dispose: () => {} }),
         onDidCloseTextDocument: () => ({ dispose: () => {} }),
         onDidChangeWorkspaceFolders: () => ({ dispose: () => {} }),
+        createFileSystemWatcher: (_glob) => ({
+            onDidCreate: () => ({ dispose: () => {} }),
+            onDidDelete: () => ({ dispose: () => {} }),
+            onDidChange: () => ({ dispose: () => {} }),
+            dispose: () => {},
+        }),
         fs: {
             readFile: async () => Buffer.from(''),
             writeFile: async () => {},
@@ -79,7 +87,22 @@ const mockVscode = {
         registerCommand: (_id, _handler) => ({ dispose: () => {} }),
     },
     languages: {
+        _collections: [],
         registerDocumentLinkProvider: (_selector, _provider) => ({ dispose: () => {} }),
+        registerHoverProvider: (_selector, _provider) => ({ dispose: () => {} }),
+        registerDefinitionProvider: (_selector, _provider) => ({ dispose: () => {} }),
+        createDiagnosticCollection: (name) => {
+            const collection = {
+                name,
+                entries: new Map(),
+                set(uri, diagnostics) { collection.entries.set(uri.fsPath, diagnostics); },
+                delete(uri) { collection.entries.delete(uri.fsPath); },
+                clear() { collection.entries.clear(); },
+                dispose() { collection.entries.clear(); },
+            };
+            mockVscode.languages._collections.push(collection);
+            return collection;
+        },
     },
     debug: {
         activeDebugSession: undefined,
@@ -114,6 +137,16 @@ const mockVscode = {
     Position: class Position {
         constructor(line, character) { this.line = line; this.character = character; }
     },
+    Diagnostic: class Diagnostic {
+        constructor(range, message, severity) {
+            this.range = range;
+            this.message = message;
+            this.severity = severity;
+            this.source = undefined;
+            this.code = undefined;
+        }
+    },
+    DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2, Hint: 3 },
     Selection: class Selection {
         constructor(anchor, active) { this.anchor = anchor; this.active = active; }
     },

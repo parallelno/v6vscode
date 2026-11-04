@@ -78,7 +78,9 @@ describe('Architecture and extension manifest contracts', () => {
             const core = /^(shared\/|emulator\/(?!panel\/)|debug\/(?!views\/))/.test(relative);
             const pure = /^(shared\/|debug\/metadata\/|debug\/utilities\/|debug\/values\/|debug\/session\/)/.test(relative)
                 || /-codec\.ts$/.test(relative)
-                || ['language/includes/include-resolution.ts', 'platform/files/local-path.ts', 'project/model/source-context.ts'].includes(relative);
+                || ['language/includes/directive-scan.ts', 'language/includes/directive-lookup.ts',
+                    'language/includes/directive-path-service.ts', 'platform/files/local-path.ts',
+                    'project/model/source-context.ts'].includes(relative);
             for (const edge of edges(source)) {
                 const resolved = edge.target.startsWith('.')
                     ? path.relative(src, path.resolve(path.dirname(file), edge.target)).replace(/\\/g, '/') : edge.target;

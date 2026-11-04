@@ -1,23 +1,32 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
-import { findIncludes, resolveIncludePath } from './include-resolution';
+import { WorkspaceService } from '../../platform/files/workspace-service';
+import { DirectivePathService } from './directive-path-service';
+import { analyzeDocument, directiveRange } from './include-document';
 
 export class IncludeLinkProvider implements vscode.DocumentLinkProvider {
-    provideDocumentLinks(
-        document: vscode.TextDocument,
-        _token: vscode.CancellationToken,
-    ): vscode.DocumentLink[] {
-        const text = document.getText();
-        const includes = findIncludes(text);
-        const sourceDir = path.dirname(document.uri.fsPath);
+    constructor(
+        private readonly paths: DirectivePathService,
+        private readonly workspace: WorkspaceService,
+    ) {}
 
-        return includes.map(inc => {
-            const resolved = resolveIncludePath(sourceDir, inc.path);
-            const startPos = new vscode.Position(inc.line, inc.startChar);
-            const endPos = new vscode.Position(inc.line, inc.startChar + inc.path.length);
-            const range = new vscode.Range(startPos, endPos);
-            const targetUri = vscode.Uri.file(resolved);
-            return new vscode.DocumentLink(range, targetUri);
-        });
+    async provideDocumentLinks(
+        document: vscode.TextDocument,
+        token: vscode.CancellationToken,
+    ): Promise<vscode.DocumentLink[]> {
+        const resolutions = await analyzeDocument(this.paths, this.workspace, document);
+        if (token.isCancellationRequested) {
+            return [];
+        }
+        const links: vscode.DocumentLink[] = [];
+        for (const resolution of resolutions) {
+            if (resolution.path) {
+                links.push(new vscode.DocumentLink(
+                    directiveRange(resolution.directive),
+                    vscode.Uri.file(resolution.path),
+                ));
+            }
+        }
+        return links;
     }
 }
+

@@ -1,6 +1,6 @@
 # v6vscode directive path navigation
 
-**Status:** Draft; not implemented.
+**Status:** Implemented in `src/language/includes/`.
 
 ## 1. Goal
 

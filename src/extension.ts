@@ -35,6 +35,11 @@ import { ProjectDiscovery } from './project/discovery/project-discovery';
 import { ProjectRepository } from './project/persistence/project-repository';
 import { ActiveProjectService } from './project/active/active-project-service';
 import { IncludeLinkProvider } from './language/includes/include-link-provider';
+import { IncludeHoverProvider } from './language/includes/include-hover-provider';
+import { IncludeDefinitionProvider } from './language/includes/include-definition-provider';
+import { IncludeDiagnostics } from './language/includes/include-diagnostics';
+import { DirectivePathService } from './language/includes/directive-path-service';
+import { createWorkspaceFileSearch } from './language/includes/workspace-file-search';
 import { CMD_REVEAL_SYMBOL_SOURCE, SymbolLinkProvider } from './language/symbols/symbol-link-provider';
 import { createLanguageServices } from './language/language-services';
 import { V6emulLocator } from './emulator/launcher/v6emul-locator';
@@ -325,9 +330,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // Language support
     const asmSelector: vscode.DocumentSelector = { language: 'asm' };
+    const directivePaths = new DirectivePathService({
+        findFilesByBaseName: createWorkspaceFileSearch(),
+    });
     store.add(
-        vscode.languages.registerDocumentLinkProvider(asmSelector, new IncludeLinkProvider())
+        vscode.languages.registerDocumentLinkProvider(
+            asmSelector,
+            new IncludeLinkProvider(directivePaths, workspaceService),
+        )
     );
+    store.add(
+        vscode.languages.registerHoverProvider(
+            asmSelector,
+            new IncludeHoverProvider(directivePaths, workspaceService),
+        ),
+    );
+    store.add(
+        vscode.languages.registerDefinitionProvider(
+            asmSelector,
+            new IncludeDefinitionProvider(directivePaths, workspaceService),
+        ),
+    );
+    store.add(new IncludeDiagnostics(directivePaths, workspaceService));
     const symbolLinkProvider = new SymbolLinkProvider(
         activeProjectService,
         debugSymbols,

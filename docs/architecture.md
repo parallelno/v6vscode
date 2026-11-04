@@ -35,11 +35,18 @@ Composition root. Creates platform and project services, registers commands, pus
 
 ## Source path ownership
 
-Include interpretation belongs to `src/language/includes/include-resolution.ts`;
-the provider only builds VS Code links/ranges. Includes remain relative to the
-containing source document, with no existence checks or workspace fallback.
-`PathService.resolveRelative` delegates to the same host-free lexical mechanism;
-its extension-resource/token API remains available.
+Include and binary-directive navigation belongs to `src/language/includes/`.
+`directive-scan.ts` finds `.include`, `.incbin`, and `.filesize` operands outside
+comments and strings; `directive-lookup.ts` applies the candidate order without
+VS Code APIs; `directive-path-service.ts` caches one analysis per document version
+and workspace root set. Providers only build VS Code links, locations, hovers, and
+diagnostics.
+
+Lookup is independent of DWARF and the active project. An absolute operand is used
+as-is; otherwise the document directory, then each workspace root, then the first
+workspace file matching the operand's base filename. Unresolved operands produce no
+link and a `Cannot find file "..."` error diagnostic. `PathService.resolveRelative`
+continues to delegate to the host-free lexical mechanism in `platform/files/local-path.ts`.
 
 DWARF relocation remains in `debug/metadata/debug-source-path.ts`, with an
 injectable existence predicate for deterministic tests. Symbol scanning also

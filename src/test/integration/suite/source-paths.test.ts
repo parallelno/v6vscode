@@ -6,7 +6,7 @@ import * as vscode from 'vscode';
 import { localPathKey } from '../../../platform/files/local-path';
 
 suite('Source path ownership in the shipped extension', () => {
-    test('creates include links from the source directory with exact ranges and missing-target links', async () => {
+    test('links only operands that resolve to an existing file', async () => {
         const workspace = process.env.V6_DEBUG_INTEGRATION_WORKSPACE!;
         const directory = path.join(workspace, 'include-links', 'src');
         fs.mkdirSync(directory, { recursive: true });
@@ -16,11 +16,9 @@ suite('Source path ownership in the shipped extension', () => {
         const document = await vscode.workspace.openTextDocument(uri);
         await vscode.languages.setTextDocumentLanguage(document, 'asm');
         const links = await vscode.commands.executeCommand<vscode.DocumentLink[]>('vscode.executeLinkProvider', uri);
-        assert.ok(links); assert.strictEqual(links.length, 2);
-        for (const [index, operand] of ['existing.inc', 'missing.inc'].entries()) {
-            assert.strictEqual(document.getText(links[index].range), operand);
-            assert.strictEqual(localPathKey(links[index].target!.fsPath), localPathKey(path.join(directory, operand)));
-        }
+        assert.ok(links); assert.strictEqual(links.length, 1);
+        assert.strictEqual(document.getText(links[0].range), 'existing.inc');
+        assert.strictEqual(localPathKey(links[0].target!.fsPath), localPathKey(path.join(directory, 'existing.inc')));
     });
 
     test('keeps DAP, definition and hover navigation on a project in the second nested workspace folder', async function () {
