@@ -10,10 +10,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseElf32, SHF_ALLOC, SHT_PROGBITS } from './elf32-reader';
-import { parseDwarf4LineFileTables, parseDwarf4LineSection, DwarfLineCompDirs } from './dwarf4-line-reader';
+import { parseDwarf4LineFileTables, parseDwarf4LineSection, DwarfLineCompDirs, DwarfLineFileTable } from './dwarf4-line-reader';
 import { parseDwarf4CompilationUnits, parseDwarf4VariableDeclarations, DwarfCompilationUnitInfo, DwarfVariableDeclaration } from './dwarf4-info-reader';
 import { buildDebugIndex, DebugIndex } from './debug-index';
 import { DebugMetadataIndex } from './debug-metadata-index';
+import { AsmFunctionEntry } from './asm-function-index';
+import { CompilationUnit, DW_AT, numberAttribute, stringAttribute } from './dwarf-reader';
 
 // ---------------------------------------------------------------------------
 // Compilation directory extraction
@@ -69,6 +71,41 @@ function filesForUnit(
         if (table) { return table.files; }
     }
     return lineTables[unitIndex]?.files ?? mergedFiles;
+}
+
+/**
+ * Declaration file of an assembly function entry, resolved against the
+ * compilation unit that owns the entry rather than a global fallback.
+ *
+ * - `DW_AT_decl_file` is a CU-relative index, so it resolves through the owning
+ *   unit's own line-program file table (matched by `DW_AT_stmt_list`) — the same
+ *   rule `DW_TAG_variable` declarations follow, which keeps asm entries
+ *   relocatable exactly like C declarations.
+ * - The v6asm vendor attribute `0x3f01` is a literal path written relative to the
+ *   assembler working directory, which is that unit's `DW_AT_comp_dir`; anchoring
+ *   it there keeps `controls/v6_controls.asm` from being joined to an unrelated
+ *   unit's directory. Absolute vendor paths are used as-is.
+ * - An entry with neither location yields undefined, so the caller can keep the
+ *   symbol without inventing a source path for it.
+ */
+export function resolveAsmDeclarationFile(
+    entry: Pick<AsmFunctionEntry, 'file' | 'declFile' | 'unitIndex'>,
+    units: readonly CompilationUnit[],
+    lineTables: readonly DwarfLineFileTable[],
+): string | undefined {
+    const unit = units[entry.unitIndex];
+    if (entry.declFile !== undefined && unit?.root) {
+        const stmtList = numberAttribute(unit.root, DW_AT.stmt_list);
+        const table = stmtList === undefined
+            ? undefined
+            : lineTables.find(candidate => candidate.offset === stmtList);
+        const indexed = table?.files[entry.declFile - 1];
+        if (indexed) { return indexed; }
+    }
+    if (!entry.file) { return undefined; }
+    if (path.isAbsolute(entry.file)) { return path.normalize(entry.file); }
+    const compDir = unit?.root ? stringAttribute(unit.root, DW_AT.comp_dir) : undefined;
+    return compDir ? path.normalize(path.join(compDir, entry.file)) : entry.file;
 }
 
 // ---------------------------------------------------------------------------
@@ -179,9 +216,15 @@ export function decodeDebugArtifact(elfBuf: Buffer, rom?: Buffer): LoadResult {
     } catch {
         // Optional semantic metadata must not disable baseline source debugging.
     }
-    for (const region of metadata?.asmFunctions.regions ?? []) {
-        for (const entry of region.entries) {
-            declarations.push({ name: entry.name, value: entry.address, file: entry.file, line: entry.line });
+    if (metadata) {
+        // Assembly function entries declare where their label lives; anchor that
+        // location on the unit that owns the entry so navigation and the source
+        // scan stay inside the workspace.
+        for (const region of metadata.asmFunctions.regions) {
+            for (const entry of region.entries) {
+                const file = resolveAsmDeclarationFile(entry, metadata.units, lineTables);
+                declarations.push({ name: entry.name, value: entry.address, file: file ?? entry.file, line: entry.line });
+            }
         }
     }
     const index = buildDebugIndex(rows, elf.symbols, compDir, declarations, files);

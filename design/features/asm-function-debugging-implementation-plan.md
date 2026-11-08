@@ -12,6 +12,18 @@ standard entry-point children, carrying name/address, source-path attribute
 `0x3f01`, and declaration line. Object addresses use owning-section relocations;
 the extension filters `0xFFFF` starts/entries. Real linked GC fixtures verify it.
 
+Consumer side of that contract: an entry is anchored on the compilation unit that
+owns it. `DW_AT_decl_file` is preferred when the producer emits it — the index
+resolves through the owning unit's own line-program file table, the same rule
+`DW_TAG_variable` declarations follow, so entries relocate like C declarations and
+need no vendor-specific handling. The `0x3f01` vendor path stays supported as the
+fallback and is joined with the owning unit's `DW_AT_comp_dir` (that path is
+written relative to the assembler working directory); joining it with the
+artifact-wide compilation directory is what dropped the `engine/` anchor and left
+Ctrl+Click on asm labels pointing at nonexistent files. Emitting `DW_AT_decl_file`
+is therefore the recommended producer change, with `0x3f01` kept for readers that
+predate it.
+
 Implemented backend contract: commands 111/112 with `functionHistorySchema: 1`,
 one caller cursor, independent generation validation, and recorded-opcode
 sequential successors. Region queries use 16-bit CPU coordinates, projecting
