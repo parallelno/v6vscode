@@ -96,6 +96,27 @@ describe('Assembly highlighter', () => {
         ]);
     });
 
+    it('classifies db, dd, and reserve storage directives', async () => {
+        const highlighter = await createAssemblyHighlighter(process.cwd());
+        const directiveText = (line: string) => highlighter.tokenizeLine(line)
+            .filter(span => span.tokenClass === 'directive')
+            .map(span => line.slice(span.start, span.start + span.length).trim())
+            .join('|');
+
+        expect(directiveText('message: .db 1, 2')).to.equal('.db');
+        expect(directiveText('pointer: .dd 0x1234')).to.equal('.dd');
+        expect(directiveText('buffer: .reserve 16')).to.equal('.reserve');
+    });
+
+    it('classifies rlc as an instruction', async () => {
+        const highlighter = await createAssemblyHighlighter(process.cwd());
+        const line = 'rlc';
+        const spans = highlighter.tokenizeLine(line).filter(span => span.tokenClass !== 'plain');
+
+        expect(spans.map(span => line.slice(span.start, span.start + span.length))).to.deep.equal(['rlc']);
+        expect(spans[0].tokenClass).to.equal('instruction');
+    });
+
     it('distinguishes gray one-line comments from block comments', async () => {
         const highlighter = await createAssemblyHighlighter(process.cwd());
         const tokenClasses = highlighter.tokenizeDocument('; semicolon\n// slash\n/* block */')

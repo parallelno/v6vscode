@@ -141,7 +141,7 @@
             "patterns": [
                 {
                     "name": "keyword.directive.v6vscode_8080",
-                    "match": "(?i)(?:^|\\s)(\\.(org|pc|equ|var|random|rnd|storage|ds|fill|align|target|format|cpu|closelabels|breakpoint|print|debug|error|end|region|endregion|function|endfunction|endf|segment|code|lib|data|bss|bank|namespace|include|incbin|macro|endmacro|endm|if|endif|loop|endloop|endl|while|endwhile|endw|break|byte|b|word|w|dword|dw|lobyte|hibyte|loword|hiword|encoding|text|t|textz|stext|ascii|asciiz|generate|memory|memorydump|setting|struct|ends|endstruct|pragma))\\b"
+                    "match": "(?i)(?:^|\\s)(\\.(org|pc|equ|var|random|rnd|storage|reserve|ds|fill|align|target|format|cpu|closelabels|breakpoint|print|debug|error|end|region|endregion|function|endfunction|endf|segment|code|lib|data|bss|bank|namespace|include|incbin|macro|endmacro|endm|if|endif|loop|endloop|endl|while|endwhile|endw|break|byte|b|db|word|w|dword|dw|dd|lobyte|hibyte|loword|hiword|encoding|text|t|textz|stext|ascii|asciiz|generate|memory|memorydump|setting|struct|ends|endstruct|pragma))\\b"
                 }
             ]
         },
@@ -165,7 +165,7 @@
             "patterns": [
                 {
                     "name": "keyword.instruction.v6vscode_8080",
-                    "match": "(?i)\\b(aci|adc|add|adi|ana|ani|cma|cmc|cmp|cpi|daa|dad|dcr|dcx|di|ei|hlt|in|inr|inx|lda|ldax|lhld|lxi|mov|mvi|nop|ora|ori|out|pop|push|ral|rar|rrc|sbb|sbi|shld|sphl|sta|stax|stc|sub|sui|xchg|xra|xri|xthl)\\b"
+                    "match": "(?i)\\b(aci|adc|add|adi|ana|ani|cma|cmc|cmp|cpi|daa|dad|dcr|dcx|di|ei|hlt|in|inr|inx|lda|ldax|lhld|lxi|mov|mvi|nop|ora|ori|out|pop|push|ral|rar|rlc|rrc|sbb|sbi|shld|sphl|sta|stax|stc|sub|sui|xchg|xra|xri|xthl)\\b"
                 }
             ]
         },
