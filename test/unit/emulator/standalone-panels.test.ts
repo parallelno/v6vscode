@@ -171,7 +171,6 @@ describe('Standalone emulator panels', () => {
         expect(script).to.include("editable.addEventListener('dblclick'");
         expect(script).to.include("post({ type: 'reveal', id: entry.id })");
         expect(script).to.include('draft[key] = input.value');
-        expect(script).to.include('if (editingId === null && !adding) render()');
     });
 
     it('marks changed port cells visually and accessibly', () => {

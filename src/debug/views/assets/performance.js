@@ -22,7 +22,6 @@ import { clearInvalid, invalid as markInvalid, bindEditKeys } from '../../../../
     let selectedId = null;
     let adding = false;
     let submitting = false;
-    let focusDraft = false;
     let draft = { name: '', addrStart: '', addrEnd: '', active: true };
     let editDraft = null;
     let menuId = null;
@@ -61,7 +60,24 @@ import { clearInvalid, invalid as markInvalid, bindEditKeys } from '../../../../
         selectedId = id; rows.querySelector('.selected')?.classList.remove('selected'); row?.classList.add('selected');
     }
     const keyedRows = new KeyedRows();
-    function render() {
+    function statistics(entry) {
+        return `average cc: ${Math.round(entry.averageClockCycles)}, tests: ${entry.testCount}`;
+    }
+    function refreshRows() {
+        if (!adding && editingId === null) { render(); return; }
+        // Polling must not detach the draft: doing so loses focus, selection and IME state.
+        const byId = new Map(entries.map(entry => [String(entry.id), entry]));
+        for (const row of rows.children) {
+            const entry = byId.get(/** @type {HTMLElement} */ (row).dataset.id);
+            const stats = row.querySelector('.statistics');
+            if (entry && stats) { stats.textContent = statistics(entry); }
+            for (const control of row.querySelectorAll('input')) {
+                // A temporary refresh error blocks submission, not typing in the draft.
+                control.disabled = submitting || (row.tagName !== 'FORM' && !canMutate);
+            }
+        }
+    }
+    function render(focusField = '') {
         const visible = visibleEntries();
         if (adding || editingId !== null) {
             keyedRows.clear(); rows.replaceChildren();
@@ -75,6 +91,11 @@ import { clearInvalid, invalid as markInvalid, bindEditKeys } from '../../../../
         count.textContent = `${visible.length} of ${entries.length}`;
         empty.hidden = adding || visible.length > 0;
         empty.textContent = entries.length ? 'No matching performance tests' : 'No performance tests';
+        if (focusField) {
+            /** @type {HTMLInputElement | null} */
+            const input = rows.querySelector(`form input[aria-label="${focusField}"]`);
+            input?.focus();
+        }
     }
     function displayRow(entry) {
         const row = document.createElement('div'); row.className = `row${entry.id === selectedId ? ' selected' : ''}`;
@@ -84,14 +105,14 @@ import { clearInvalid, invalid as markInvalid, bindEditKeys } from '../../../../
         const start = cell(entry.addrStart, 'editable');
         const end = cell(entry.addrEnd, 'editable');
         start.title = entry.addrStart; end.title = entry.addrEnd;
-        const stats = cell(`average cc: ${Math.round(entry.averageClockCycles)}, tests: ${entry.testCount}`, 'statistics');
+        const stats = cell(statistics(entry), 'statistics');
         row.append(checkboxCell(entry), name, start, end, stats);
         row.addEventListener('click', () => select(entry.id, row));
-        for (const editable of [name, start, end]) editable.addEventListener('dblclick', event => {
+        for (const [editable, label] of /** @type {Array<[HTMLElement, string]>} */ ([[name, 'Name'], [start, 'Start'], [end, 'End']])) editable.addEventListener('dblclick', event => {
             event.stopPropagation(); if (canMutate && !submitting) {
                 editingId = entry.id;
                 editDraft = { name: entry.name, addrStart: entry.addrStart, addrEnd: entry.addrEnd, active: entry.active };
-                closeMenus(); render();
+                closeMenus(); render(label);
             }
         });
         row.addEventListener('dblclick', event => {
@@ -105,6 +126,7 @@ import { clearInvalid, invalid as markInvalid, bindEditKeys } from '../../../../
     }
     function editorRow(entry) {
         const row = document.createElement('form'); row.className = `row${entry ? '' : ' draft'}`; row.setAttribute('role', 'row');
+        if (entry) { row.dataset.id = String(entry.id); }
         const values = entry
             ? editDraft ?? { name: entry.name, addrStart: entry.addrStart, addrEnd: entry.addrEnd, active: entry.active }
             : draft;
@@ -118,9 +140,9 @@ import { clearInvalid, invalid as markInvalid, bindEditKeys } from '../../../../
         const name = textInput('Name', values.name); const start = textInput('Start', values.addrStart);
         const end = textInput('End', values.addrEnd);
         for (const control of [active, name.input, start.input, end.input]) {
-            control.disabled = !canMutate || submitting;
+            control.disabled = submitting;
         }
-        row.append(activeCell, name.cell, start.cell, end.cell, cell(entry ? `average cc: ${Math.round(entry.averageClockCycles)}, tests: ${entry.testCount}` : '--', 'statistics'));
+        row.append(activeCell, name.cell, start.cell, end.cell, cell(entry ? statistics(entry) : '--', 'statistics'));
         for (const [key, input] of /** @type {Array<[string, HTMLInputElement]>} */ ([['name', name.input], ['addrStart', start.input], ['addrEnd', end.input]])) {
             input.addEventListener('input', () => {
                 clearInvalid(input);
@@ -131,7 +153,7 @@ import { clearInvalid, invalid as markInvalid, bindEditKeys } from '../../../../
             active.addEventListener('change', () => { draft.active = active.checked; });
         }
         row.addEventListener('submit', event => {
-            event.preventDefault(); if (submitting) return;
+            event.preventDefault(); if (submitting || !canMutate) return;
             const input = inputValue(name.input, start.input, end.input, active.checked);
             if (!input) return;
             submitting = true;
@@ -139,7 +161,6 @@ import { clearInvalid, invalid as markInvalid, bindEditKeys } from '../../../../
             post(entry ? { type: 'edit', id: entry.id, input } : { type: 'add', input });
         });
         bindEditKeys(row, () => { editingId = null; editDraft = null; adding = false; submitting = false; render(); });
-        setTimeout(() => { (focusDraft ? name.input : document.activeElement === document.body ? name.input : null)?.focus(); focusDraft = false; }, 0);
         return row;
     }
     function textInput(label, value) {
@@ -148,8 +169,9 @@ import { clearInvalid, invalid as markInvalid, bindEditKeys } from '../../../../
         return { cell: holder, input };
     }
     function startAdd() {
-        if (!adding) { draft = { name: '', addrStart: '', addrEnd: '', active: true }; focusDraft = true; }
-        adding = true; editingId = null; closeMenus(); render();
+        if (adding) return;
+        draft = { name: '', addrStart: '', addrEnd: '', active: true };
+        adding = true; editingId = null; closeMenus(); render('Name');
     }
     function openMenu(event, id, source) {
         event.preventDefault(); closeListMenu(); menuId = id; menuSource = source;
@@ -210,7 +232,7 @@ import { clearInvalid, invalid as markInvalid, bindEditKeys } from '../../../../
             if (message.state === 'noSession' || message.state === 'unsupported') {
                 editingId = null; editDraft = null; adding = false; submitting = false;
             }
-            if (message.state !== 'loading') render();
+            if (message.state !== 'loading') refreshRows();
         }
         if (message.type === 'snapshot') {
             const changed = message.generation !== generation;
@@ -219,10 +241,12 @@ import { clearInvalid, invalid as markInvalid, bindEditKeys } from '../../../../
             if (changed) { editingId = null; editDraft = null; adding = false; closeMenus(); }
             if (editingId !== null && !entries.some(entry => entry.id === editingId)) { editingId = null; editDraft = null; }
             if (selectedId !== null && !entries.some(entry => entry.id === selectedId)) selectedId = null;
-            if (editingId === null && !adding) render();
+            refreshRows();
         }
         if (message.type === 'operation') {
-            submitting = false; live.textContent = message.message || (message.ok ? 'Performance test updated' : 'Performance operation failed');
+            live.textContent = message.message || (message.ok ? 'Performance test updated' : 'Performance operation failed');
+            if (message.operation === 'refresh') { refreshRows(); return; }
+            submitting = false;
             if (message.ok) { editingId = null; editDraft = null; if (message.operation === 'add') adding = false; }
             render();
             if (!message.ok && message.field) {
