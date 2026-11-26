@@ -87,14 +87,32 @@ suite('ASM value presentation', () => {
                 return (hovers ?? []).flatMap(hover => hover.contents.map(content =>
                     typeof content === 'string' ? content : content.value)).join('\n').replace(/&nbsp;/g, ' ');
             };
-            for (let attempt = 0; attempt < 3; attempt++) {
-                const codeHover = await hoverText(callLine, 'set_timer');
-                assert.ok(codeHover.includes(`Value: ${functionAddress}`), codeHover);
-                assert.ok(codeHover.includes('Go to Definition'), codeHover);
-                const fieldHover = await hoverText(fieldLine, 'instance.ptr');
-                assert.ok(fieldHover.includes('Value: 65535'), fieldHover);
-                assert.ok(fieldHover.includes('Go to Definition'), fieldHover);
-            }
+            const assertValue = (text: string, label: string, decimal: number, hex: string, binary: string) => {
+                for (const expected of [`${label}: ${decimal}`, hex, binary]) { assert.ok(text.includes(expected), text); }
+            };
+            const codeHover = await hoverText(callLine, 'set_timer');
+            assert.ok(codeHover.includes(functionAddress), codeHover);
+            assertValue(codeHover, 'Memory byte', 201, '0xC9', '0b11001001');
+            assert.ok(codeHover.includes('Go to Definition'), codeHover);
+            const fieldHover = await hoverText(fieldLine, 'instance.ptr');
+            assertValue(fieldHover, 'Memory value', 65535, '0xFFFF', '0b1111111111111111');
+            assert.ok(fieldHover.includes('Go to Definition'), fieldHover);
+            const pairLine = lines.findIndex(line => line.includes('lxi h, pool'));
+            const pairHover = await hoverText(pairLine, ' h');
+            assert.ok(pairHover.includes('HL address:'), pairHover);
+            assertValue(pairHover.replace(/\\(?=[\[\]])/g, ''), 'Memory byte [HL]', 255, '0xFF', '0b11111111');
+            const dataHover = await hoverText(pairLine, 'pool');
+            assert.ok(dataHover.includes('Address:'), dataHover);
+            assertValue(dataHover, 'Memory byte', 100, '0x64', '0b01100100');
+            const memoryLine = lines.findIndex(line => line.includes('mvi m, 0xff'));
+            const memoryHover = await hoverText(memoryLine, ' m,');
+            assert.ok(memoryHover.includes('HL address:'), memoryHover);
+            assertValue(memoryHover.replace(/\\(?=[\[\]])/g, ''), 'Memory byte [HL]', 255, '0xFF', '0b11111111');
+            const instructionHover = await hoverText(callLine, 'call');
+            assertValue(instructionHover, 'Opcode', 205, '0xCD', '0b11001101');
+            assert.ok(instructionHover.includes('Address:'), instructionHover);
+            assert.ok(instructionHover.includes('Operand byte 1:'), instructionHover);
+            assert.ok(instructionHover.includes('Operand byte 2:'), instructionHover);
             await assert.rejects(async () => session.customRequest('evaluate', { expression: 'instance.ptr', context: 'hover', frameId: frame.id }),
                 /Assembler hovers are provided by the language provider/);
         } finally {

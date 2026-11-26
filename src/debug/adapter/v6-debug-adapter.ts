@@ -31,11 +31,13 @@ import { DapHandleStore } from './dap-handle-store';
 import { ScopeService, SemanticScope, SemanticScopeKind } from './scope-service';
 import { DapFrameContext, StackTraceService } from './stack-trace-service';
 import { VariableService } from './variable-service';
-import { hexAddress, TypedValue } from '../values/value-format';
+import { decode, hexAddress, scalarNumber, TypedValue, unwrap } from '../values/value-format';
+import { ASM_BYTE_REGISTERS, ASM_HOVER_REQUEST, ASM_WORD_REGISTERS, AsmHoverRow, instructionByteCount, isAsmConstant } from '../values/asm-hover';
+import { decodeProtocolData } from '../../emulator/protocol/protocol-result';
 import { DapVariable, dapVariableValue } from './dap-value-presenter';
 import { ValueEvaluationService, ValueEvaluationContext } from '../values/value-evaluation-service';
 import { isAssemblerSource, isHoverEvaluation } from '../values/evaluation-context';
-import { toDwarfRegisters } from '../metadata/v6c-register-map';
+import { DWARF_REG, toDwarfRegisters } from '../metadata/v6c-register-map';
 import { BreakpointCoordinator } from '../session/breakpoint-coordinator';
 import { memoryCapabilities } from '../../emulator/memory/memory-backend';
 import { LogicalLocationIndex } from './logical-location-index';
@@ -248,6 +250,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             case 'setDataBreakpoints':  await this.onSetDataBreakpoints(req); break;
             case 'exceptionInfo':       await this.onExceptionInfo(req); break;
             case 'evaluate':             await this.onEvaluate(req); break;
+            case ASM_HOVER_REQUEST:      await this.onAsmHover(req); break;
             case 'restart':              await this.onRestart(req); break;
             case 'disconnect':           await this.onDisconnect(req); break;
             case 'terminate':            await this.onTerminate(req); break;
@@ -1067,6 +1070,128 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     // -----------------------------------------------------------------------
     // evaluate — one typed expression path for Watch, Console, and hover
     // -----------------------------------------------------------------------
+
+    private async onAsmHover(req: DapRequest): Promise<void> {
+        const target = req.arguments?.hoverTarget;
+        const frameId = req.arguments?.frameId;
+        const client = this.client;
+        const regs = this.cachedRegs;
+        const context = this.stopContext;
+        const generation = this.stoppedGeneration;
+        if (!target || !client || !regs || this.execution.state !== 'paused') {
+            this.sendResponse(req, false, 'Assembly hover requires a paused emulator');
+            return;
+        }
+        const frame = frameId === undefined ? undefined : this.stackTraceService.frame(generation, frameId);
+        if (frameId !== undefined && !frame && (context || frameId !== 1)) {
+            this.sendResponse(req, false, 'The selected frame is no longer available');
+            return;
+        }
+        const assertCurrent = () => {
+            this.sessionLease?.assertCurrent();
+            if (generation !== this.stoppedGeneration || this.execution.state !== 'paused' || this.client !== client) {
+                throw new Error('Assembly hover belongs to an inactive stop');
+            }
+        };
+        const scope = { key: client, assertCurrent };
+        // Read the CPU-mapped RAM view rather than the physical main-memory bank.
+        const read = async (address: number, size: 1 | 3 = 1): Promise<number | undefined> => {
+            if (!Number.isInteger(address) || address < 0 || address > 0xFFFF) { return undefined; }
+            assertCurrent();
+            const command = size === 1 ? IpcCommand.GET_BYTE_RAM : IpcCommand.GET_THREE_BYTES_RAM;
+            try {
+                const response = await client.send(command, { addr: address }, HOVER_EVALUATION_TIMEOUT_MS, 'high', scope);
+                assertCurrent();
+                return decodeProtocolData(command, response, 'Mapped memory unavailable', data => {
+                    const value = (data as { data?: number } | undefined)?.data;
+                    if (value === undefined || !Number.isInteger(value) || value < 0 || value >= 2 ** (size * 8)) {
+                        throw new Error('Invalid mapped memory response');
+                    }
+                    return value;
+                });
+            } catch { assertCurrent(); return undefined; }
+        };
+        assertCurrent();
+        let rows: AsmHoverRow[] = [];
+        if (target.kind === 'instruction' && typeof target.file === 'string' && Number.isSafeInteger(target.line) && target.line > 0) {
+            rows = await this.asmInstructionHover(target.file, target.line, frame?.instructionPc ?? regs.pc, read);
+        } else if (target.kind === 'register' && typeof target.name === 'string') {
+            rows = await this.asmRegisterHover(target.name, regs, frame, read);
+        } else if (target.kind === 'symbol' && typeof target.name === 'string') {
+            const symbols = this.debugIndex?.symbols(target.name) ?? [];
+            const symbol = symbols.length === 1 ? symbols[0] : undefined;
+            if (symbol && isAsmConstant(symbol)) {
+                rows = [{ label: 'Value', value: symbol.address, byteSize: 2 }];
+            } else if (symbol) {
+                rows = [{ label: 'Address', value: symbol.address, byteSize: 2 }, { label: 'Memory byte', value: await read(symbol.address) }];
+            } else if (symbols.length === 0 && context && (!frame || frame.physicalFrame)) {
+                rows = await this.typedAsmHover(target.name, context, frame, assertCurrent);
+            }
+        }
+        assertCurrent();
+        this.sendResponseBody(req, { rows });
+    }
+
+    private async asmInstructionHover(file: string, line: number, pc: number,
+        read: (address: number, size?: 1 | 3) => Promise<number | undefined>): Promise<AsmHoverRow[]> {
+        const candidates = this.debugIndex?.resolveBreakpointAll(file, line) ?? [];
+        // A macro or loop can emit several instances. Prefer the selected PC
+        // only if it identifies one; never slide to a later source line.
+        const address = candidates.length === 1 ? candidates[0].address
+            : candidates.find(candidate => candidate.address === pc)?.address;
+        if (address === undefined) { return []; }
+        const bytes = await read(address, 3);
+        const opcode = bytes === undefined ? await read(address) : bytes & 0xFF;
+        const rows: AsmHoverRow[] = [{ label: 'Address', value: address, byteSize: 2 }, { label: 'Opcode', value: opcode }];
+        if (opcode === undefined) { return rows; }
+        const count = instructionByteCount(opcode) - 1;
+        if (count === 0) { rows.push({ label: 'Operand bytes', note: 'none' }); }
+        for (let index = 1; index <= count; index++) {
+            const value = bytes === undefined ? await read((address + index) & 0xFFFF) : bytes >> (index * 8) & 0xFF;
+            rows.push({ label: `Operand byte ${index}`, value });
+        }
+        return rows;
+    }
+
+    private async asmRegisterHover(name: string, regs: GetRegsResponse, frame: DapFrameContext | undefined,
+        read: (address: number) => Promise<number | undefined>): Promise<AsmHoverRow[]> {
+        if (!ASM_BYTE_REGISTERS.has(name) && !ASM_WORD_REGISTERS.has(name)) { return []; }
+        const caller = frame && (!frame.physicalFrame || frame.physicalFrame.index > 0);
+        const registers = frame?.physicalFrame?.registers;
+        const dwarfRegister = DWARF_REG[name as keyof typeof DWARF_REG];
+        const value = caller ? (dwarfRegister === undefined ? undefined : registers?.[dwarfRegister]) : this.evalExpression(name, regs);
+        if (name === 'M') {
+            const hl = caller ? registers?.[DWARF_REG.HL] : regs.hl;
+            return hl === undefined ? [] : [
+                { label: 'HL address', value: hl, byteSize: 2 },
+                { label: 'Memory byte [HL]', value: await read(hl) ?? value },
+            ];
+        }
+        if (value === undefined) { return []; }
+        return ASM_WORD_REGISTERS.has(name) ? [
+            { label: `${name} address`, value, byteSize: 2 },
+            { label: `Memory byte [${name}]`, value: await read(value) },
+        ] : [{ label: name, value }];
+    }
+
+    private async typedAsmHover(name: string, context: DebugStopContext, frame: DapFrameContext | undefined,
+        assertCurrent: () => void): Promise<AsmHoverRow[]> {
+        const metadata = this.debugMetadata;
+        if (!metadata) { return []; }
+        const variables = this.scopeService.scopes(metadata, frame ?? { instructionPc: context.pc }).flatMap(scope => scope.variables);
+        const { value } = await this.evaluateExpression('hover', name, {
+            metadata, memory: context, variables, assertCurrent,
+            frame: frame?.physicalFrame ?? { index: 0, pc: context.pc, sp: context.sp, registers: context.topRegisters },
+        });
+        const rows: AsmHoverRow[] = [];
+        if (value.address !== undefined) { rows.push({ label: 'Address', value: value.address, byteSize: 2 }); }
+        if (!value.bytes?.length) { return rows; }
+        const kind = value.type && unwrap(value.type).kind;
+        const scalar = !kind || kind === 'base' || kind === 'enum' || kind === 'pointer' || kind === 'reference';
+        rows.push({ label: value.address === undefined ? 'Value' : scalar ? 'Memory value' : 'Memory byte',
+            value: scalar ? scalarNumber(value) : decode(value.bytes.subarray(0, 1)), byteSize: scalar ? Math.min(4, value.bytes.length) : 1 });
+        return rows;
+    }
 
     private async onEvaluate(req: DapRequest): Promise<void> {
         const expression = String(req.arguments?.expression ?? '').trim();

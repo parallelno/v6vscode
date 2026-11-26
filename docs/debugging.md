@@ -73,7 +73,9 @@ Verified source breakpoints show their resolved CPU address in the breakpoint to
 
 ## Values, Hovers, and Variables Scopes
 
-Watch, Debug Console, Variables, and live ASM hovers share the same typed memory reader and value formatter. Individual structs and struct-pool elements use the same member-summary and child formatting. Fields are read using their declared byte size and signedness, including typedef and qualifier wrappers: an unsigned word containing `FF FF` displays `65535`, while `FF 00` displays `255`. A failed or partial read is unavailable, not a fabricated byte value or an address substituted for contents.
+Watch, Debug Console, and Variables share the typed memory reader and value formatter. Typed ASM field hovers also use that reader, respecting declared width and signedness: an unsigned word containing `FF FF` is 65535, while `FF 00` is 255. A failed or partial typed read does not fabricate a value.
+
+While paused, ASM hovers display values in decimal, hex, and binary. A byte register shows its value; a register pair shows its value as an address and the byte stored there. `M` shows the address in `HL` and the byte at that address. Code and data labels both show their address and the first byte at that address; absolute constants show their value only. A mnemonic with an exact source mapping shows the instruction address, opcode, and any operand bytes in encoding order. If a line expands to multiple instructions, the selected PC must identify one before bytes are shown.
 
 Signed integer storage is interpreted consistently in expressions and display, including typedef/qualified fields and dereferences. Casts truncate/reinterpret to the target width before further operations. Computed scalar results retain their sign/high word within the supported 32-bit range; wider scalar results are rejected rather than silently truncated. Full C mixed signed/unsigned promotion rules remain outside this initial correction.
 

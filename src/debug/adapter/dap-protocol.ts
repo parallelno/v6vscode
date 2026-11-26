@@ -11,6 +11,7 @@ export interface DapArguments {
     count?: number;
     granularity?: string;
     expression?: string;
+    hoverTarget?: import('../values/asm-hover').AsmHoverTarget;
     context?: string;
     name?: string;
     terminateDebuggee?: boolean;

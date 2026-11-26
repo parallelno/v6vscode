@@ -1,6 +1,8 @@
 import * as assert from 'assert';
 import { V6DebugAdapter } from '../../../src/debug/adapter/v6-debug-adapter';
 import { ASSEMBLER_HOVER_CONTEXT } from '../../../src/debug/values/evaluation-context';
+import { ASM_HOVER_REQUEST, AsmHoverTarget, instructionByteCount } from '../../../src/debug/values/asm-hover';
+import { IpcCommand } from '../../../src/emulator/protocol/ipc-commands';
 import { TypeInfo } from '../../../src/debug/metadata/dwarf-types';
 import { STT_FUNC } from '../../../src/debug/metadata/elf32-reader';
 
@@ -124,6 +126,68 @@ describe('Unified debugger value presentation', () => {
             }
         }
         assert.deepStrictEqual(reads, []);
+    });
+
+    it('shows mapped memory for M, every register pair, and code and data labels during a selected stop', async () => {
+        const { state, request } = makeAdapter();
+        state.execution.state = 'paused';
+        const byteReads: number[] = [];
+        state.client = { send: async (command: IpcCommand, { addr }: { addr: number }) => {
+            assert.strictEqual(command, IpcCommand.GET_BYTE_RAM);
+            byteReads.push(addr);
+            return { ok: true, data: { data: addr === 0x422 ? 0xC9 : addr === 0x1000 ? 0 : 0x42 } };
+        } };
+        const hover = async (hoverTarget: AsmHoverTarget) => {
+            const response = await request(ASM_HOVER_REQUEST, { hoverTarget, frameId: 100 });
+            assert.strictEqual(response.success, true, response.message);
+            return response.body.rows.map((row: { value: number }) => row.value);
+        };
+        assert.deepStrictEqual(await hover({ kind: 'register', name: 'M' }), [0x1000, 0]);
+        for (const [name, value] of Object.entries({ A: 16, F: 2, B: 0, C: 0, D: 0, E: 0, H: 16, L: 0 })) {
+            assert.deepStrictEqual(await hover({ kind: 'register', name }), [value]);
+        }
+        for (const [name, value] of Object.entries({ AF: 0x1002, BC: 0, DE: 0, HL: 0x1000, SP: 0x8000, PC: 0x100 })) {
+            assert.deepStrictEqual(await hover({ kind: 'register', name }), [value, value === 0x1000 ? 0 : 0x42]);
+        }
+        assert.deepStrictEqual(await hover({ kind: 'symbol', name: 'set_timer' }), [0x422, 0xC9]);
+        assert.deepStrictEqual(await hover({ kind: 'symbol', name: 'instance' }), [0x1000, 0]);
+        assert.deepStrictEqual(await hover({ kind: 'symbol', name: 'instance.ptr' }), [0x1001, 65535]);
+        assert.deepStrictEqual(await hover({ kind: 'symbol', name: 'Record.ptr' }), [1]);
+        assert.ok(!byteReads.includes(1), 'absolute constants are not dereferenced');
+        state.client.send = async () => ({ ok: false });
+        assert.deepStrictEqual(await hover({ kind: 'symbol', name: 'set_timer' }), [0x422, undefined]);
+        state.client.send = async () => {
+            state.stoppedGeneration++;
+            return { ok: true, data: { data: 0xC9 } };
+        };
+        const stale = await request(ASM_HOVER_REQUEST, { hoverTarget: { kind: 'symbol', name: 'set_timer' } });
+        assert.strictEqual(stale.success, false);
+        assert.match(stale.message, /inactive stop/);
+        state.execution.state = 'running';
+        assert.strictEqual((await request(ASM_HOVER_REQUEST, { hoverTarget: { kind: 'register', name: 'M' } })).success, false);
+    });
+
+    it('uses exact source rows and the live opcode to display operand bytes in order', async () => {
+        const { state, request } = makeAdapter();
+        state.execution.state = 'paused';
+        state.debugIndex.resolveBreakpointAll = (_file: string, line: number) => line === 5
+            ? [{ address: 0x100 }, { address: 0x105 }] : [];
+        let data = 0x1234CD;
+        state.client = { send: async (command: IpcCommand, args: { addr: number }) => {
+            assert.strictEqual(command, IpcCommand.GET_THREE_BYTES_RAM);
+            assert.strictEqual(args.addr, 0x100);
+            return { ok: true, data: { data } };
+        } };
+        const hover = (line: number) => request(ASM_HOVER_REQUEST, { hoverTarget: { kind: 'instruction', file: 'main.asm', line } });
+        assert.deepStrictEqual((await hover(4)).body.rows, []);
+        assert.deepStrictEqual((await hover(5)).body.rows.map((row: { value: number }) => row.value), [0x100, 0xCD, 0x34, 0x12]);
+        data = 0x1234C9;
+        assert.deepStrictEqual((await hover(5)).body.rows[2], { label: 'Operand bytes', note: 'none' });
+        assert.strictEqual(instructionByteCount(0x36), 2);
+        assert.strictEqual(instructionByteCount(0xDB), 2);
+        assert.strictEqual(instructionByteCount(0xFD), 3);
+        state.cachedRegs.pc = 0x108;
+        assert.deepStrictEqual((await hover(5)).body.rows, []);
     });
 
     it('declines only competing native ASM hovers, retaining C and language-owned hovers', async () => {

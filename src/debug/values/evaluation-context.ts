@@ -1,4 +1,4 @@
-/** Language-owned ASM hovers use the same evaluator, but not the native debug widget. */
+/** Retained for clients that request typed expression evaluation in an ASM hover context. */
 export const ASSEMBLER_HOVER_CONTEXT = 'v6-asm-hover';
 
 export function isHoverEvaluation(context: unknown): boolean {
@@ -6,5 +6,5 @@ export function isHoverEvaluation(context: unknown): boolean {
 }
 
 export function isAssemblerSource(file: string): boolean {
-    return /\.(?:asm|s)$/i.test(file);
+    return /\.(?:asm|s|inc)$/i.test(file);
 }
