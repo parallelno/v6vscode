@@ -131,6 +131,7 @@ export const enum IpcCommand {
     DEBUG_TRACE_LOG_WINDOW = 104,
     DEBUG_HISTORY_CALLER = 111,
     DEBUG_HISTORY_SUCCESSOR = 112,
+    DEBUG_ACTIVE_CALLS = 113,
     DEBUG_SCRIPT_EDIT = 105,
     DEBUG_SCRIPT_COMPILE = 106,
     DEBUG_SCRIPT_RUN_ONCE = 107,
@@ -261,6 +262,7 @@ export interface ServerCapabilities {
     runningHardwareMutations?: boolean;
     traceLogSchema?: number;
     functionHistorySchema?: number;
+    activeCallStackSchema?: number;
     traceLogFilter?: boolean;
     traceLogWindowQuery?: boolean;
     traceLogLimits?: {

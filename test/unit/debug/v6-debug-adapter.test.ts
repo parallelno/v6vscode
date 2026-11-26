@@ -6,6 +6,33 @@ import { IpcCommand } from '../../../src/emulator/protocol/ipc-commands';
 import { loadDebugArtifact } from '../../../src/debug/metadata/debug-artifact-loader';
 
 describe('V6DebugAdapter', () => {
+    it('queries active ASM calls even without vendor function regions', async () => {
+        const info = { commands: [IpcCommand.DEBUG_ACTIVE_CALLS], capabilities: { activeCallStackSchema: 1 } };
+        const adapter = new V6DebugAdapter({ serverInfo: info } as any, {} as any,
+            { debug() {}, error() {} } as any, {} as any, () => ({} as any));
+        const state = adapter as any;
+        const source = { file: 'main.asm', line: 10, column: 1 };
+        state.stopContext = { pc: 0x200, sp: 0x7FFE, topRegisters: {} };
+        state.debugIndex = { resolveAddress: () => source, resolveAddressRows: () => [], symbolAtAddress: (pc: number) => ({
+            name: pc === 0x200 ? 'plain_function' : 'main', type: 2,
+        }) };
+        state.debugMetadata = { asmFunctions: { at: () => undefined }, physicalSubprogramAt: () => undefined, inlineChainAt: () => [] };
+        let reads = 0;
+        state.client = { send: async (command: IpcCommand) => {
+            assert.strictEqual(command, IpcCommand.DEBUG_ACTIVE_CALLS);
+            reads++;
+            return { ok: true, data: { frames: [{ callerPc: 0x105, entryPc: 0x200, returnPc: 0x108 }] } };
+        } };
+        const responses: any[] = [];
+        adapter.onDidSendMessage(message => responses.push(message));
+        await sendRequest(adapter, { seq: 1, command: 'stackTrace' });
+        await sendRequest(adapter, { seq: 2, command: 'stackTrace' });
+        assert.strictEqual(responses[0].success, true, responses[0].message);
+        assert.strictEqual(reads, 1);
+        assert.deepStrictEqual(responses[0].body.stackFrames.map((frame: any) => frame.name), ['plain_function', 'main']);
+        assert.strictEqual(state.stackTraceService.page(0, 1).frames[0].historyReturnPc, 0x108);
+    });
+
     it('formats byte and word register evaluations at their native widths', async () => {
         const adapter = new V6DebugAdapter(
             {} as any,

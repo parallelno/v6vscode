@@ -1,11 +1,26 @@
 import { AsmFunctionIndex, AsmFunctionRegion } from '../metadata/asm-function-index';
-import { FunctionHistoryClient, HistoryPosition } from '../session/function-history-client';
+import { ActiveCall, FunctionHistoryClient, HistoryPosition } from '../session/function-history-client';
 
 export interface FunctionHistoryFrame {
     region?: AsmFunctionRegion;
     pc: number;
     name?: string;
     caller?: HistoryPosition;
+    returnPc?: number;
+}
+
+/** Each record is an activation, so recursion and unannotated callers are preserved. */
+export function activeFunctionChain(index: AsmFunctionIndex | undefined, calls: readonly ActiveCall[], pc: number,
+    resolveName: (pc: number) => string | undefined): FunctionHistoryFrame[] {
+    const chain: FunctionHistoryFrame[] = [];
+    for (const call of calls) {
+        const region = index?.at(pc);
+        const entry = region?.entries.find(candidate => candidate.address === call.entryPc);
+        chain.push({ pc, region, name: entry?.name ?? resolveName(pc) ?? resolveName(call.entryPc), returnPc: call.returnPc });
+        pc = call.callerPc;
+    }
+    chain.push({ pc, region: index?.at(pc), name: resolveName(pc) });
+    return chain;
 }
 
 /** Collect raw region occurrences, then erase completed excursions by identity. */

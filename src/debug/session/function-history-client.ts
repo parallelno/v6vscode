@@ -2,6 +2,7 @@ import { CommandSender } from '../../emulator/session/session-operations';
 import { IpcCommand } from '../../emulator/protocol/ipc-commands';
 
 export interface HistoryPosition { callerCursor: number; historyGeneration: number }
+export interface ActiveCall { callerPc: number; entryPc: number; returnPc: number }
 export type CallerResult = { status: 'historyEnd'; historyGeneration: number }
     | ({ status: 'found'; callerPc: number; entrancePc: number } & HistoryPosition);
 
@@ -11,6 +12,16 @@ function integer(value: unknown, max: number): value is number {
 
 export class FunctionHistoryClient {
     constructor(private readonly client: CommandSender) {}
+
+    async activeCalls(): Promise<ActiveCall[]> {
+        const response = await this.client.send<{ frames: ActiveCall[] }>(IpcCommand.DEBUG_ACTIVE_CALLS);
+        if (!response.ok || !Array.isArray(response.data?.frames) || response.data.frames.length > 256
+            || response.data.frames.some(frame => !integer(frame?.callerPc, 0xFFFF)
+                || !integer(frame?.entryPc, 0xFFFF) || !integer(frame?.returnPc, 0xFFFF))) {
+            throw new Error(response.error ?? 'Invalid active call stack response');
+        }
+        return response.data.frames;
+    }
 
     async caller(start: number, end: number, position?: HistoryPosition): Promise<CallerResult> {
         const response = await this.client.send<CallerResult>(IpcCommand.DEBUG_HISTORY_CALLER,

@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { reconstructFunctionChain } from '../../../src/debug/adapter/function-call-chain-service';
+import { activeFunctionChain, reconstructFunctionChain } from '../../../src/debug/adapter/function-call-chain-service';
 import { AsmFunctionIndex } from '../../../src/debug/metadata/asm-function-index';
 import { DW_AT, DW_FORM } from '../../../src/debug/metadata/dwarf-reader';
 import { FunctionHistoryClient } from '../../../src/debug/session/function-history-client';
@@ -19,6 +19,17 @@ function index(): AsmFunctionIndex {
 }
 
 describe('assembly function history', () => {
+    it('keeps recursive activations and follows callers without assembler regions', () => {
+        const calls = [{ callerPc: 0x205, entryPc: 0x200, returnPc: 0x208 },
+            { callerPc: 0x105, entryPc: 0x200, returnPc: 0x108 },
+            { callerPc: 0x80, entryPc: 0x100, returnPc: 0x83 }];
+        const names = new Map([[0x105, 'plain_label'], [0x80, 'main']]);
+        assert.deepStrictEqual(activeFunctionChain(index(), calls, 0x203, pc => names.get(pc))
+            .map(frame => [frame.name, frame.pc, frame.returnPc]), [
+            ['A', 0x203, 0x208], ['A', 0x205, 0x108], ['plain_label', 0x105, 0x83], ['main', 0x80, undefined],
+        ]);
+    });
+
     it('decodes real ROM and linked GC artifacts and filters the discarded optional region', async () => {
         for (const name of ['functions', 'functions-linked']) {
             const root = path.resolve(__dirname, '..', '..', 'fixtures', 'asmdbg');

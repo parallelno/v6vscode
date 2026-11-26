@@ -43,7 +43,8 @@ import { memoryCapabilities } from '../../emulator/memory/memory-backend';
 import { LogicalLocationIndex } from './logical-location-index';
 import { SourceStepService, SourceStepState } from './source-step-service';
 import { FunctionHistoryClient } from '../session/function-history-client';
-import { reconstructFunctionChain } from './function-call-chain-service';
+import { activeFunctionChain, reconstructFunctionChain } from './function-call-chain-service';
+import { STT_FUNC } from '../metadata/elf32-reader';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -436,21 +437,42 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     private async onStackTrace(req: DapRequest): Promise<void> {
         if (this.stopContext) {
             const info = this.lifecycle.serverInfo;
-            const region = this.debugMetadata?.asmFunctions?.at(this.stopContext.pc);
-            if (region && this.client && info?.capabilities.functionHistorySchema === 1
+            const context = this.stopContext;
+            const functions = this.debugMetadata?.asmFunctions;
+            const region = functions?.at(context.pc);
+            const source = this.debugIndex?.resolveAddress(context.pc);
+            const activeCalls = info?.capabilities.activeCallStackSchema === 1 && info.commands.includes(IpcCommand.DEBUG_ACTIVE_CALLS)
+                && (region || (source ? isAssemblerSource(source.file)
+                    : !this.debugMetadata?.physicalSubprogramAt(context.pc) && this.debugIndex?.sourceFiles.some(isAssemblerSource)));
+            const legacyHistory = region && info?.capabilities.functionHistorySchema === 1
                 && info.commands.includes(IpcCommand.DEBUG_HISTORY_CALLER)
-                && info.commands.includes(IpcCommand.DEBUG_HISTORY_SUCCESSOR)) {
-                const generation = this.stoppedGeneration;
-                const context = this.stopContext;
+                && info.commands.includes(IpcCommand.DEBUG_HISTORY_SUCCESSOR);
+            const generation = this.stoppedGeneration;
+            const unwind = () => this.stackTraceService.capture(generation, context,
+                pc => this.debugMetadata?.physicalSubprogramAt(pc)?.name ?? this.debugIndex?.symbolAtAddress(pc)?.name,
+                pc => this.resolveInlineFrameNames(pc), frame => this.resolveFrameDisplayPc(frame));
+            if (this.client && (activeCalls || legacyHistory)) {
                 if (this.historyCapture?.generation !== generation) {
-                    const result = reconstructFunctionChain(this.debugMetadata!.asmFunctions,
-                        new FunctionHistoryClient(this.client), context.pc, () => {
-                            if (generation !== this.stoppedGeneration) { throw new Error('Inactive caller history'); }
-                        }).then(chain => {
+                    const history = new FunctionHistoryClient(this.client);
+                    const assertCurrent = () => {
+                        this.sessionLease?.assertCurrent();
                         if (generation !== this.stoppedGeneration) { throw new Error('Inactive caller history'); }
+                    };
+                    const resolveName = (pc: number) => this.debugMetadata?.physicalSubprogramAt(pc)?.name
+                        ?? this.debugIndex?.symbolAtAddress(pc)?.name;
+                    const result = (activeCalls ? history.activeCalls().then(calls => activeFunctionChain(functions, calls,
+                        context.pc, pc => {
+                            const symbol = this.debugIndex?.symbolAtAddress(pc);
+                            return symbol?.type === STT_FUNC ? symbol.name : this.debugMetadata?.physicalSubprogramAt(pc)?.name;
+                        })) : reconstructFunctionChain(functions!, history, context.pc, assertCurrent)).then(chain => {
+                        assertCurrent();
                         this.stackTraceService.captureHistory(generation, chain,
                             { index: 0, pc: context.pc, sp: context.sp, registers: context.topRegisters },
-                            pc => this.resolveInlineFrameNames(pc), pc => this.debugIndex?.symbolAtAddress(pc)?.name);
+                            pc => this.resolveInlineFrameNames(pc), resolveName);
+                    }).catch(error => {
+                        assertCurrent();
+                        this.logger.debug(`v6-debug: caller history unavailable: ${String(error)}`);
+                        return unwind();
                     });
                     this.historyCapture = { generation, result };
                     void result.catch(() => {
@@ -459,13 +481,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                 }
                 await this.historyCapture.result;
             } else {
-                await this.stackTraceService.capture(
-                    this.stoppedGeneration,
-                    this.stopContext,
-                    pc => this.debugMetadata?.physicalSubprogramAt(pc)?.name ?? this.debugIndex?.symbolAtAddress(pc)?.name,
-                    pc => this.resolveInlineFrameNames(pc),
-                    frame => this.resolveFrameDisplayPc(frame),
-                );
+                await unwind();
             }
             const page = this.stackTraceService.page(req.arguments?.startFrame, req.arguments?.levels);
             this.sendResponseBody(req, {
@@ -849,16 +865,17 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             await this.run();
             return;
         }
-        if (frame?.physicalFrame?.returnPc === undefined) {
+        const returnPc = frame?.historyReturnPc ?? frame?.physicalFrame?.returnPc;
+        if (returnPc === undefined) {
             this.sendResponse(req, false, 'Selected frame has no verified caller');
             return;
         }
         await this.cancelSourceStep();
-        if (!await this.breakpoints.acquireTemporary(frame.physicalFrame.returnPc)) {
+        if (!await this.breakpoints.acquireTemporary(returnPc)) {
             this.sendResponse(req, false, this.breakpoints.temporaryError ?? 'Unable to set the temporary step-out breakpoint');
             return;
         }
-        this.sourceStepAddresses = [frame.physicalFrame.returnPc];
+        this.sourceStepAddresses = [returnPc];
         this.execution.pendingStep = true;
         this.sendResponseBody(req, {});
         await this.run();

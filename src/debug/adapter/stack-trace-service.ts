@@ -9,6 +9,7 @@ export interface DapFrameContext {
     physicalFrame?: PhysicalFrame;
     historyFrame?: boolean;
     historyCaller?: HistoryPosition;
+    historyReturnPc?: number;
     inlineDieIdentity?: number;
     /** Exact execution address; callers retain the verified return address. */
     instructionPc: number;
@@ -40,7 +41,7 @@ export class StackTraceService {
         const frames: DapFrameContext[] = [];
         for (const [index, frame] of chain.entries()) {
             const base = { historyFrame: true, physicalFrame: index === 0 ? top : undefined,
-                instructionPc: frame.pc, displayPc: frame.pc, historyCaller: frame.caller };
+                instructionPc: frame.pc, displayPc: frame.pc, historyCaller: frame.caller, historyReturnPc: frame.returnPc };
             for (const inline of inlineNames(frame.pc)) {
                 frames.push({ ...base, id: generation * 1_000 + frames.length + 1,
                     inlineDieIdentity: inline.id, name: inline.name, source: inline.source });
