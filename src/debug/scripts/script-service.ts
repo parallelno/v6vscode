@@ -28,12 +28,28 @@ export class ScriptService extends EventEmitter {
     constructor(
         private readonly lifecycle: SessionCoordinator,
         private readonly client: IpcClient,
+        private readonly saveSetup?: (projectPath: string, scripts: readonly ScriptInput[]) => Promise<void>,
     ) {
         super();
         this.stateListener = () => {
             if (!this.lifecycle.connected) { this.reset(); }
         };
         this.lifecycle.on('stateChange', this.stateListener);
+    }
+
+    static async restoreSetup(client: Pick<IpcClient, 'send'> & { readonly connected: boolean }, info: GetServerInfoResponse, scripts: readonly ScriptInput[], report: (message: string) => void): Promise<void> {
+        if (!scripts.length) { return; }
+        try { validateScriptServer(info); } catch {
+            report('The emulator does not support restoring saved scripts.');
+            return;
+        }
+        const limits = info.capabilities.scriptLimits!;
+        if (scripts.length > limits.maxRecords) { report(`Only the first ${limits.maxRecords} saved scripts can be restored.`); }
+        for (const entry of scripts.slice(0, limits.maxRecords)) {
+            if (!client.connected) { return; }
+            try { await addScript(client, { ...entry, path: entry.path.replace(/\\/g, '/') }, limits); }
+            catch (error) { report(`Could not restore ${entry.name}: ${error instanceof Error ? error.message : String(error)}`); }
+        }
     }
 
     get snapshot(): readonly ScriptSnapshot[] { return this.entries; }
@@ -73,15 +89,10 @@ export class ScriptService extends EventEmitter {
 
     add(input: ScriptInput): Promise<ScriptSnapshot> {
         return this.mutate(false, async () => {
-            const request = this.validate(input);
-            const response = await this.client.send<unknown>(IpcCommand.DEBUG_SCRIPT_ADD, request, 5000, 'high');
-            const result = decodeScriptMutationResponse(
-                this.responseData(response, 'Unable to add script'), this.limits(),
-            );
-            if (!matches(result.script, request)) { throw new Error('Added script does not match the acknowledged input'); }
+            const result = await addScript(this.client, input, this.limits());
             this.applyMutation(result.script, result.updates);
             return result.script;
-        });
+        }, true);
     }
 
     edit(scriptId: number, input: ScriptInput): Promise<ScriptSnapshot> {
@@ -100,7 +111,7 @@ export class ScriptService extends EventEmitter {
             this.applyMutation(result.script, result.updates);
             if (previous.active && !result.script.active) { this.emit('overlayRemove', scriptId); }
             return result.script;
-        });
+        }, true);
     }
 
     setActivity(scriptId: number, active: boolean): Promise<ScriptSnapshot> {
@@ -123,7 +134,7 @@ export class ScriptService extends EventEmitter {
             this.applyMutation(result.script, result.updates);
             this.emit('overlayRemove', scriptId);
             return result.script;
-        });
+        }, true);
     }
 
     compile(scriptId: number): Promise<ScriptSnapshot> {
@@ -168,7 +179,7 @@ export class ScriptService extends EventEmitter {
             await this.refreshNow();
             for (const scriptId of activeScriptIds) { this.emit('overlayRemove', scriptId); }
             return disabled;
-        });
+        }, true);
     }
 
     delete(scriptId: number): Promise<void> {
@@ -178,7 +189,7 @@ export class ScriptService extends EventEmitter {
             await this.refreshNow();
             if (this.find(scriptId)) { throw new Error(`Script ${scriptId} was not deleted`); }
             this.emit('overlayRemove', scriptId);
-        });
+        }, true);
     }
 
     deleteAll(): Promise<void> {
@@ -187,7 +198,7 @@ export class ScriptService extends EventEmitter {
             await this.refreshNow();
             if (this.entries.length) { throw new Error('Not all scripts were deleted'); }
             this.emit('overlayClear');
-        });
+        }, true);
     }
 
     dispose(): void {
@@ -209,8 +220,11 @@ export class ScriptService extends EventEmitter {
         return this.entries;
     }
 
-    private mutate<T>(runOnce: boolean, operation: () => Promise<T>): Promise<T> {
+    private mutate<T>(runOnce: boolean, operation: () => Promise<T>, persist = false): Promise<T> {
+        const generation = this.generation;
+        const project = this.lifecycle.sessionProject;
         return this.enqueue(async () => {
+            if (generation !== this.generation) { throw new Error('The script session has changed'); }
             const info = this.requireAvailable();
             const allowed = runOnce
                 ? info.capabilities.scriptRunOnceWhileRunning
@@ -218,10 +232,26 @@ export class ScriptService extends EventEmitter {
             if (this.lifecycle.running && allowed !== true) {
                 throw new Error(`The active emulator does not allow script ${runOnce ? 'execution' : 'changes'} while running`);
             }
-            try { return await operation(); } catch (error) {
-                try { await this.refreshNow(); } catch { /* Preserve the operation failure. */ }
+            let result: T;
+            try {
+                // The panel may be opened while the restored collection is still being fetched.
+                if (persist && project && this.saveSetup && this.revision === undefined) { await this.refreshNow(); }
+                result = await operation();
+            } catch (error) {
+                if (generation === this.generation) {
+                    try { await this.refreshNow(); } catch { /* Preserve the operation failure. */ }
+                }
                 throw error;
             }
+            if (generation !== this.generation) { throw new Error('The script session has changed'); }
+            if (persist && project && this.saveSetup) {
+                try {
+                    await this.saveSetup(project.projectPath, this.entries.map(({ name, path, active }) => ({ name, path, active })));
+                } catch (error) {
+                    throw Object.assign(new Error(`Script change applied, but the project setup could not be saved: ${error instanceof Error ? error.message : String(error)}`), { cause: error });
+                }
+            }
+            return result;
         });
     }
 
@@ -293,6 +323,15 @@ export class ScriptService extends EventEmitter {
         this.emit('sessionReset');
         this.emit('change', this.entries);
     }
+}
+
+async function addScript(client: Pick<IpcClient, 'send'>, input: ScriptInput, limits: ScriptLimits) {
+    const request = validateScriptInput(input, limits);
+    const response = await client.send<unknown>(IpcCommand.DEBUG_SCRIPT_ADD, request, 5000, 'high');
+    if (!response.ok || response.data === undefined) { throw new Error(protocolError(response, 'Unable to add script')); }
+    const result = decodeScriptMutationResponse(response.data, limits);
+    if (!matches(result.script, request)) { throw new Error('Added script does not match the acknowledged input'); }
+    return result;
 }
 
 function inputFrom(entry: ScriptSnapshot, changes: Partial<ScriptInput>): ScriptInput {

@@ -31,7 +31,8 @@ export class RunProjectCommand {
         try {
             this.validateExecutable(project);
 
-            if (this.lifecycle.running) {
+            if (this.lifecycle.running && this.lifecycle.sessionProject?.projectPath === project.uri.fsPath
+                && this.lifecycle.sessionProject.executable === project.run.executable) {
                 // Emulator already running — reload executable without restart
                 await this.lifecycle.reloadRunProgram(project);
             } else {

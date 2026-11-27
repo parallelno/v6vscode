@@ -1,9 +1,14 @@
 import { ScriptInput, ScriptSnapshot } from '../../emulator/protocol/debug-models';
+import type { ScriptHelpItem } from '../scripts/script-help';
+
+export type ScriptHelpPreview = Omit<ScriptHelpItem, 'code'>;
 
 export type ScriptField = 'compilation' | 'activity' | 'name' | 'path';
 
 export type ScriptsWebviewMessage =
     | { type: 'ready' }
+    | { type: 'openHelp' }
+    | { type: 'useHelpItem'; generation: number; catalog: 'examples' | 'intrinsics'; id: string }
     | { type: 'refresh'; generation: number }
     | { type: 'add'; generation: number; input: ScriptInput }
     | { type: 'edit'; generation: number; scriptId: number; input: ScriptInput }
@@ -27,6 +32,8 @@ export type ScriptsHostMessage =
     }
     | { type: 'snapshot'; generation: number; entries: readonly ScriptSnapshot[]; maxNameBytes: number; maxPathBytes: number }
     | { type: 'operation'; operation: string; ok: boolean; message: string; field?: 'name' | 'path' }
+    | { type: 'helpCatalogs'; examples: readonly ScriptHelpPreview[]; intrinsics: readonly ScriptHelpPreview[] }
+    | { type: 'helpNotice'; message: string }
     | { type: 'beginAdd' }
     | { type: 'dismissMenus' }
     | { type: 'restoredQuery'; value: string };

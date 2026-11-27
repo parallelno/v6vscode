@@ -5,6 +5,31 @@ import { ProjectRepository } from '../../../src/project/persistence/project-repo
 import { V6Project } from '../../../src/project/model/v6-project';
 
 describe('ProjectRepository', () => {
+    it('round-trips script setup and merges overlapping run-setting updates', async () => {
+        const projectDir = path.resolve('demo');
+        const uri = vscode.Uri.file(path.join(projectDir, 'demo.project.json'));
+        const source = path.join(projectDir, 'out', 'sample.lua');
+        let text = JSON.stringify({ name: 'demo', run: { executable: 'out/demo.rom' } });
+        const workspace = vscode.workspace as unknown as { fs: unknown };
+        const originalFs = workspace.fs;
+        workspace.fs = {
+            readFile: async () => Buffer.from(text),
+            writeFile: async (_uri: vscode.Uri, bytes: Uint8Array) => { text = Buffer.from(bytes).toString(); },
+        };
+        try {
+            const repository = new ProjectRepository({ info: () => {} } as any);
+            await Promise.all([
+                repository.updateRun(uri, { scripts: [{ name: 'Sample', path: source, active: false }] }),
+                repository.updateRun(uri, { speed: '200%' }),
+            ]);
+            expect(JSON.parse(text).run.scripts).to.deep.equal([{ name: 'Sample', path: 'out/sample.lua', active: false }]);
+            expect((await repository.load(uri)).run).to.include({ speed: '200%' });
+            expect((await repository.load(uri)).run.scripts).to.deep.equal([{ name: 'Sample', path: source, active: false }]);
+            await repository.updateRun(uri, { scripts: [] });
+            expect((await repository.load(uri)).run.scripts).to.deep.equal([]);
+        } finally { workspace.fs = originalFs; }
+    });
+
     it('should save debug artifact, emulator speed, and display mode', async () => {
         let savedUri: vscode.Uri | undefined;
         let savedText = '';

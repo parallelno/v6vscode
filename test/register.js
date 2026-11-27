@@ -70,6 +70,10 @@ const mockVscode = {
             writeFile: async () => {},
         },
     },
+    env: {
+        clipboard: { writeText: async () => {} },
+        openExternal: async () => true,
+    },
     window: {
         visibleTextEditors: [],
         tabGroups: { all: [] },

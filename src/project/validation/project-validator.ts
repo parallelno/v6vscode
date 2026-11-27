@@ -1,4 +1,6 @@
 import { DEFAULT_RUN_SETTINGS, VIEW_MODES, SPEED_VALUES, LOAD_ADDRESS_PATTERN } from '../../shared/emulator-settings';
+import type { ProjectScript } from '../model/v6-project';
+
 export interface ValidationError {
     path: string;
     message: string;
@@ -9,6 +11,7 @@ export type ValidationResult =
     | { ok: false; errors: ValidationError[] };
 
 interface ValidatedRun {
+    scripts?: readonly ProjectScript[];
     executable: string;
     debugArtifact?: string;
     loadAddr: string;
@@ -45,6 +48,7 @@ export function validate(data: unknown): ValidationResult {
         errors.push({ path: 'name', message: '"name" must not be empty.' });
     }
 
+    let scripts: ProjectScript[] | undefined;
     // run
     if (!('run' in obj)) {
         errors.push({ path: 'run', message: 'Required property "run" is missing.' });
@@ -52,7 +56,26 @@ export function validate(data: unknown): ValidationResult {
         errors.push({ path: 'run', message: '"run" must be an object.' });
     } else {
         const run = obj.run as Record<string, unknown>;
-        const knownRunKeys = new Set(['executable', 'debugArtifact', 'loadAddr', 'fddReadOnly', 'speed', 'viewMode']);
+        const knownRunKeys = new Set(['executable', 'debugArtifact', 'loadAddr', 'fddReadOnly', 'speed', 'viewMode', 'scripts']);
+        if ('scripts' in run) {
+            if (!Array.isArray(run.scripts)) {
+                errors.push({ path: 'run.scripts', message: 'Expected an array.' });
+            } else {
+                scripts = [];
+                for (const [index, value] of run.scripts.entries()) {
+                    const entry = value as Partial<ProjectScript> | null;
+                    if (!entry || typeof entry !== 'object' || Array.isArray(entry)
+                        || Object.keys(entry).some(key => !['name', 'path', 'active'].includes(key))
+                        || typeof entry.name !== 'string' || !entry.name || entry.name.includes('\0')
+                        || typeof entry.path !== 'string' || !entry.path || entry.path.includes('\0')
+                        || typeof entry.active !== 'boolean') {
+                        errors.push({ path: `run.scripts[${index}]`, message: 'Expected a non-empty name and path and a boolean active flag.' });
+                    } else {
+                        scripts.push({ name: entry.name, path: entry.path, active: entry.active });
+                    }
+                }
+            }
+        }
         for (const key of Object.keys(run)) {
             if (!knownRunKeys.has(key)) {
                 errors.push({ path: `run.${key}`, message: `Unknown property "run.${key}".` });
@@ -113,6 +136,7 @@ export function validate(data: unknown): ValidationResult {
             fddReadOnly: typeof run.fddReadOnly === 'boolean' ? run.fddReadOnly : DEFAULT_RUN_SETTINGS.fddReadOnly,
             speed: typeof run.speed === 'string' ? run.speed : DEFAULT_RUN_SETTINGS.speed,
             viewMode: typeof run.viewMode === 'string' ? run.viewMode : DEFAULT_RUN_SETTINGS.viewMode,
+            ...(scripts && { scripts }),
         },
     };
 }

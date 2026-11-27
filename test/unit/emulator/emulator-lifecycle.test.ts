@@ -99,8 +99,10 @@ describe('SessionCoordinator session ownership', () => {
         expect(lifecycle.serverInfo).to.equal(undefined);
     });
 
-    it('starts a debug server without loading the program', async () => {
+    it('restores the launching project while paused, before making the debug session available', async () => {
         let launchRequest: any;
+        const commands: IpcCommand[] = [];
+        const restored: unknown[] = [];
         const serverInfo = {
             protocolVersion: 2,
             emulatorVersion: 'test-build',
@@ -125,9 +127,10 @@ describe('SessionCoordinator session ownership', () => {
             connected: true,
             connect: async () => {},
             disconnect: () => {},
-            send: async (command: IpcCommand) => command === IpcCommand.GET_SERVER_INFO
-                ? { ok: true, data: serverInfo }
-                : { ok: true },
+            send: async (command: IpcCommand) => {
+                commands.push(command);
+                return command === IpcCommand.GET_SERVER_INFO ? { ok: true, data: serverInfo } : { ok: true };
+            },
         };
         const lifecycle = new SessionCoordinator(
             { resolve: () => 'v6emul' } as any,
@@ -143,13 +146,22 @@ describe('SessionCoordinator session ownership', () => {
             client as any,
             { info: () => {}, error: () => {}, debug: () => {} } as any,
             {} as any,
+            async (project, lease) => {
+                expect(lifecycle.connected).to.equal(false);
+                expect(commands.at(-1)).to.equal(IpcCommand.STOP);
+                lease.assertCurrent();
+                restored.push(project);
+            },
         );
         (lifecycle as any).findFreePort = async () => 4321;
 
         await lifecycle.startDebug({
             program: 'test.rom',
+            projectPath: 'C:/demo/demo.project.json',
             loadAddr: '0x100',
         });
+        expect(restored).to.deep.equal([{ projectPath: 'C:/demo/demo.project.json', executable: 'test.rom' }]);
+        expect(lifecycle.sessionProject).to.equal(restored[0]);
 
         expect(launchRequest).to.include({
             emulatorPath: 'v6emul',

@@ -19,6 +19,7 @@ export interface DapArguments {
     debugArtifact?: string;
     /** Internal context supplied by project configuration, not a launch override. */
     __v6SourceRoot?: string;
+    __v6ProjectPath?: string;
     loadAddress?: string;
     speed?: string;
     fddReadOnly?: boolean;

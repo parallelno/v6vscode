@@ -84,6 +84,7 @@ export class V6DebugConfigurationProvider implements vscode.DebugConfigurationPr
             config.program = run.executable;
             // Internal launch context, captured from the same project as the program/artifact.
             config.__v6SourceRoot = projectSourceRoot(project);
+            config.__v6ProjectPath = project.uri.fsPath;
             config.loadAddress = run.loadAddr;
             config.speed = run.speed;
             config.fddReadOnly = run.fddReadOnly;

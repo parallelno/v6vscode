@@ -126,7 +126,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
     const launcher = new V6emulLauncher(processRunner, logger, serverOutput);
     const ipcClient = new IpcClient(logger);
-    const lifecycle = new SessionCoordinator(locator, launcher, ipcClient, logger, pathService);
+    const lifecycle = new SessionCoordinator(locator, launcher, ipcClient, logger, pathService, async (target, session, info) => {
+        if (!vscode.workspace.isTrusted) { return; }
+        const warnings: string[] = [];
+        try {
+            const project = await projectRepository.loadLatest(vscode.Uri.file(target.projectPath));
+            session.assertCurrent();
+            await ScriptService.restoreSetup(session, info, project.run.scripts ?? [], message => warnings.push(message));
+        } catch (error) {
+            warnings.push(error instanceof Error ? error.message : String(error));
+        }
+        session.assertCurrent();
+        if (warnings.length) {
+            logger.warn(`Script restore: ${warnings.join('; ')}`);
+            void vscode.window.showWarningMessage(`V6: ${warnings[0]} See the v6vscode Output channel for details.`);
+        }
+    });
     shutdownExtension = async () => {
         try { await lifecycle.shutdown(); }
         finally { store.dispose(); }
@@ -139,9 +154,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         lifecycle,
         ipcClient,
         loadActiveProject,
-        project => projectRepository.save(project),
+        (project, patch) => projectRepository.updateRun(project.uri, patch),
     ));
-    const scriptService = store.add(new ScriptService(lifecycle, ipcClient));
+    const scriptService = store.add(new ScriptService(lifecycle, ipcClient,
+        (projectPath, scripts) => projectRepository.updateRun(vscode.Uri.file(projectPath), { scripts }),
+    ));
     const scriptOverlays = store.add(new ScriptOverlayService(lifecycle, ipcClient, scriptService));
     const emulatorPanel = store.add(new EmulatorPanel(
         context.extensionUri,

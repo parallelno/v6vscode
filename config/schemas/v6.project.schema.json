@@ -19,6 +19,20 @@
           "minLength": 1,
           "description": "Path to the ROM or FDD image to load."
         },
+        "scripts": {
+          "type": "array",
+          "description": "Lua script entries restored in a new emulator session. Relative paths are resolved from this project file.",
+          "items": {
+            "type": "object",
+            "required": ["name", "path", "active"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "path": { "type": "string", "minLength": 1 },
+              "active": { "type": "boolean" }
+            },
+            "additionalProperties": false
+          }
+        },
         "debugArtifact": {
           "type": "string",
           "minLength": 1,

@@ -1,4 +1,7 @@
 import * as crypto from 'crypto';
+import * as path from 'path';
+import { writeFile } from 'fs/promises';
+import { scriptExamples, scriptIntrinsics } from '../scripts/script-help';
 import * as vscode from 'vscode';
 import { SessionCoordinator } from '../../emulator/session/session-coordinator';
 import { ScriptInput, ScriptSnapshot } from '../../emulator/protocol/debug-models';
@@ -14,6 +17,7 @@ const WORKSPACE_STATE_KEY = 'v6.scripts.query';
 
 export class ScriptsPanel implements vscode.Disposable {
     private panel: vscode.WebviewPanel | undefined;
+    private examplePromptOpen = false;
     private pollTimer: ReturnType<typeof setInterval> | undefined;
     private readonly stateListener: () => void;
     private readonly changeListener: () => void;
@@ -74,12 +78,23 @@ export class ScriptsPanel implements vscode.Disposable {
         if (!message || typeof message.type !== 'string') { return; }
         try {
             switch (message.type) {
-                case 'ready':
+                case 'ready': {
+                    const preview = ({ id, group, label, help }: (typeof scriptIntrinsics)[number]) => ({ id, group, label, help });
+                    this.post({ type: 'helpCatalogs', examples: scriptExamples.map(preview), intrinsics: scriptIntrinsics.map(preview) });
                     this.post({
                         type: 'restoredQuery',
                         value: this.workspaceState.get<string>(WORKSPACE_STATE_KEY) ?? '',
                     });
                     await this.syncSession();
+                    break;
+                }
+                case 'openHelp':
+                    if (!await vscode.env.openExternal(vscode.Uri.parse('https://github.com/parallelno/v6vscode/blob/main/docs/scripts.md'))) {
+                        this.post({ type: 'helpNotice', message: 'Could not open the Scripts and Lua guide.' });
+                    }
+                    break;
+                case 'useHelpItem':
+                    await this.useHelpItem(message);
                     break;
                 case 'refresh': if (this.current(message)) { await this.refresh(); } break;
                 case 'add': if (this.current(message)) {
@@ -126,6 +141,56 @@ export class ScriptsPanel implements vscode.Disposable {
             }
         } catch (error) {
             this.report('operation', error);
+        }
+    }
+
+    private async useHelpItem(message: Extract<ScriptsWebviewMessage, { type: 'useHelpItem' }>): Promise<void> {
+        if (message.catalog === 'intrinsics') {
+            const item = scriptIntrinsics.find(entry => entry.id === message.id);
+            if (!item) { return; }
+            await vscode.env.clipboard.writeText(item.code);
+            this.post({ type: 'helpNotice', message: `${item.id} copied to the clipboard.` });
+            return;
+        }
+        if (message.catalog !== 'examples' || this.examplePromptOpen) { return; }
+        const item = scriptExamples.find(entry => entry.id === message.id);
+        if (!item) { return; }
+        this.examplePromptOpen = true;
+        const panel = this.panel;
+        const project = this.current(message) ? this.lifecycle.sessionProject : undefined;
+        try {
+            await vscode.env.clipboard.writeText(item.code);
+            this.post({ type: 'helpNotice', message: 'Example code copied to the clipboard.' });
+            if (!project || !this.service.available || !vscode.workspace.isTrusted) {
+                void vscode.window.showInformationMessage('Example code copied to the clipboard. Start a supported project session in a trusted workspace to save and add it.');
+                return;
+            }
+            const lease = this.lifecycle.captureSession();
+            const destination = path.join(path.dirname(project.executable), item.filename);
+            const choice = await vscode.window.showWarningMessage('Example code copied to the clipboard. Save and add it?', {
+                modal: true,
+                detail: `${destination}\n\nThe script will be added with Activity off. Existing files will not be overwritten.`,
+            }, 'OK');
+            if (choice !== 'OK') { return; }
+            if (this.panel !== panel || !this.current(message) || this.lifecycle.sessionProject !== project) {
+                throw new Error('The Scripts panel or emulator session changed; the example was not saved.');
+            }
+            lease.assertCurrent();
+            if (this.lifecycle.running && this.lifecycle.serverInfo?.capabilities.scriptMutationsWhileRunning !== true) {
+                throw new Error('Pause the emulator before saving and adding the example.');
+            }
+            await writeFile(destination, item.code, { encoding: 'utf8', flag: 'wx' });
+            try {
+                lease.assertCurrent();
+                await this.service.add({ name: item.label, path: destination.replace(/\\/g, '/'), active: false });
+            } catch (error) {
+                throw Object.assign(new Error(`Saved ${destination}, but setup could not be completed: ${error instanceof Error ? error.message : String(error)}`), { cause: error });
+            }
+            this.post({ type: 'helpNotice', message: `Saved and added ${item.label}.` });
+        } catch (error) {
+            void vscode.window.showErrorMessage(`V6 Scripts: ${error instanceof Error ? error.message : String(error)}`);
+        } finally {
+            this.examplePromptOpen = false;
         }
     }
 
@@ -281,7 +346,14 @@ export class ScriptsPanel implements vscode.Disposable {
         return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src ${webview.cspSource} 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${controlsCssUri}"><link rel="stylesheet" href="${cssUri}"><title>Scripts</title></head>
-<body><div class="toolbar"><input id="query" type="search" maxlength="256" aria-label="Filter scripts by name" placeholder="Filter by name"><span id="count"></span></div>
+<body><div class="script-tools" aria-label="Lua help">
+<button id="examples-toggle" type="button" aria-expanded="false" aria-controls="catalog">Examples ▾</button>
+<button id="intrinsics-toggle" type="button" aria-expanded="false" aria-controls="catalog">Intrinsics ▾</button>
+<button id="script-guide" type="button">Help</button><span id="help-notice" role="status"></span>
+<div id="catalog" hidden>
+<input id="catalog-search" type="search" maxlength="256" aria-label="Search Lua help" placeholder="Search…">
+<div id="catalog-items"></div><div id="catalog-preview" aria-live="polite"></div>
+</div></div><div class="toolbar"><input id="query" type="search" maxlength="256" aria-label="Filter scripts by name" placeholder="Filter by name"><span id="count"></span></div>
 <div id="status" role="status">No active emulator session</div><div id="table" role="grid" aria-label="Scripts"><div class="header" role="row"><span role="columnheader">Compilation</span><span role="columnheader">Activity</span><span role="columnheader">Name</span><span role="columnheader">Path</span></div><div id="rows"></div></div><div id="empty" tabindex="0">No scripts</div><div id="live" class="sr-only" aria-live="polite"></div>
 <div id="menu" role="menu" hidden><button role="menuitem" data-action="copy">Copy</button><button role="menuitem" data-action="add">Add</button><button role="menuitem" data-action="compile">Compile</button><button role="menuitem" data-action="runOnce">Run Once</button><button role="menuitem" data-action="disable">Disable</button><button role="menuitem" data-action="disableAll">Disable All</button><button role="menuitem" data-action="delete">Delete</button><button role="menuitem" data-action="deleteAll">Delete All</button></div>
 <script type="module" nonce="${nonce}" src="${jsUri}"></script></body></html>`;

@@ -10,6 +10,7 @@ The intrinsic set and its validation are implemented in `v6emul` (`libs/v6core/i
 - [Quick start](#quick-start)
 - [Opening the panel](#opening-the-panel)
 - [Panel reference](#panel-reference)
+- [Built-in help](#built-in-help)
 - [Adding and validating scripts](#adding-and-validating-scripts)
 - [Compilation and runtime states](#compilation-and-runtime-states)
 - [Ownership and lifetime](#ownership-and-lifetime)
@@ -30,7 +31,7 @@ The intrinsic set and its validation are implemented in `v6emul` (`libs/v6core/i
 - Script files are read by the emulator, not by VS Code. The path must be absolute and server-local. The normal case is the same machine, so use a normal absolute path such as `C:/work/demo/hud.lua` or `/home/me/demo/hud.lua`.
 - Automatic per-instruction execution requires the emulator debugger to be attached. v6vscode attaches it for **Run Project**, debug launches, and attach sessions, so enabled scripts run automatically in all normal VS Code sessions. An external client that connects without attaching the debugger can still use **Run Once**, but enabled scripts will not run automatically.
 
-Script records are not part of `*.project.json` and are not stored in the workspace. Keep the `.lua` files; the records themselves live in the emulator process.
+In a project-owned session, the panel saves each script's name, path, and Activity setting to `run.scripts` in the launching `*.project.json`. A new session restores those entries, even if the Scripts panel is closed. Paths are stored relative to the project file when possible. Keep the `.lua` files: their source is not embedded. Emulator IDs, compilation/runtime state, Lua globals, and overlays are not saved. Borrowed attach sessions have no launching project and do not change project settings.
 
 ## Quick start
 
@@ -87,6 +88,12 @@ While the emulator is running, mutations are gated independently from execution.
 
 The filter is case-insensitive. A query without `*` is a substring match; a query containing `*` is a full-name glob (`*` matches any run of characters). The query is limited to 256 characters and is restored per workspace.
 
+## Built-in help
+
+- **Examples** opens a searchable list. Hover or use the arrow keys to preview help. Click an example or press Enter to copy its code and open an **OK / Cancel** confirmation with the full destination path. **OK** saves the `.lua` file beside the project's executable and adds it with Activity off. **Cancel** leaves the code on the clipboard without creating a file. Existing files are not overwritten.
+- **Intrinsics** lists the emulator functions by category. Search by name, category, or help text. Hover or focus an item to preview it; click or press Enter to copy a Lua call. Esc closes either list.
+- **Help** opens this guide in your browser. The built-in lists work without an emulator connection; saving and adding an example requires a supported project session in a trusted workspace.
+
 ## Adding and validating scripts
 
 - **Name** must not be empty and must fit the server-advertised UTF-8 byte limit.
@@ -113,7 +120,7 @@ The filter is case-insensitive. A query without `*` is a substring match; a quer
 Scripts, IDs, Activity flags, compilation state, runtime state, and overlays belong to the emulator process:
 
 - They survive debugger detach/attach, CPU reset, emulator restart, ROM loading, and TCP reconnect while the same emulator process lives.
-- They are lost when the emulator process exits. A new process starts with no scripts and script ID `0`.
+- When the emulator process exits, live state is lost. A new project-owned session restores the saved entries with fresh IDs and compiles their current source files.
 - Deleting a script does not delete its file. Delete All does not delete any files.
 - The Lua state is shared by all scripts and is not reset by Compile, Delete, or Delete All. Global variables therefore survive recompiles and deletions until the process exits.
 

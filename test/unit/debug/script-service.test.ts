@@ -96,6 +96,40 @@ describe('ScriptService', () => {
         service.dispose();
     });
 
+    it('restores ordered setup entries with new IDs and saves only acknowledged configuration', async () => {
+        const lifecycle = Object.assign(new FakeLifecycle(), { sessionProject: { projectPath: 'C:/demo/demo.project.json' } });
+        const entries: ScriptSnapshot[] = [];
+        const saved: unknown[] = [];
+        const warnings: string[] = [];
+        let nextId = 10;
+        const client = { connected: true, send: async (command: IpcCommand, data: any) => {
+            if (command === IpcCommand.DEBUG_SCRIPT_GET_ALL) return { ok: true, data: { scripts: entries, updates: nextId } };
+            if (command === IpcCommand.DEBUG_SCRIPT_ADD) {
+                const script = { ...makeSnapshot(nextId++, data.name, data.active), path: data.path };
+                entries.push(script);
+                return { ok: true, data: { script, updates: nextId } };
+            }
+            if (command === IpcCommand.DEBUG_SCRIPT_DEL_ALL) { entries.length = 0; return { ok: true }; }
+            throw new Error(`Unexpected command ${command}`);
+        } };
+        await ScriptService.restoreSetup(client as any, lifecycle.serverInfo, [
+            { name: 'first', path: 'C:\\demo\\first.lua', active: true },
+            { name: 'second', path: 'C:/demo/second.lua', active: false },
+        ], warning => warnings.push(warning));
+        expect(warnings).to.deep.equal([]);
+        expect(entries.map(({ scriptId, active }) => [scriptId, active])).to.deep.equal([[10, true], [11, false]]);
+        const service = new ScriptService(lifecycle as any, client as any, async (projectPath, scripts) => { saved.push({ projectPath, scripts }); });
+        await service.add({ name: 'third', path: 'C:/demo/third.lua', active: false });
+        expect(saved[0]).to.deep.equal({ projectPath: 'C:/demo/demo.project.json', scripts: [
+            { name: 'first', path: 'C:/demo/first.lua', active: true },
+            { name: 'second', path: 'C:/demo/second.lua', active: false },
+            { name: 'third', path: 'C:/demo/third.lua', active: false },
+        ] });
+        await service.deleteAll();
+        expect(saved[1]).to.deep.equal({ projectPath: 'C:/demo/demo.project.json', scripts: [] });
+        service.dispose();
+    });
+
     it('polls the revision, handles wraparound as changed, and clears on disconnect', async () => {
         const lifecycle = new FakeLifecycle();
         let revision = 0xFFFFFFFF;

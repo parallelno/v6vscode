@@ -37,7 +37,7 @@ export class EmulatorSettingsController implements vscode.Disposable {
         private readonly lifecycle: SessionCoordinator,
         private readonly client: IpcClient,
         private readonly loadProject: () => Promise<V6Project | undefined>,
-        private readonly saveProject: (project: V6Project) => Promise<void>,
+        private readonly saveProject: (project: V6Project, patch: Partial<V6Project['run']>) => Promise<void>,
     ) {
         const onDidChangeConfiguration = vscode.workspace.onDidChangeConfiguration;
         this.configurationListener = typeof onDidChangeConfiguration === 'function'
@@ -81,7 +81,7 @@ export class EmulatorSettingsController implements vscode.Disposable {
         if (this.client.connected) {
             requireProtocolOk(IpcCommand.SET_CPU_SPEED, await this.client.send(IpcCommand.SET_CPU_SPEED, { speed: SPEED_VALUES[speed] }), 'Unable to set emulator speed');
         }
-        await this.saveProject({ ...project, run: { ...project.run, speed } });
+        await this.saveProject({ ...project, run: { ...project.run, speed } }, { speed });
         this.update({ ...this.state, speed, hasProject: true });
     }
 
@@ -93,7 +93,7 @@ export class EmulatorSettingsController implements vscode.Disposable {
         if (this.client.connected) {
             await this.lifecycle.setFrameMode(viewMode);
         }
-        await this.saveProject({ ...project, run: { ...project.run, viewMode } });
+        await this.saveProject({ ...project, run: { ...project.run, viewMode } }, { viewMode });
         this.update({ ...this.state, viewMode, hasProject: true });
     }
 

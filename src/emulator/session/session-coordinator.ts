@@ -42,9 +42,15 @@ export type EmulatorSessionOwner = 'run' | 'debug' | null;
 
 export interface DebugLaunchRequest {
     program: string;
+    projectPath?: string;
     loadAddr?: string;
     speed?: string;
     fddReadOnly?: boolean;
+}
+
+export interface SessionProject {
+    readonly projectPath: string;
+    readonly executable: string;
 }
 
 export interface SessionProgram {
@@ -95,6 +101,7 @@ export class SessionCoordinator extends EventEmitter<SessionEvents> {
     private _owner: EmulatorSessionOwner = null;
     private _serverInfo: GetServerInfoResponse | undefined;
     private program: SessionProgram | undefined;
+    private project: SessionProject | undefined;
     private readonly stopParticipants = new Set<StopParticipant>();
     private stopInFlight: Promise<void> | undefined;
     private transitionTail: Promise<void> = Promise.resolve();
@@ -110,6 +117,7 @@ export class SessionCoordinator extends EventEmitter<SessionEvents> {
         client: IpcClient,
         logger: LogSink,
         pathService: PathService,
+        private readonly restoreScripts?: (project: SessionProject, session: SessionLease, info: GetServerInfoResponse) => Promise<void>,
     ) {
         super();
         this.setMaxListeners(MAX_LISTENERS_PER_EVENT);
@@ -148,6 +156,10 @@ export class SessionCoordinator extends EventEmitter<SessionEvents> {
 
     get connected(): boolean {
         return this._state === 'connected' || this._state === 'running';
+    }
+
+    get sessionProject(): SessionProject | undefined {
+        return this.connected ? this.project : undefined;
     }
 
     get serverInfo(): GetServerInfoResponse | undefined {
@@ -254,6 +266,7 @@ export class SessionCoordinator extends EventEmitter<SessionEvents> {
             this.updateFrameMode(frameMode.panelMode);
             await session.send(IpcCommand.SET_COLOR_FORMAT, { colorFormat: 0 });
 
+            await this.prepareProject(project.uri.fsPath, run.executable, session, serverInfo);
             await this.programLoader.load(image, 'run-initial', session, session);
             this.recordLoadedProgram(run.executable, run.fddReadOnly);
 
@@ -312,10 +325,11 @@ export class SessionCoordinator extends EventEmitter<SessionEvents> {
             const process = this.emulatorProcess;
             this.monitorProcess(process);
 
-            await this.negotiate(port, '127.0.0.1', true, id, true);
+            const info = await this.negotiate(port, '127.0.0.1', true, id, true);
             const session = this.captureSession();
             await session.send(IpcCommand.SET_COLOR_FORMAT, { colorFormat: 0 });
             requireProtocolOk(IpcCommand.STOP, await session.send(IpcCommand.STOP), 'Unable to pause emulator');
+            await this.prepareProject(request.projectPath, request.program, session, info);
             this.assertRequest(id);
             this.setState('connected');
             return { client: this.client, process, port };
@@ -327,11 +341,19 @@ export class SessionCoordinator extends EventEmitter<SessionEvents> {
         } finally { this.opening = false; }
     }
 
+    private async prepareProject(projectPath: string | undefined, executable: string, session: SessionLease, info: GetServerInfoResponse): Promise<void> {
+        const project = projectPath ? Object.freeze({ projectPath, executable }) : undefined;
+        if (project) { await this.restoreScripts?.(project, session, info); }
+        session.assertCurrent();
+        this.project = project;
+    }
+
     attach(port: number, host = '127.0.0.1'): Promise<SessionLease> {
         return this.submitTransition(async id => {
             if (this._owner) { throw new Error('Stop the owned emulator before attaching to an external session'); }
             this.disconnectCurrent();
             this.opening = true;
+            this.project = undefined;
             this.mode = 'attach';
             this.setState('launching');
             try {

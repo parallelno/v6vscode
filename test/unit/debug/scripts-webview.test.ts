@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { expect } from 'chai';
+import { scriptExamples, scriptIntrinsics } from '../../../src/debug/scripts/script-help';
 
 const ROOT = process.cwd();
 const read = (relativePath: string) => fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
@@ -9,6 +10,25 @@ describe('Scripts webview contract', () => {
     const panel = read('src/debug/views/scripts-panel.ts');
     const script = read('src/debug/views/assets/scripts.js');
     const styles = read('src/debug/views/assets/scripts.css');
+
+    it('ships searchable help, all grouped intrinsics, and distinct example files', () => {
+        const help = read('src/debug/views/assets/script-help.js');
+        for (const id of ['examples-toggle', 'intrinsics-toggle', 'catalog-search', 'catalog-preview', 'script-guide']) {
+            expect(panel).to.include(`id="${id}"`);
+        }
+        expect(script).to.include("from './script-help.js'");
+        expect(help).to.include("['focus', 'pointerenter']");
+        expect(help).to.include("event.key === 'Enter'");
+        expect(help).not.to.include('innerHTML');
+        expect(new Set(scriptIntrinsics.map(entry => entry.group)).size).to.equal(6);
+        expect(scriptIntrinsics.map(entry => entry.id)).to.have.members([
+            'GetCC', 'GetPC', 'GetSP', 'GetMachineCycles', 'GetOpcode', 'GetPSW', 'GetBC', 'GetDE', 'GetHL',
+            'GetA', 'GetF', 'GetB', 'GetC', 'GetD', 'GetE', 'GetH', 'GetL', 'GetFlagS', 'GetFlagZ', 'GetFlagAC',
+            'GetFlagP', 'GetFlagC', 'GetINTE', 'GetIFF', 'GetHLTA', 'GetByteGlobal', 'GetLabelAddr', 'Break', 'DrawText', 'DrawRect',
+        ]);
+        expect(new Set(scriptExamples.map(entry => entry.filename)).size).to.equal(7);
+        expect(scriptExamples.every(entry => /^v6-[a-z-]+\.lua$/.test(entry.filename) && entry.code && entry.help)).to.equal(true);
+    });
 
     it('renders the required table and ordered actions', () => {
         for (const heading of ['Compilation', 'Activity', 'Name', 'Path']) {

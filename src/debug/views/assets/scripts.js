@@ -1,4 +1,5 @@
 import { KeyedRows } from '../../../../out/webview/ui/keyed-rows.js';
+import { bindScriptHelp } from './script-help.js';
 import { placeMenu, menuKeys, closeMenu as hideMenu } from '../../../../out/webview/ui/menu.js';
 import { clearInvalid, invalid as markInvalid, bindEditKeys } from '../../../../out/webview/ui/edit.js';
 import { matchesScriptName } from '../../../../out/webview/script-name-match.js';
@@ -31,6 +32,7 @@ import { matchesScriptName } from '../../../../out/webview/script-name-match.js'
     let menuSource = null;
 
     function post(message) { vscode.postMessage({ generation, ...message }); }
+    const help = bindScriptHelp(post);
     function invalid(input, message) { return markInvalid(input, message, live, status); }
     function inputValue(name, path, active) {
         clearInvalid(name, path);
@@ -221,7 +223,9 @@ import { matchesScriptName } from '../../../../out/webview/script-name-match.js'
                 if (input) invalid(input, message.message);
             }
         }
-        if (message.type === 'dismissMenus') closeMenu();
+        if (message.type === 'helpCatalogs') help.update(message);
+        if (message.type === 'helpNotice') help.notice(message.message);
+        if (message.type === 'dismissMenus') { closeMenu(); help.close(); }
         if (message.type === 'restoredQuery') { query.value = message.value; render(); }
     });
     vscode.postMessage({ type: 'ready' });

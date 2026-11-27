@@ -356,6 +356,7 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
 
             this.launchRequest = {
                 program: String(args.program),
+                projectPath: typeof args.__v6ProjectPath === 'string' ? args.__v6ProjectPath : undefined,
                 loadAddr: args.loadAddress ? String(args.loadAddress) : undefined,
                 speed: args.speed ?? '100%',
                 fddReadOnly: args.fddReadOnly === true,

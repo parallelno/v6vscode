@@ -24,3 +24,4 @@ Files named `*.project.json` at the workspace root. Validated by `config/schemas
 | `run.fddReadOnly` | boolean | no | `false` | Discard FDD writes on stop |
 | `run.speed` | string | no | `"100%"` | Emulation speed |
 | `run.viewMode` | string | no | `"borderless"` | Display mode: borderless, border, full |
+| `run.scripts` | array | no | — | Lua entries (`name`, `path`, `active`) saved by the [Scripts panel](scripts.md). Relative paths resolve from the project file. |

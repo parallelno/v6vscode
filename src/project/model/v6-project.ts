@@ -1,6 +1,13 @@
 import type * as vscode from 'vscode';
 
+export interface ProjectScript {
+    name: string;
+    path: string;
+    active: boolean;
+}
+
 export interface V6ProjectRun {
+    scripts?: readonly ProjectScript[];
     executable: string;
     debugArtifact?: string;
     loadAddr?: string;

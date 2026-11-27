@@ -2,7 +2,7 @@
     color-scheme: light dark;
     --columns: minmax(82px, .55fr) minmax(58px, .42fr) minmax(120px, 1fr) minmax(240px, 2fr);
 }
-#table { height: calc(100vh - 78px); min-width: 500px; border-top: 1px solid var(--vscode-panel-border); overflow: auto; }
+#table { height: calc(100vh - 110px); min-width: 500px; border-top: 1px solid var(--vscode-panel-border); overflow: auto; }
 .row.error:not(.selected) { color: var(--vscode-errorForeground); }
 .row.error:not(.selected) .compilation { color: var(--vscode-errorForeground); }
 .compilation, .toggle { display: flex; align-items: center; justify-content: center; }
@@ -12,3 +12,16 @@
 #menu button { display: block; width: 100%; padding: 5px 20px 5px 8px; border: 0; text-align: left; color: inherit; background: transparent; font: inherit; }
 #menu button:hover, #menu button:focus { color: var(--vscode-menu-selectionForeground); background: var(--vscode-menu-selectionBackground); outline: none; }
 #menu button:disabled { opacity: .5; }
+#empty { top: 122px; }
+.script-tools { position: relative; display: flex; align-items: center; gap: 6px; height: 32px; }
+.script-tools > button { padding: 3px 8px; border: 1px solid transparent; color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); font: inherit; white-space: nowrap; }
+.script-tools > button:hover, .script-tools > button[aria-expanded="true"] { background: var(--vscode-button-secondaryHoverBackground); }
+#help-notice { color: var(--vscode-descriptionForeground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#catalog { position: absolute; z-index: 11; top: 100%; left: 0; width: min(520px, 100%); padding: 8px; background: var(--vscode-editorWidget-background); border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border)); box-shadow: 0 3px 12px var(--vscode-widget-shadow); }
+#catalog-search { width: 100%; padding: 4px 6px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); font: inherit; }
+#catalog-items { margin-top: 6px; max-height: min(32vh, 240px); overflow: auto; }
+#catalog-items h3 { margin: 8px 4px 3px; font-size: inherit; color: var(--vscode-descriptionForeground); }
+#catalog-items button { display: block; width: 100%; border: 0; padding: 4px 6px; text-align: left; color: inherit; background: transparent; font: inherit; overflow-wrap: anywhere; }
+#catalog-items button.previewed { color: var(--vscode-list-activeSelectionForeground); background: var(--vscode-list-activeSelectionBackground); }
+#catalog-preview:not(:empty) { margin-top: 8px; padding: 6px; border-top: 1px solid var(--vscode-panel-border); overflow-wrap: anywhere; }
+#catalog-preview p { margin: 4px 0 0; }

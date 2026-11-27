@@ -13,7 +13,7 @@ export function validateScriptInput(value: unknown, limits: ScriptLimits): Scrip
     const record = object(value, 'Script input');
     exactFields(record, new Set(['name', 'path', 'active']), 'Script input');
     const name = utf8String(record.name, 'name', limits.maxNameBytes);
-    if (!name.length) { throw new Error('name must not be empty'); }
+    if (!name.length || name.includes('\0')) { throw new Error('name must not be empty or contain NUL bytes'); }
     const path = utf8String(record.path, 'path', limits.maxPathBytes);
     if (!isAbsoluteWirePath(path)) { throw new Error('path must be an absolute generic path'); }
     return { name, path, active: boolean(record.active, 'active') };
