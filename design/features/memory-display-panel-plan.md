@@ -1,0 +1,12 @@
+# Memory Display panel plan
+
+## Reference behavior
+
+Devector's Memory Display renders each physical 64 KiB RAM bank as a 1024 × 512 bit map. Eight 8 KiB tiles are arranged in two rows of four. Within each tile, bytes occupy eight horizontal pixels (most significant bit first), and consecutive addresses run bottom to top. Main RAM and eight RAM disks are selectable; each disk has four pages. Read and write highlights use independent recent-access histories, with blue for reads, red for writes, and stronger colors for newer accesses. Hover reports the physical address and byte, Ctrl+wheel zooms, and clicking opens the Hex Viewer at that byte.
+
+## Implementation
+
+1. Expose an optional `memoryDisplaySchema: 1` capability and two v6emul commands: enable/disable collection and snapshot one physical bank. The snapshot contains coherent raw RAM and one byte of intensity per address per access type, encoded as MessagePack binary. Preserve the recent 1024 reads and 1024 accepted writes in hardware-thread-owned rings, excluding opcode fetches as in Devector. Resolve duplicate addresses newest-first when constructing highlights. Clear history on resets and timeline changes; disable on disconnect or a missed two-second renewal. Do not enable the debugger as a side effect.
+2. Add Memory Display to the emulator panel launcher and Command Palette. Use one page selector within each RAM disk rather than drawing all four pages simultaneously. Render one reusable Canvas 2D image with nearest-neighbor zoom; derive hover and Hex Viewer navigation from the same coordinate mapping as the bitmap.
+3. Run one low-priority request at a time while visible. Sample running targets no faster than 10 Hz. Refresh paused snapshots on session/position changes, with only a small lease renewal while idle. Hide/close stops the scheduler and requests immediate disable. Scope results to the current session, view, and selection; older servers show an upgrade message without affecting other panels. No closed-panel polling or listeners; no emulator hot-path locks or ring writes when disabled.
+4. Verify command validation, bank boundaries, access ranking, close/reopen behavior, coordinate mapping, compilation, and both projects' test suites. Live GUI checks should cover RAM-disk navigation, zoom, hover, and responsiveness alongside the emulator display.

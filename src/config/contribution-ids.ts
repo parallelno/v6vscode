@@ -4,6 +4,7 @@ export const CMD_RUN_PROJECT = 'v6.runProject';
 export const CMD_TOGGLE_SETTINGS = 'v6emul.toggleSettings';
 export const CMD_TOGGLE_DISPLAY = 'v6emul.toggleDisplay';
 export const CMD_TOGGLE_HEX_VIEWER = 'v6emul.toggleHexViewer';
+export const CMD_TOGGLE_MEMORY_DISPLAY = 'v6emul.toggleMemoryDisplay';
 export const CMD_TOGGLE_MEMORY_EDITS = 'v6emul.toggleMemoryEdits';
 export const CMD_TOGGLE_PERFORMANCE = 'v6emul.togglePerformance';
 export const CMD_TOGGLE_TRACE_LOG = 'v6emul.toggleTraceLog';

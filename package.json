@@ -152,6 +152,11 @@
         "category": "v6emul"
       },
       {
+        "command": "v6emul.toggleMemoryDisplay",
+        "title": "Memory Display",
+        "category": "v6emul"
+      },
+      {
         "command": "v6emul.toggleMemoryEdits",
         "title": "Memory Edits",
         "category": "v6emul"

@@ -194,7 +194,11 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         running: value => this.lifecycle.setExecutionRunning(value, this.sessionLease),
         continued: () => this.sendEvent('continued', { threadId: THREAD_ID, allThreadsContinued: true }),
         stopped: record => this.onStop(record),
-        refresh: () => this.refreshRegs(),
+        refresh: async () => {
+            const lease = this.sessionLease;
+            await this.refreshRegs();
+            if (lease?.connected) { this.lifecycle.notifyPositionChange(lease); }
+        },
         clearException: () => { this.lastExceptionRecord = undefined; },
     });
 
@@ -1021,7 +1025,12 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         await Promise.all(addresses.map(address => this.breakpoints.releaseTemporary(address)));
     }
 
-    private async singleStep(): Promise<void> { if (this.client) { await this.execution.singleStep(); } }
+    private async singleStep(): Promise<void> {
+        if (!this.client) { return; }
+        const lease = this.sessionLease;
+        await this.execution.singleStep();
+        if (lease?.connected && !this.lifecycle.running) { this.lifecycle.notifyPositionChange(lease); }
+    }
 
     // -----------------------------------------------------------------------
     // setBreakpoints — source breakpoints (Step 3.11 full impl requires ELF/DWARF)

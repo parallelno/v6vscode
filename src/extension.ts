@@ -10,6 +10,7 @@ import {
     CMD_RUN_PROJECT,
     CMD_TOGGLE_DISPLAY,
     CMD_TOGGLE_HEX_VIEWER,
+    CMD_TOGGLE_MEMORY_DISPLAY,
     CMD_TOGGLE_MEMORY_EDITS,
     CMD_TOGGLE_PERFORMANCE,
     CMD_TOGGLE_PORTS,
@@ -49,6 +50,7 @@ import { V6emulLauncher } from './emulator/launcher/v6emul-launcher';
 import { IpcClient } from './emulator/client/ipc-client';
 import { SessionCoordinator } from './emulator/session/session-coordinator';
 import { EmulatorPanel } from './emulator/panel/emulator-panel';
+import { MemoryDisplayPanel } from './debug/views/memory-display-panel';
 import { EmulatorSettingsController } from './emulator/panel/emulator-settings-controller';
 import { EmulatorSettingsPanel } from './emulator/panel/emulator-settings-panel';
 import { EmulatorPanelLauncherView } from './emulator/panel/emulator-panel-launcher-view';
@@ -203,6 +205,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void vscode.commands.executeCommand('setContext', CONTEXT_HEX_VIEWER_OPEN, false);
     store.add(vscode.commands.registerCommand(CMD_TOGGLE_HEX_VIEWER, () => hexViewer.toggle()));
     store.add(vscode.commands.registerCommand(CMD_REFRESH_HEX_VIEWER, () => hexViewer.refresh()));
+    const memoryDisplay = store.add(new MemoryDisplayPanel(context.extensionUri, lifecycle, hexViewer,
+        open => panelLauncher.setOpen(CMD_TOGGLE_MEMORY_DISPLAY, open)));
+    store.add(vscode.commands.registerCommand(CMD_TOGGLE_MEMORY_DISPLAY, () => memoryDisplay.toggle()));
     const memoryEditsPanel = store.add(new MemoryEditsPanel(
         context.extensionUri,
         lifecycle,

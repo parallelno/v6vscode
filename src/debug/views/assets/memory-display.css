@@ -1,0 +1,7 @@
+body { display: flex; flex-direction: column; height: 100vh; margin: 0; padding: 8px; box-sizing: border-box; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+button, select { font: inherit; color: var(--vscode-dropdown-foreground); background: var(--vscode-dropdown-background); }
+.help { color: var(--vscode-descriptionForeground); margin: 8px 0; }
+#address { min-height: 1.5em; font-family: var(--vscode-editor-font-family); }
+.viewport { min-height: 0; flex: 1; overflow: auto; }
+canvas { cursor: crosshair; image-rendering: pixelated; vertical-align: top; }

@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import {
     CMD_TOGGLE_DISPLAY,
     CMD_TOGGLE_HEX_VIEWER,
+    CMD_TOGGLE_MEMORY_DISPLAY,
     CMD_TOGGLE_MEMORY_EDITS,
     CMD_TOGGLE_PERFORMANCE,
     CMD_TOGGLE_PORTS,
@@ -17,6 +18,7 @@ const PANELS = [
     { label: 'Settings', command: CMD_TOGGLE_SETTINGS, icon: 'settings-gear' },
     { label: 'Display', command: CMD_TOGGLE_DISPLAY, icon: 'vm' },
     { label: 'Hex Viewer', command: CMD_TOGGLE_HEX_VIEWER, icon: 'symbol-numeric' },
+    { label: 'Memory Display', command: CMD_TOGGLE_MEMORY_DISPLAY, icon: 'symbol-color' },
     { label: 'Memory Edits', command: CMD_TOGGLE_MEMORY_EDITS, icon: 'edit' },
     { label: 'Performance', command: CMD_TOGGLE_PERFORMANCE, icon: 'graph' },
     { label: 'Trace Log', command: CMD_TOGGLE_TRACE_LOG, icon: 'list-ordered' },
