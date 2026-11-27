@@ -2,6 +2,8 @@ import { DapRequest, DapResponse, DapEvent, DapStackFrame, DapScope, dapRequest 
 import { ExecutionController } from '../session/execution-controller';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import type { RecorderMove } from '../../emulator/protocol/recorder-models';
+import { moveRecorder } from '../../emulator/session/recorder-service';
 import type { SessionLease } from '../../emulator/session/session-coordinator';
 import type { CommandSender } from '../../emulator/session/session-operations';
 import { EmulatorProcess } from '../../emulator/launcher/v6emul-launcher';
@@ -214,11 +216,36 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
     handleMessage(message: vscode.DebugProtocolMessage): void {
         const msg = dapRequest(message);
         if (msg) {
-            this.dispatchRequest(msg).catch(err => {
+            const controls = ['configurationDone', 'continue', 'pause', 'next', 'stepIn', 'stepOut',
+                'restart', 'disconnect', 'terminate'];
+            const operation = controls.includes(msg.command)
+                ? this.sequenceControl(() => this.dispatchRequest(msg)) : this.dispatchRequest(msg);
+            operation.catch(err => {
                 this.logger.error(`v6-debug: unhandled error in ${msg.command}: ${err}`);
                 this.sendResponse(msg, false, err instanceof Error ? err.message : String(err));
             });
         }
+    }
+
+    private controlTail = Promise.resolve();
+    private sequenceControl<T>(run: () => Promise<T>): Promise<T> {
+        const result = this.controlTail.then(run);
+        this.controlTail = result.then(() => {}, () => {});
+        return result;
+    }
+
+    restoreRecorder(input: RecorderMove, assertCurrent: () => void) {
+        return this.sequenceControl(async () => {
+            assertCurrent();
+            const lease = this.sessionLease;
+            if (!lease) { throw new Error('No active V6 debug session'); }
+            return this.execution.restorePosition(async () => {
+                assertCurrent();
+                const result = await moveRecorder(lease, input);
+                if (result.moved) { this.lifecycle.notifyPositionChange(lease); }
+                return result;
+            });
+        });
     }
 
     dispose(): void {
@@ -1323,13 +1350,13 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         catch (error) { this.sendResponse(req, false, error instanceof Error ? error.message : String(error)); }
     }
 
-    async reset(): Promise<void> { await this.execution.restart('reset'); }
+    async reset(): Promise<void> { await this.sequenceControl(() => this.execution.restart('reset')); }
 
     async reloadRom(): Promise<void> {
         if (!this.launchRequest?.program.toLowerCase().endsWith('.rom')) { throw new Error('Reload ROM is only available for ROM debug sessions'); }
         const request = this.launchRequest;
         const lease = this.sessionLease;
-        await this.execution.restart('reload', () => this.lifecycle.reloadDebugRom(request, lease));
+        await this.sequenceControl(() => this.execution.restart('reload', () => this.lifecycle.reloadDebugRom(request, lease)));
     }
 
     private async onDisconnect(req: DapRequest): Promise<void> {

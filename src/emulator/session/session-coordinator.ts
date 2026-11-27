@@ -76,6 +76,7 @@ export interface ConnectionSnapshot {
 
 export interface SessionEvents {
     stateChange: [state: EmulatorState];
+    positionChange: [];
     frameModeChange: [mode: EmulatorFrameMode];
     exit: [code: number | null];
     error: [error: Error];
@@ -160,6 +161,12 @@ export class SessionCoordinator extends EventEmitter<SessionEvents> {
             ownership: this.mode === 'attach' ? 'borrowed' : this._owner ? 'owned' : 'none',
             mode: this.mode, debuggerAttached: this.debuggerAttached,
         });
+    }
+
+    notifyPositionChange(lease: SessionLease): void {
+        lease.assertCurrent();
+        this.emit('positionChange');
+        this.emit('stateChange', this._state);
     }
 
     captureSession(): SessionLease {

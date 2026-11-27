@@ -25,6 +25,7 @@ export class TraceLogService extends EventEmitter {
     private readonly windows = new Map<number, TraceLogWindowResponse>();
     private readonly windowRequests = new Map<number, Promise<TraceLogWindowResponse>>();
     private readonly stateListener: () => void;
+    private readonly positionListener = () => this.invalidate();
 
     constructor(
         private readonly lifecycle: SessionCoordinator,
@@ -35,6 +36,7 @@ export class TraceLogService extends EventEmitter {
             if (!this.lifecycle.connected || this.lifecycle.running) { this.invalidate(); }
         };
         this.lifecycle.on('stateChange', this.stateListener);
+        this.lifecycle.on('positionChange', this.positionListener);
     }
 
     get activeFilter(): TraceLogFilterState | undefined { return this.filterState; }
@@ -133,6 +135,7 @@ export class TraceLogService extends EventEmitter {
 
     dispose(): void {
         this.lifecycle.removeListener('stateChange', this.stateListener);
+        this.lifecycle.removeListener('positionChange', this.positionListener);
         this.invalidate();
         this.removeAllListeners();
     }

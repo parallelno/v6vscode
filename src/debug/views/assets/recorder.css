@@ -1,0 +1,12 @@
+body { color: var(--vscode-foreground); padding: 1rem; }
+.bounds { display: grid; grid-template-columns: 1fr 1fr 1fr; margin-bottom: 1rem; font-variant-numeric: tabular-nums; }
+.bounds span:last-child { text-align: right; }
+#selected { text-align: center; }
+.timeline-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .25rem; }
+#timeline { display: block; width: 100%; margin: 0; accent-color: var(--vscode-progressBar-background); }
+.controls { display: flex; flex-wrap: wrap; gap: .5rem; }
+button { color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 1px solid transparent; padding: .4rem .65rem; }
+button:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
+button:focus-visible { outline: 1px solid var(--vscode-focusBorder); }
+button:disabled { opacity: .55; }
+.timeline-arrow { padding: 0; inline-size: 1.5rem; block-size: 1.5rem; font-size: .75rem; }

@@ -17,6 +17,7 @@ import {
     CMD_TOGGLE_SETTINGS,
     CMD_TOGGLE_SYMBOLS,
     CMD_TOGGLE_TRACE_LOG,
+    CMD_TOGGLE_RECORDER,
     CMD_TOGGLE_WATCHPOINTS,
     CONTEXT_DISPLAY_OPEN,
     CONTEXT_HEX_VIEWER_OPEN,
@@ -27,6 +28,7 @@ import {
     CONTEXT_SETTINGS_OPEN,
     CONTEXT_SYMBOLS_OPEN,
     CONTEXT_TRACE_LOG_OPEN,
+    CONTEXT_RECORDER_OPEN,
     CONTEXT_WATCHPOINTS_OPEN,
     CLIENT_OUTPUT_CHANNEL_NAME,
     SERVER_OUTPUT_CHANNEL_NAME,
@@ -91,6 +93,7 @@ import { SourceLocation } from './debug/metadata/debug-index';
 import { revealDebugSource } from './debug/views/debug-source-navigation';
 import { TraceLogService } from './debug/trace-log/trace-log-service';
 import { CMD_REFRESH_TRACE_LOG, TraceLogPanel } from './debug/views/trace-log-panel';
+import { CMD_REFRESH_RECORDER, RecorderPanel } from './debug/views/recorder-panel';
 import { ScriptService } from './debug/scripts/script-service';
 import { ScriptOverlayService } from './debug/scripts/script-overlay-service';
 import { CMD_ADD_SCRIPT, CMD_REFRESH_SCRIPTS, ScriptsPanel } from './debug/views/scripts-panel';
@@ -390,7 +393,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // Debug adapter (Steps 3.5 / 3.8)
     const debugConfigProvider = new V6DebugConfigurationProvider(activeProjectService, logger);
-    registerDebugAdapter(
+    const debugAdapter = registerDebugAdapter(
         context,
         lifecycle,
         emulatorPanel,
@@ -401,6 +404,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         watchpointService,
         watchpoints,
     );
+    const recorder = store.add(new RecorderPanel(context.extensionUri, lifecycle,
+        (input, current) => debugAdapter.restoreRecorder(input, current), open => {
+            panelLauncher.setOpen(CMD_TOGGLE_RECORDER, open);
+            void vscode.commands.executeCommand('setContext', CONTEXT_RECORDER_OPEN, open);
+        }));
+    void vscode.commands.executeCommand('setContext', CONTEXT_RECORDER_OPEN, false);
+    store.add(vscode.commands.registerCommand(CMD_TOGGLE_RECORDER, () => recorder.toggle()));
+    store.add(vscode.commands.registerCommand(CMD_REFRESH_RECORDER, () => recorder.refresh()));
 
     logger.info('Vector-06c extension activated.');
 }

@@ -4,6 +4,7 @@ import { IpcCommand } from '../../emulator/protocol/ipc-commands';
 import { requireProtocolOk } from '../../emulator/protocol/protocol-result';
 import { StopRecord } from '../../emulator/protocol/debug-models';
 import { StopMonitor } from './stop-monitor';
+import type { RecorderStatus } from '../../emulator/protocol/recorder-models';
 
 export interface ExecutionContext {
     client: CommandSender;
@@ -90,6 +91,29 @@ export class ExecutionController {
             this.lastStopSequence = record.sequence;
             await this.hooks.stopped(record);
         } else if (!context.records) { await this.hooks.stopped(); }
+    }
+
+    async restorePosition(move: () => Promise<{ status: RecorderStatus; stopSequence?: number }>): Promise<RecorderStatus> {
+        const context = this.capture();
+        if (this.state !== 'paused' || !context.records || this.pendingPause || this.pendingStep) {
+            throw new Error('Pause the debugger before using Recorder');
+        }
+        await this.hooks.prepare();
+        context.assertCurrent();
+        const result = await move();
+        context.assertCurrent();
+        if (result.stopSequence !== undefined) {
+            this.hooks.invalidate();
+            this.hooks.clearException();
+            const record = await this.monitor.read(context.client);
+            context.assertCurrent();
+            if (record.sequence !== result.stopSequence) { throw new Error('Recorder stop record changed'); }
+            if (record.sequence !== this.lastStopSequence) {
+                this.lastStopSequence = record.sequence;
+                await this.hooks.stopped(record);
+            }
+        }
+        return result.status;
     }
 
     startPoll(): void {

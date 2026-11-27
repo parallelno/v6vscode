@@ -50,3 +50,12 @@ This scenario verifies Extension Host startup and a real C `add8 -> accumulate -
 ## Direct live memory/unwind conformance
 
 Run `npm run test:conformance` with `V6EMUL` set. This separate suite fails explicitly when the emulator is missing. Ordinary unit tests never launch a backend based on ambient environment variables.
+
+The Recorder conformance case requires a build advertising Recorder schema 1.
+It loads a deterministic 8080 loop and checks frame/instruction navigation,
+sampled history and stale-revision rejection through the real socket. The
+emulator's CTest IPC suite covers exhaustion and 1,000 restores in each
+direction, branching, halted idle and a floppy write round trip. Extension
+unit tests additionally exercise the timeline rendering and stopped-event path.
+`npm run test:integration` also checks that the Recorder tab opens, refreshes,
+and closes in VS Code.

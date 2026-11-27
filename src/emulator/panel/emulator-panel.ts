@@ -122,6 +122,9 @@ export class EmulatorPanel implements vscode.Disposable {
             if (event.webviewPanel.active) {
                 void this.reloadProjectSettings();
             }
+            if (event.webviewPanel.visible && this.lifecycle.connected && !this.lifecycle.running) {
+                void this.requestSingleFrame();
+            }
             this.updateOverlayPolling();
         }));
 
@@ -160,6 +163,9 @@ export class EmulatorPanel implements vscode.Disposable {
         };
         this.lifecycle.on('stateChange', onStateChange);
         panelStore.add(toDisposable(() => this.lifecycle.removeListener('stateChange', onStateChange)));
+        const onPositionChange = () => { if (this.panel?.visible) { void this.requestSingleFrame(); } };
+        this.lifecycle.on('positionChange', onPositionChange);
+        panelStore.add(toDisposable(() => this.lifecycle.removeListener('positionChange', onPositionChange)));
 
         const onFrameModeChange = (frameMode: DisplayMode) => {
             this.viewModel.setViewMode(frameMode);
@@ -331,10 +337,16 @@ export class EmulatorPanel implements vscode.Disposable {
         this.scheduleNextFrame();
     }
 
+    private frameRequest = 0;
     private async requestSingleFrame(): Promise<void> {
         if (!this.client.connected || !this.panel) { return; }
+        const panel = this.panel;
+        const request = ++this.frameRequest;
         try {
+            const lease = this.lifecycle.captureSession();
             const rawBuf = await this.client.sendRaw(IpcCommand.GET_FRAME_RAW, undefined, 5000, 'low');
+            lease.assertCurrent();
+            if (panel !== this.panel || request !== this.frameRequest) { return; }
             const frame = decodeFrameRaw(rawBuf);
             if (frame.kind === 'error') {
                 return;

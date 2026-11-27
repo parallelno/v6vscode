@@ -95,6 +95,12 @@
         "icon": "$(add)"
       },
       {
+        "command": "v6.refreshRecorder",
+        "title": "Refresh Recorder",
+        "category": "V6",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "v6.refreshTraceLog",
         "title": "Refresh Trace Log",
         "category": "V6",
@@ -158,6 +164,11 @@
       {
         "command": "v6emul.toggleTraceLog",
         "title": "Trace Log",
+        "category": "v6emul"
+      },
+      {
+        "command": "v6emul.toggleRecorder",
+        "title": "Recorder",
         "category": "v6emul"
       },
       {
@@ -250,6 +261,11 @@
           "command": "v6.refreshPerformance",
           "when": "activeWebviewPanelId == v6.performance",
           "group": "navigation@2"
+        },
+        {
+          "command": "v6.refreshRecorder",
+          "when": "activeWebviewPanelId == v6.recorder",
+          "group": "navigation"
         },
         {
           "command": "v6.refreshTraceLog",

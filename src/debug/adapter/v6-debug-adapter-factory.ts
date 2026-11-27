@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import type { RecorderMove } from '../../emulator/protocol/recorder-models';
 import { SessionCoordinator } from '../../emulator/session/session-coordinator';
 import type { DebugDisplay, WatchpointFeedback } from './debug-ui-ports';
 import { Logger } from '../../platform/logging/logger';
@@ -72,6 +73,10 @@ export class V6DebugAdapterFactory implements vscode.DebugAdapterDescriptorFacto
         return this.requireActiveAdapter().reloadRom();
     }
 
+    restoreRecorder(input: RecorderMove, assertCurrent: () => void) {
+        return this.requireActiveAdapter().restoreRecorder(input, assertCurrent);
+    }
+
     private requireActiveAdapter(): V6DebugAdapter {
         if (!this.activeAdapter) { throw new Error('No active V6 debug session'); }
         return this.activeAdapter;
@@ -92,7 +97,7 @@ export function registerDebugAdapter(
     configProvider: vscode.DebugConfigurationProvider,
     watchpointService: WatchpointService,
     watchpointsProvider: WatchpointFeedback,
-): void {
+): V6DebugAdapterFactory {
     const factory = new V6DebugAdapterFactory(
         lifecycle, emulatorPanel, logger, pathService, getConfiguration, watchpointService, watchpointsProvider,
     );
@@ -105,4 +110,5 @@ export function registerDebugAdapter(
         vscode.commands.registerCommand(CMD_DEBUG_RELOAD_ROM, () => factory.reloadRom()),
         factory,
     );
+    return factory;
 }

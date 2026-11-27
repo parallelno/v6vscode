@@ -9,6 +9,7 @@ export async function run(): Promise<void> {
     mocha.addFile(path.resolve(__dirname, 'suite', 'asm-value-presentation.test.js'));
     mocha.addFile(path.resolve(__dirname, 'suite', 'source-paths.test.js'));
     mocha.addFile(path.resolve(__dirname, 'suite', 'directive-navigation.test.js'));
+    mocha.addFile(path.resolve(__dirname, 'suite', 'recorder.test.js'));
 
     await new Promise<void>((resolve, reject) => {
         const runner = mocha.run(failures => {

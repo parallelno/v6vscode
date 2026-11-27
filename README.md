@@ -12,10 +12,11 @@
 - **Directive navigation** — Ctrl+click on `.include`, `.incbin`, and `.filesize` paths; unresolved paths are reported in the Problems panel
 - **V6: Create Project** — scaffolds a new project (source, Makefile, project config) with ASM/C and ROM/FDD options
 - **V6: Run Project** — launches or hot-reloads the emulator, opens the display panel
-- **v6emul tools view** — the `v6emul` Activity Bar container, also available through **View > Open View... > v6emul**, toggles Settings, Display, Hex Viewer, Memory Edits, Performance, Trace Log, Scripts, Symbols, Ports, and Watchpoints editor panels
+- **v6emul tools view** — the `v6emul` Activity Bar container, also available through **View > Open View... > v6emul**, toggles Settings, Display, Hex Viewer, Memory Edits, Performance, Trace Log, Recorder, Scripts, Symbols, Ports, and Watchpoints editor panels
 - **Display panel** — focused canvas display with keyboard forwarding; execution control stays in VS Code's debug toolbar
 - **Emulator Settings panel** — changes and persists Speed and Display mode
-- **Standalone debug tools** — full-size Hex Viewer, Memory Edits, Performance, Trace Log, Scripts, Symbols, Ports, and Watchpoints editor panels
+- **Standalone debug tools** — full-size Hex Viewer, Memory Edits, Performance, Trace Log, Recorder, Scripts, Symbols, Ports, and Watchpoints editor panels
+- **Recorder** — with a v6emul build advertising Recorder schema 1, pause execution and use **Back Frame**, **Back Instruction**, **Forward Instruction**, or **Forward Frame** to browse snapshots. The read-only timeline shows the current position and sampled frame and instruction tick marks. Up to 1,000 recent instruction transitions can be browsed in both directions; older history is frame-only. Browsing does not execute code. Resuming from a rewound state discards the recorded future. The Display is rebuilt from restored video state, not replayed pixel-for-pixel.
 - **FPS counter** — live frames-per-second display in the status bar (bottom-right) while the emulator is running
 - **FDD persistence** — automatically saves modified floppy disk images back to disk on stop (unless `fddReadOnly` is set)
 

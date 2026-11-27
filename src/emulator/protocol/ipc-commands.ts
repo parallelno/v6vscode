@@ -132,6 +132,8 @@ export const enum IpcCommand {
     DEBUG_HISTORY_CALLER = 111,
     DEBUG_HISTORY_SUCCESSOR = 112,
     DEBUG_ACTIVE_CALLS = 113,
+    DEBUG_RECORDER_STATUS = 114,
+    DEBUG_RECORDER_MOVE = 115,
     DEBUG_SCRIPT_EDIT = 105,
     DEBUG_SCRIPT_COMPILE = 106,
     DEBUG_SCRIPT_RUN_ONCE = 107,
@@ -222,6 +224,10 @@ export interface PingResponse {
 }
 
 export interface ServerCapabilities {
+    recorderSchema?: number;
+    recorderInstructionJumps100?: boolean;
+    recorderSeek?: boolean;
+    recorderLimits?: { maxFrameCheckpoints: number; maxInstructionSteps: number };
     debugger: boolean;
     rawFrame: boolean;
     rawFrameSchema: number;

@@ -16,6 +16,8 @@ import { IpcClient } from '../../src/emulator/client/ipc-client';
 import { IpcCommand } from '../../src/emulator/protocol/ipc-commands';
 import { Logger } from '../../src/platform/logging/logger';
 import { SessionCoordinator } from '../../src/emulator/session/session-coordinator';
+import { RecorderAction, supportsRecorder } from '../../src/emulator/protocol/recorder-models';
+import { moveRecorder, readRecorder } from '../../src/emulator/session/recorder-service';
 
 const PROBE_ELF = fixturePath('cdbg', 'probe-O0.elf');
 const PROBE_ROM = fixtureRom(PROBE_ELF);
@@ -134,6 +136,69 @@ describe('DebugStopContext real-emulator verification', function () {
             await edits.deleteAll().catch(() => {});
             performance.dispose(); edits.dispose();
         }
+    });
+
+    it('navigates frame and instruction history through the Recorder wire contract', async () => {
+        const info = await getServerInfo(client);
+        expect(supportsRecorder(info)).to.equal(true);
+        expect(info.capabilities.recorderInstructionJumps100).to.equal(true);
+        const command = IpcCommand.DEBUG_RECORDER_MOVE;
+        const lease = { key: {}, connected: true, assertCurrent() {}, send: client.send.bind(client) };
+        const status = () => readRecorder(lease);
+        const move = async (action: RecorderAction) => {
+            // RecorderPanel passes this tagged host message into the service.
+            const message = { type: 'move', action, expectedRevision: (await status()).revision };
+            return moveRecorder(lease, message);
+        };
+        const send = async (cmd: IpcCommand, data?: unknown) => {
+            const reply = await client.send(cmd, data);
+            expect(reply.ok, reply.error).to.equal(true);
+            return reply.data;
+        };
+        await send(IpcCommand.STOP);
+        await send(IpcCommand.LOAD_ROM, { data: [0x3C, 0x32, 0x00, 0x40, 0xC3, 0x00, 0x00], autorun: false });
+        await send(IpcCommand.EXECUTE_FRAME_NO_BREAKS);
+        await send(IpcCommand.EXECUTE_FRAME_NO_BREAKS);
+        const tip = await status();
+        expect(tip.instructionStepsBack).to.equal(1000);
+        expect(tip.timeline?.frameTicks).to.have.length(2);
+        const regs = await send(IpcCommand.GET_REGS);
+        const back = await move('backInstruction');
+        expect(back.moved).to.equal(true);
+        expect(back.status.instructionStepsForward).to.equal(1);
+        const stale = await client.send(command, { action: 'forwardInstruction', expectedRevision: tip.revision });
+        expect(stale.code).to.equal('dispatch_error');
+        expect(stale.details?.reason).to.equal('stale_revision');
+        expect((await move('forwardInstruction')).status.position).to.deep.equal(tip.position);
+        expect(await send(IpcCommand.GET_REGS)).to.deep.equal(regs);
+        const jump = await move('backInstruction100');
+        expect(jump.status.instructionStepsForward).to.equal(100);
+        expect((await move('forwardInstruction100')).status.position).to.deep.equal(tip.position);
+        await move('backInstruction');
+        for (let i = 0; i < 10; i++) { await move('backInstruction100'); }
+        const deep = await status();
+        expect(deep.instructionStepsForward).to.equal(1000);
+        expect((await move('backInstruction100')).moved).to.equal(false);
+        expect((await move('forwardInstruction')).status.instructionStepsForward).to.equal(999);
+        for (let i = 0; i < 9; i++) { await move('forwardInstruction100'); }
+        expect((await status()).instructionStepsForward).to.equal(99);
+        expect((await move('forwardInstruction100')).status.position).to.deep.equal(tip.position);
+        expect(await send(IpcCommand.GET_REGS)).to.deep.equal(regs);
+        expect((await move('backFrame')).status.instructionStepsForward).to.equal(0);
+        expect((await move('forwardInstruction')).moved).to.equal(false);
+        expect((await move('forwardFrame')).status.position).to.deep.equal(tip.position);
+        expect(await send(IpcCommand.GET_REGS)).to.deep.equal(regs);
+        expect(info.capabilities.recorderSeek).to.equal(true);
+        const targets = tip.timeline!.snapshots!;
+        const instruction = targets.find(target => target.unit === 'instruction' && target.depth === 10)!;
+        const seek = async (targetId: number) => moveRecorder(lease, { action: 'seek', targetId,
+            expectedRevision: (await status()).revision });
+        expect((await seek(instruction.id)).status.instructionStepsForward).to.equal(10);
+        expect(targets[0]).to.include({ unit: 'frame', depth: 1 });
+        expect((await seek(targets[0].id)).status.position?.id).to.equal(targets[0].id);
+        expect((await seek(tip.position!.id)).status.position).to.deep.equal(tip.position);
+        expect(await send(IpcCommand.GET_REGS)).to.deep.equal(regs);
+        expect((await seek(tip.position!.id)).moved).to.equal(false);
     });
 
     it('negotiates a borrowed session through the coordinator and detaches without exiting the emulator', async () => {
