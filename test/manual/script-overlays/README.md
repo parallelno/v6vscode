@@ -1,6 +1,6 @@
 # Script Overlay Manual Fixtures
 
-Use these files with a v6emul build advertising script-overlay schema 1.
+Use these files with a v6emul build advertising script-overlay schema 1. For the complete Scripts panel workflow, Lua intrinsic reference, execution model, and coordinate rules, see [Scripts and Lua](../../../docs/scripts.md).
 
 1. Open **Scripts** and add the fixture using its absolute path.
 2. Compile it, then use **Run Once** for the paused tests or enable it for the dynamic test.

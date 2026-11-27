@@ -95,6 +95,7 @@ Full developer documentation is in [`docs/`](docs/README.md):
 - [Project System](docs/project-system.md) — discovery, parsing, validation, `*.project.json` schema
 - [Language Support](docs/language-support.md) — syntax highlighting, include navigation
 - [Emulator](docs/emulator.md) — launcher, IPC protocol, lifecycle, webview panel
+- [Scripts and Lua](docs/scripts.md) — Scripts panel, Lua intrinsics, overlays, limits, and examples
 - [Commands](docs/commands.md) — Create Project, Run Project, FDD persistence
 - [Settings and Error UX](docs/settings.md) — configuration, error notifications
 - [Development](docs/development.md) — building, packaging, testing

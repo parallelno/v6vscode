@@ -89,7 +89,7 @@ Rows contain only a 16-bit address, instruction bytes, and v6emul's undecorated 
 
 ## Scripts
 
-`Scripts` is a standalone editor panel for server-owned Lua scripts loaded from absolute server-local paths. It filters Name with case-insensitive substring or `*` glob semantics, edits Name and Path inline, toggles requested Activity, and exposes Compile, Run Once, Disable, Disable All, Delete, and Delete All. Compilation or runtime failures color the row with the VS Code error foreground while retaining icon and tooltip indicators.
+`Scripts` is a standalone editor panel for server-owned Lua scripts loaded from absolute server-local paths. It filters Name with case-insensitive substring or `*` glob semantics, edits Name and Path inline, toggles requested Activity, and exposes Compile, Run Once, Disable, Disable All, Delete, and Delete All. Compilation or runtime failures color the row with the VS Code error foreground while retaining icon and tooltip indicators. See [Scripts and Lua](scripts.md) for the panel workflow, execution model, intrinsic reference, overlay coordinates, limits, and examples.
 
 `ScriptService` validates script schema 1, commands `84..88` and `105..109`, snapshots, runtime states, collection revisions, portable generic paths, and advertised limits. Mutation snapshots are applied directly; visible panels poll the lightweight update revision and fetch the complete ascending-ID collection only when needed. Mutations and Run Once are gated independently while emulation runs.
 
