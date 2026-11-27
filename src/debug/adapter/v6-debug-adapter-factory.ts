@@ -10,6 +10,7 @@ import { WatchpointService } from '../watchpoints/watchpoint-service';
 
 export const CMD_DEBUG_RESET = 'v6.debug.reset';
 export const CMD_DEBUG_RELOAD_ROM = 'v6.debug.reloadRom';
+export const CMD_DEBUG_STEP_INSTRUCTION_BACK = 'v6.debug.stepInstructionBack';
 
 /**
  * Creates a new in-process V6DebugAdapter for each debug session. Adapters are
@@ -73,6 +74,13 @@ export class V6DebugAdapterFactory implements vscode.DebugAdapterDescriptorFacto
         return this.requireActiveAdapter().reloadRom();
     }
 
+    async stepInstructionBack(): Promise<void> {
+        const session = vscode.debug.activeDebugSession;
+        if (session?.type === V6_DEBUG_TYPE) {
+            await this.adaptersBySession.get(session.id)?.stepInstructionBack();
+        }
+    }
+
     restoreRecorder(input: RecorderMove, assertCurrent: () => void) {
         return this.requireActiveAdapter().restoreRecorder(input, assertCurrent);
     }
@@ -108,6 +116,7 @@ export function registerDebugAdapter(
         vscode.debug.onDidTerminateDebugSession(session => factory.handleSessionTerminated(session)),
         vscode.commands.registerCommand(CMD_DEBUG_RESET, () => factory.reset()),
         vscode.commands.registerCommand(CMD_DEBUG_RELOAD_ROM, () => factory.reloadRom()),
+        vscode.commands.registerCommand(CMD_DEBUG_STEP_INSTRUCTION_BACK, () => factory.stepInstructionBack()),
         factory,
     );
     return factory;

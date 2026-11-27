@@ -16,6 +16,7 @@
 - **Display panel** — focused canvas display with keyboard forwarding; execution control stays in VS Code's debug toolbar
 - **Emulator Settings panel** — changes and persists Speed and Display mode
 - **Standalone debug tools** — full-size Hex Viewer, Memory Edits, Performance, Trace Log, Recorder, Scripts, Symbols, Ports, and Watchpoints editor panels
+- **Step Instruction Back** — while a V6 debugger session is paused, use the button between **Continue** and **Step Over** or press **Ctrl+Shift+F10** to rewind one recorded instruction without resuming execution. Requires a Recorder-capable emulator and instruction history.
 - **Recorder** — with a v6emul build advertising Recorder schema 1, pause execution and use **Back Frame**, **Back Instruction**, **Forward Instruction**, or **Forward Frame** to browse snapshots. The read-only timeline shows the current position and sampled frame and instruction tick marks. Up to 1,000 recent instruction transitions can be browsed in both directions; older history is frame-only. Browsing does not execute code. Resuming from a rewound state discards the recorded future. The Display is rebuilt from restored video state, not replayed pixel-for-pixel.
 - **FPS counter** — live frames-per-second display in the status bar (bottom-right) while the emulator is running
 - **FDD persistence** — automatically saves modified floppy disk images back to disk on stop (unless `fddReadOnly` is set)

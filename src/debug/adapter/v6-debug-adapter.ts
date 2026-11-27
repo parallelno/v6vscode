@@ -2,8 +2,8 @@ import { DapRequest, DapResponse, DapEvent, DapStackFrame, DapScope, dapRequest 
 import { ExecutionController } from '../session/execution-controller';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import type { RecorderMove } from '../../emulator/protocol/recorder-models';
-import { moveRecorder } from '../../emulator/session/recorder-service';
+import { RecorderMove, RecorderStatus, supportsRecorder } from '../../emulator/protocol/recorder-models';
+import { moveRecorder, readRecorder } from '../../emulator/session/recorder-service';
 import type { SessionLease } from '../../emulator/session/session-coordinator';
 import type { CommandSender } from '../../emulator/session/session-operations';
 import { EmulatorProcess } from '../../emulator/launcher/v6emul-launcher';
@@ -238,14 +238,36 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
         return result;
     }
 
-    restoreRecorder(input: RecorderMove, assertCurrent: () => void) {
-        return this.sequenceControl(async () => {
+    restoreRecorder(input: RecorderMove, assertCurrent: () => void): Promise<RecorderStatus> {
+        return this.restoreRecorderPosition(lease => {
             assertCurrent();
+            return moveRecorder(lease, input);
+        }, assertCurrent);
+    }
+
+    async stepInstructionBack(): Promise<void> {
+        if (!supportsRecorder(this.lifecycle.serverInfo)) {
+            throw new Error('This v6emul build does not support Recorder');
+        }
+        await this.restoreRecorderPosition(async lease => {
+            const status = await readRecorder(lease);
+            if (!status.attached || status.running || status.instructionStepsBack === 0) {
+                return { status, moved: false };
+            }
+            return moveRecorder(lease, { action: 'backInstruction', expectedRevision: status.revision });
+        });
+    }
+
+    private restoreRecorderPosition(
+        move: (lease: SessionLease) => Promise<{ status: RecorderStatus; moved: boolean; stopSequence?: number }>,
+        assertCurrent?: () => void,
+    ): Promise<RecorderStatus> {
+        return this.sequenceControl(async () => {
+            assertCurrent?.();
             const lease = this.sessionLease;
             if (!lease) { throw new Error('No active V6 debug session'); }
             return this.execution.restorePosition(async () => {
-                assertCurrent();
-                const result = await moveRecorder(lease, input);
+                const result = await move(lease);
                 if (result.moved) { this.lifecycle.notifyPositionChange(lease); }
                 return result;
             });

@@ -59,6 +59,13 @@
         "icon": "res/images/reload-rom.svg"
       },
       {
+        "command": "v6.debug.stepInstructionBack",
+        "title": "Step Instruction Back",
+        "category": "V6",
+        "icon": "$(debug-step-back)",
+        "enablement": "debugType == v6 && debugState == stopped"
+      },
+      {
         "command": "v6.refreshHardwareStatistics",
         "title": "Refresh Hardware Statistics",
         "category": "V6",
@@ -221,6 +228,13 @@
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "v6.debug.stepInstructionBack",
+        "key": "ctrl+shift+f10",
+        "when": "debugType == v6 && debugState == stopped"
+      }
+    ],
     "menus": {
       "debug/toolBar": [
         {
@@ -232,6 +246,11 @@
           "command": "v6.debug.reloadRom",
           "when": "debugType == v6",
           "group": "navigation@3"
+        },
+        {
+          "command": "v6.debug.stepInstructionBack",
+          "when": "debugType == v6",
+          "group": "navigation@15"
         }
       ],
       "view/title": [

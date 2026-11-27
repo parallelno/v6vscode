@@ -88,6 +88,64 @@ describe('V6DebugAdapter restart actions', () => {
 });
 
 describe('Recorder debugger control', () => {
+    function makeRecorderAdapter(instructionStepsBack: number) {
+        const status = {
+            attached: true, running: false, revision: 7, frameCheckpoints: 0,
+            frameStepsBack: 0, frameStepsForward: 0, instructionStepsBack, instructionStepsForward: 0,
+            position: { id: 2, pc: 0x101, frameNumber: 0, atFrameCheckpoint: false, atRecordedTip: true },
+            timeline: { oldest: 1, newest: 2, instructionStart: 1, frameTicks: [], instructionTicks: [1, 2] },
+        };
+        const requests: Array<{ command: IpcCommand; data: unknown }> = [];
+        const notifications: string[] = [];
+        const lease = {
+            assertCurrent() {},
+            send: async (command: IpcCommand, data: unknown) => {
+                requests.push({ command, data });
+                switch (command) {
+                    case IpcCommand.DEBUG_RECORDER_STATUS: return { ok: true, data: status };
+                    case IpcCommand.DEBUG_RECORDER_MOVE: return { ok: true, data: { moved: true, status, stopSequence: 8 } };
+                    case IpcCommand.GET_STOP_RECORD: return { ok: true, data: { sequence: 8, reason: 'step', pc: 0x100, globalInstructionAddress: 0x100 } };
+                    default: throw new Error(`Unexpected request: ${command}`);
+                }
+            },
+        };
+        const lifecycle = {
+            serverInfo: {
+                commands: [IpcCommand.DEBUG_RECORDER_STATUS, IpcCommand.DEBUG_RECORDER_MOVE, IpcCommand.GET_STOP_RECORD],
+                capabilities: { recorderSchema: 1, stopRecordSchema: 1,
+                    recorderLimits: { maxFrameCheckpoints: 3000, maxInstructionSteps: 1000 } },
+            },
+            notifyPositionChange: () => notifications.push('position'),
+        };
+        const adapter = new V6DebugAdapter(lifecycle as any, {} as any, {} as any, {} as any, () => ({} as any));
+        Object.assign(adapter, {
+            sessionLease: lease, client: lease, stopRecordsSupported: true,
+            onStop: async () => { notifications.push('stopped'); },
+        });
+        const execution = (adapter as any).execution as ExecutionController;
+        execution.state = 'paused';
+        return { adapter, execution, requests, notifications };
+    }
+
+    it('rewinds exactly one instruction using the current revision and refreshes the stop', async () => {
+        const { adapter, execution, requests, notifications } = makeRecorderAdapter(1);
+        await adapter.stepInstructionBack();
+        expect(requests).to.deep.equal([
+            { command: IpcCommand.DEBUG_RECORDER_STATUS, data: undefined },
+            { command: IpcCommand.DEBUG_RECORDER_MOVE, data: { action: 'backInstruction', expectedRevision: 7 } },
+            { command: IpcCommand.GET_STOP_RECORD, data: undefined },
+        ]);
+        expect(notifications).to.deep.equal(['position', 'stopped']);
+        expect(execution.state).to.equal('paused');
+    });
+
+    it('does not send a move at the start of instruction history', async () => {
+        const { adapter, requests, notifications } = makeRecorderAdapter(0);
+        await adapter.stepInstructionBack();
+        expect(requests).to.deep.equal([{ command: IpcCommand.DEBUG_RECORDER_STATUS, data: undefined }]);
+        expect(notifications).to.be.empty;
+    });
+
     it('publishes a stopped refresh without continuing and ignores a no-op', async () => {
         const status = decodeRecorderStatus({ attached: true, running: false, revision: 7, frameCheckpoints: 0,
             frameStepsBack: 0, frameStepsForward: 0, instructionStepsBack: 0, instructionStepsForward: 1,
