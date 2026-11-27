@@ -6,20 +6,27 @@ import { suite, test } from 'mocha';
 import { fixtureRom } from '../../fixture-paths';
 
 suite('Assembly function history', () => {
-    test('shows the reduced caller chain and steps out through the recorded caller successor', async function () {
+    test('shows the reduced caller chain and steps out through the recorded caller successor', function () {
+        return verifyStack.call(this, false);
+    });
+    test('tracks PCHL and JMP excursions without losing the hardware caller', function () {
+        return verifyStack.call(this, true);
+    });
+
+    async function verifyStack(this: Mocha.Context, jumps: boolean) {
         this.timeout(35000);
         const root = process.env.V6_EXTENSION_ROOT;
         if (!root || !process.env.V6EMUL || !fs.existsSync(process.env.V6EMUL)) { this.skip(); return; }
         const projectPath = path.join(root, 'temp', 'integration-debug-workspace', 'cdbg.project.json');
         const original = fs.readFileSync(projectPath, 'utf8');
         const fixture = path.join(root, 'test', 'fixtures', 'asmdbg');
-        const source = vscode.Uri.file(path.join(fixture, 'functions.asm'));
+        const source = vscode.Uri.file(path.join(fixture, jumps ? 'jump-functions.asm' : 'functions.asm'));
         const project = JSON.parse(original);
-        project.run.executable = fixtureRom(path.join(fixture, 'functions-linked.elf'));
-        project.run.debugArtifact = path.join(fixture, 'functions-linked.elf');
+        project.run.debugArtifact = path.join(fixture, jumps ? 'jump-functions.elf' : 'functions-linked.elf');
+        project.run.executable = fixtureRom(project.run.debugArtifact);
         project.run.loadAddr = '0x100';
         const lines = fs.readFileSync(source.fsPath, 'utf8').split(/\r?\n/);
-        const target = lines.findIndex(line => line.trim() === 'emit:') + 2;
+        const target = lines.findIndex(line => line.trim() === (jumps ? 'helper:' : 'emit:')) + 2;
         const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(source, new vscode.Position(target - 1, 0)));
         const errors: unknown[] = [];
         const tracker = vscode.debug.registerDebugAdapterTrackerFactory('v6', {
@@ -44,14 +51,14 @@ suite('Assembly function history', () => {
         try {
             fs.writeFileSync(projectPath, JSON.stringify(project, undefined, 2));
             const workspace = path.dirname(projectPath);
-            fs.copyFileSync(source.fsPath, path.join(workspace, 'functions.asm'));
+            fs.copyFileSync(source.fsPath, path.join(workspace, path.basename(source.fsPath)));
             vscode.debug.removeBreakpoints(vscode.debug.breakpoints);
             vscode.debug.addBreakpoints([breakpoint]);
-            const stopped = wait('emit');
+            const stopped = wait(jumps ? 'helper' : 'emit');
             assert.strictEqual(await vscode.debug.startDebugging(vscode.workspace.workspaceFolders?.[0],
                 { type: 'v6', request: 'launch', name: 'ASM function integration' }), true);
             const result = await stopped;
-            assert.deepStrictEqual(result.frames.map(frame => frame.name), ['emit', 'prepare', 'main']);
+            assert.deepStrictEqual(result.frames.map(frame => frame.name), [jumps ? 'helper' : 'emit', 'prepare', 'main']);
             assert.strictEqual(result.frames[0].line, target);
             assert.ok(fs.existsSync(result.frames[0].source.path), 'Active body source must open');
             assert.ok(fs.existsSync(result.frames[1].source.path), 'Caller source must open');
@@ -59,11 +66,21 @@ suite('Assembly function history', () => {
             await result.session.customRequest('stepOut', { threadId: result.thread });
             const resumed = await afterOut;
             assert.deepStrictEqual(resumed.frames.map(frame => frame.name), ['prepare', 'main']);
+            if (jumps) {
+                const emitLine = lines.findIndex(line => line.trim() === 'emit:') + 1;
+                const emitBreakpoint = new vscode.SourceBreakpoint(new vscode.Location(source, new vscode.Position(emitLine, 0)));
+                await vscode.debug.addBreakpoints([emitBreakpoint]);
+                try {
+                    const atEmit = wait('emit');
+                    await resumed.session.customRequest('continue', { threadId: resumed.thread });
+                    assert.deepStrictEqual((await atEmit).frames.map(frame => frame.name), ['emit', 'prepare', 'main']);
+                } finally { await vscode.debug.removeBreakpoints([emitBreakpoint]); }
+            }
         } finally {
             await vscode.commands.executeCommand('workbench.action.debug.stop');
             vscode.debug.removeBreakpoints([breakpoint]);
             fs.writeFileSync(projectPath, original);
             tracker.dispose();
         }
-    });
+    }
 });

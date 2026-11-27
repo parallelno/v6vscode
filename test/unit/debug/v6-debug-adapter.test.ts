@@ -16,7 +16,7 @@ describe('V6DebugAdapter', () => {
         state.debugIndex = { resolveAddress: () => source, resolveAddressRows: () => [], symbolAtAddress: (pc: number) => ({
             name: pc === 0x200 ? 'plain_function' : 'main', type: 2,
         }) };
-        state.debugMetadata = { asmFunctions: { at: () => undefined }, physicalSubprogramAt: () => undefined, inlineChainAt: () => [] };
+        state.debugMetadata = { asmFunctions: { at: () => undefined, regions: [] }, physicalSubprogramAt: () => undefined, inlineChainAt: () => [] };
         let reads = 0;
         state.client = { send: async (command: IpcCommand) => {
             assert.strictEqual(command, IpcCommand.DEBUG_ACTIVE_CALLS);

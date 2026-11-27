@@ -43,7 +43,7 @@ import { memoryCapabilities } from '../../emulator/memory/memory-backend';
 import { LogicalLocationIndex } from './logical-location-index';
 import { SourceStepService, SourceStepState } from './source-step-service';
 import { FunctionHistoryClient } from '../session/function-history-client';
-import { activeFunctionChain, reconstructFunctionChain } from './function-call-chain-service';
+import { activeFunctionChain, hybridFunctionChain, reconstructFunctionChain } from './function-call-chain-service';
 import { STT_FUNC } from '../metadata/elf32-reader';
 
 // ---------------------------------------------------------------------------
@@ -444,14 +444,14 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
             const activeCalls = info?.capabilities.activeCallStackSchema === 1 && info.commands.includes(IpcCommand.DEBUG_ACTIVE_CALLS)
                 && (region || (source ? isAssemblerSource(source.file)
                     : !this.debugMetadata?.physicalSubprogramAt(context.pc) && this.debugIndex?.sourceFiles.some(isAssemblerSource)));
-            const legacyHistory = region && info?.capabilities.functionHistorySchema === 1
+            const boundaryHistory = info?.capabilities.functionHistorySchema === 1
                 && info.commands.includes(IpcCommand.DEBUG_HISTORY_CALLER)
                 && info.commands.includes(IpcCommand.DEBUG_HISTORY_SUCCESSOR);
             const generation = this.stoppedGeneration;
             const unwind = () => this.stackTraceService.capture(generation, context,
                 pc => this.debugMetadata?.physicalSubprogramAt(pc)?.name ?? this.debugIndex?.symbolAtAddress(pc)?.name,
                 pc => this.resolveInlineFrameNames(pc), frame => this.resolveFrameDisplayPc(frame));
-            if (this.client && (activeCalls || legacyHistory)) {
+            if (this.client && (activeCalls || (region && boundaryHistory))) {
                 if (this.historyCapture?.generation !== generation) {
                     const history = new FunctionHistoryClient(this.client);
                     const assertCurrent = () => {
@@ -460,11 +460,21 @@ export class V6DebugAdapter implements vscode.DebugAdapter {
                     };
                     const resolveName = (pc: number) => this.debugMetadata?.physicalSubprogramAt(pc)?.name
                         ?? this.debugIndex?.symbolAtAddress(pc)?.name;
-                    const result = (activeCalls ? history.activeCalls().then(calls => activeFunctionChain(functions, calls,
-                        context.pc, pc => {
-                            const symbol = this.debugIndex?.symbolAtAddress(pc);
-                            return symbol?.type === STT_FUNC ? symbol.name : this.debugMetadata?.physicalSubprogramAt(pc)?.name;
-                        })) : reconstructFunctionChain(functions!, history, context.pc, assertCurrent)).then(chain => {
+                    const functionName = (pc: number) => {
+                        const symbol = this.debugIndex?.symbolAtAddress(pc);
+                        return symbol?.type === STT_FUNC ? symbol.name : this.debugMetadata?.physicalSubprogramAt(pc)?.name;
+                    };
+                    const result = (activeCalls ? history.activeCalls().then(async snapshot => {
+                        assertCurrent();
+                        if (functions?.regions.length && boundaryHistory) {
+                            try { return await hybridFunctionChain(functions, history, snapshot, context.pc, functionName, assertCurrent); }
+                            catch (error) {
+                                assertCurrent();
+                                this.logger.debug(`v6-debug: logical caller history unavailable: ${String(error)}`);
+                            }
+                        }
+                        return activeFunctionChain(functions, snapshot.frames, context.pc, functionName);
+                    }) : reconstructFunctionChain(functions!, history, context.pc, assertCurrent)).then(chain => {
                         assertCurrent();
                         this.stackTraceService.captureHistory(generation, chain,
                             { index: 0, pc: context.pc, sp: context.sp, registers: context.topRegisters },

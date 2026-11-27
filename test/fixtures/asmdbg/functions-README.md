@@ -8,12 +8,15 @@ Artifacts:
 - `functions.elf`: direct-ROM debug companion; three retained regions.
 - `functions-linked.elf`: linked object with section garbage collection; three
   live regions and retained tombstoned metadata for `unused`.
+- `jump-functions.elf`: direct-ROM companion testing an active `PCHL` excursion,
+  its `JMP` back, and a subsequent `JMP` to a third region.
 
 Regenerate from `C:/Work/Programming/v6vscode/test/fixtures/asmdbg` with the updated
 v6asm and V6C linker on PATH:
 
 ```powershell
 v6asm -g functions.asm -o functions.rom
+v6asm -g jump-functions.asm -o jump-functions.rom
 v6asm -g -f obj functions.asm -o functions.o
 ld.lld -m elf32v6clang --gc-sections -e main -Ttext=0x100 functions.o -o functions-linked.elf
 llvm-objcopy -O binary functions-linked.elf functions-linked.rom
