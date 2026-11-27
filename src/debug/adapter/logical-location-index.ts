@@ -44,17 +44,11 @@ export class LogicalLocationIndex {
     }
 
     private statementFor(row: StatementRow, physicalFrameId: string): LogicalStatement {
-        const location: LogicalLocation = {
-            physicalFrameId,
-            inlineChain: this.metadata.inlineChainAt(row.address).map(scope => scope.id),
-            file: row.file,
-            line: row.line,
-            column: row.column,
-            ...(row.discriminator === undefined ? {} : { discriminator: row.discriminator }),
-            isStmt: row.isStmt,
-        };
+        const location = this.locationFor(row, physicalFrameId);
+        // Inline lookup scans debug scopes; only resolve it for matching source rows.
         const ranges = this.debugIndex.statementRows
-            .filter(candidate => sameLocation(this.locationFor(candidate, physicalFrameId), location))
+            .filter(candidate => sameSource(candidate, location)
+                && (candidate.address === row.address || sameInlineChain(this.inlineChainAt(candidate.address), location.inlineChain)))
             .map(candidate => ({ start: candidate.address, end: candidate.address + 1 }));
         return { location, ranges };
     }
@@ -62,13 +56,17 @@ export class LogicalLocationIndex {
     private locationFor(row: StatementRow, physicalFrameId: string): LogicalLocation {
         return {
             physicalFrameId,
-            inlineChain: this.metadata.inlineChainAt(row.address).map(scope => scope.id),
+            inlineChain: this.inlineChainAt(row.address),
             file: row.file,
             line: row.line,
             column: row.column,
             ...(row.discriminator === undefined ? {} : { discriminator: row.discriminator }),
             isStmt: row.isStmt,
         };
+    }
+
+    private inlineChainAt(address: number): readonly number[] {
+        return this.metadata.inlineChainAt(address).map(scope => scope.id);
     }
 
     private lastAddress(ranges: readonly AddressRange[]): number {
@@ -82,13 +80,22 @@ function inRanges(address: number, ranges: readonly AddressRange[]): boolean {
 
 function sameLocation(left: LogicalLocation, right: LogicalLocation): boolean {
     return left.physicalFrameId === right.physicalFrameId
-        && left.file === right.file
+        && sameSource(left, right)
+        && sameInlineChain(left.inlineChain, right.inlineChain);
+}
+
+type SourceFields = Omit<LogicalLocation, 'physicalFrameId' | 'inlineChain'>;
+
+function sameSource(left: SourceFields, right: SourceFields): boolean {
+    return left.file === right.file
         && left.line === right.line
         && left.column === right.column
         && left.discriminator === right.discriminator
-        && left.isStmt === right.isStmt
-        && left.inlineChain.length === right.inlineChain.length
-        && left.inlineChain.every((id, index) => id === right.inlineChain[index]);
+        && left.isStmt === right.isStmt;
+}
+
+function sameInlineChain(left: readonly number[], right: readonly number[]): boolean {
+    return left.length === right.length && left.every((id, index) => id === right[index]);
 }
 
 function locationKey(location: LogicalLocation): string {
