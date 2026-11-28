@@ -97,6 +97,9 @@ import { TraceLogService } from './debug/trace-log/trace-log-service';
 import { CMD_REFRESH_TRACE_LOG, TraceLogPanel } from './debug/views/trace-log-panel';
 import { CMD_REFRESH_RECORDER, RecorderPanel } from './debug/views/recorder-panel';
 import { ScriptService } from './debug/scripts/script-service';
+import { prepareSymbolScript } from './debug/scripts/script-symbols';
+import { artifactRepository } from './debug/metadata/artifact-repository';
+import type { ScriptInput, ScriptLimits } from './emulator/protocol/debug-models';
 import { ScriptOverlayService } from './debug/scripts/script-overlay-service';
 import { CMD_ADD_SCRIPT, CMD_REFRESH_SCRIPTS, ScriptsPanel } from './debug/views/scripts-panel';
 
@@ -126,13 +129,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
     const launcher = new V6emulLauncher(processRunner, logger, serverOutput);
     const ipcClient = new IpcClient(logger);
+    const prepareScript = async (input: ScriptInput, limits: ScriptLimits, projectPath?: string): Promise<ScriptInput> => {
+        if (!input.useDebugSymbols) { return input; }
+        if (!vscode.workspace.isTrusted) { throw new Error('Script symbol substitution requires a trusted workspace'); }
+        const project = projectPath ? await projectRepository.loadLatest(vscode.Uri.file(projectPath)) : undefined;
+        const artifact = project?.run.debugArtifact
+            ? await artifactRepository.load(project.run.debugArtifact, project.run.executable) : undefined;
+        return prepareSymbolScript(input, limits,
+            vscode.Uri.joinPath(context.globalStorageUri, 'script-sources').fsPath, artifact?.index.allSymbols() ?? []);
+    };
     const lifecycle = new SessionCoordinator(locator, launcher, ipcClient, logger, pathService, async (target, session, info) => {
         if (!vscode.workspace.isTrusted) { return; }
         const warnings: string[] = [];
         try {
             const project = await projectRepository.loadLatest(vscode.Uri.file(target.projectPath));
             session.assertCurrent();
-            await ScriptService.restoreSetup(session, info, project.run.scripts ?? [], message => warnings.push(message));
+            await ScriptService.restoreSetup(session, info, project.run.scripts ?? [], message => warnings.push(message),
+                async (input, limits) => {
+                    const prepared = await prepareScript(input, limits, target.projectPath);
+                    session.assertCurrent();
+                    return prepared;
+                }, (script, input) => scriptService.remember(script, input));
         } catch (error) {
             warnings.push(error instanceof Error ? error.message : String(error));
         }
@@ -158,6 +175,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ));
     const scriptService = store.add(new ScriptService(lifecycle, ipcClient,
         (projectPath, scripts) => projectRepository.updateRun(vscode.Uri.file(projectPath), { scripts }),
+        (input, limits) => prepareScript(input, limits, lifecycle.sessionProject?.projectPath),
     ));
     const scriptOverlays = store.add(new ScriptOverlayService(lifecycle, ipcClient, scriptService));
     const emulatorPanel = store.add(new EmulatorPanel(

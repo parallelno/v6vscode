@@ -31,13 +31,22 @@ describe('Scripts webview contract', () => {
     });
 
     it('renders the required table and ordered actions', () => {
-        for (const heading of ['Compilation', 'Activity', 'Name', 'Path']) {
+        for (const heading of ['Compilation', 'Activity', 'Use ELF Symbols', 'Name', 'Path']) {
             expect(panel).to.include(`>${heading}</span>`);
         }
         const menu = panel.match(/<div id="menu".*?<\/div>/s)?.[0] ?? '';
         expect([...menu.matchAll(/data-action="([^"]+)"/g)].map(match => match[1])).to.deep.equal([
             'copy', 'add', 'compile', 'runOnce', 'disable', 'disableAll', 'delete', 'deleteAll',
         ]);
+    });
+
+    it('exposes the persisted ELF option in display and draft rows', () => {
+        expect(script).to.include('checkboxCell(entry, true)');
+        expect(script).to.include("symbols.setAttribute('aria-label', 'Use ELF Symbols')");
+        expect(script).to.include("type: 'setDebugSymbols', scriptId: entry.scriptId, enabled: input.checked");
+        expect(script).to.include('useDebugSymbols: false');
+        expect(script).to.include('active.checked, symbols.checked');
+        expect(panel).to.include('useDebugSymbols: message.enabled');
     });
 
     it('uses safe text rendering, field copy, editing, and accessible error indicators', () => {

@@ -25,7 +25,7 @@ import { matchesScriptName } from '../../../../out/webview/script-name-match.js'
     let adding = false;
     let submitting = false;
     let focusDraft = false;
-    let draft = { name: '', path: '', active: true };
+    let draft = { name: '', path: '', active: true, useDebugSymbols: false };
     let editDraft = null;
     let menuId = null;
     let menuField = null;
@@ -34,7 +34,7 @@ import { matchesScriptName } from '../../../../out/webview/script-name-match.js'
     function post(message) { vscode.postMessage({ generation, ...message }); }
     const help = bindScriptHelp(post);
     function invalid(input, message) { return markInvalid(input, message, live, status); }
-    function inputValue(name, path, active) {
+    function inputValue(name, path, active, useDebugSymbols) {
         clearInvalid(name, path);
         if (!name.value.length) return invalid(name, 'Name must not be empty');
         if (maxNameBytes && new TextEncoder().encode(name.value).length > maxNameBytes) {
@@ -47,7 +47,7 @@ import { matchesScriptName } from '../../../../out/webview/script-name-match.js'
         if (maxPathBytes && new TextEncoder().encode(wirePath).length > maxPathBytes) {
             return invalid(path, `Path exceeds ${maxPathBytes} UTF-8 bytes`);
         }
-        return { name: name.value, path: wirePath, active };
+        return { name: name.value, path: wirePath, active, useDebugSymbols };
     }
     function visibleEntries() { return entries.filter(entry => matchesScriptName(entry.name, query.value)); }
     function cell(text, className = '', field = '') {
@@ -69,14 +69,19 @@ import { matchesScriptName } from '../../../../out/webview/script-name-match.js'
         element.title = problem ? `${problem.kind} error: ${problem.text}` : 'Compiled Successfully';
         element.setAttribute('aria-label', element.title); return element;
     }
-    function checkboxCell(entry) {
-        const element = cell('', 'toggle', 'activity');
-        const input = document.createElement('input'); input.type = 'checkbox'; input.checked = entry.active;
-        input.disabled = !canMutate || submitting; input.title = entry.active ? 'Enabled' : 'Disabled';
-        input.setAttribute('aria-label', `${entry.active ? 'Enabled' : 'Disabled'}: ${entry.name}`);
+    function checkboxCell(entry, symbols = false) {
+        const checked = symbols ? !!entry.useDebugSymbols : entry.active;
+        const element = cell('', 'toggle', symbols ? 'useDebugSymbols' : 'activity');
+        const input = document.createElement('input'); input.type = 'checkbox'; input.checked = checked;
+        input.disabled = !canMutate || submitting; input.title = symbols ? 'Use project ELF symbols' : (checked ? 'Enabled' : 'Disabled');
+        input.setAttribute('aria-label', `${symbols ? 'Use ELF Symbols' : 'Activity'}: ${entry.name}`);
         input.addEventListener('click', event => event.stopPropagation());
         input.addEventListener('change', () => {
-            if (!submitting) { submitting = true; input.disabled = true; post({ type: 'setActivity', scriptId: entry.scriptId, active: input.checked }); }
+            if (!submitting) {
+                submitting = true; input.disabled = true;
+                post(symbols ? { type: 'setDebugSymbols', scriptId: entry.scriptId, enabled: input.checked }
+                    : { type: 'setActivity', scriptId: entry.scriptId, active: input.checked });
+            }
         });
         element.appendChild(input); return element;
     }
@@ -106,11 +111,11 @@ import { matchesScriptName } from '../../../../out/webview/script-name-match.js'
         row.setAttribute('role', 'row'); row.tabIndex = 0; row.dataset.id = String(entry.scriptId);
         const name = cell(entry.name, 'editable', 'name'); name.title = entry.name;
         const path = cell(entry.path, 'editable', 'path'); path.title = entry.path;
-        row.append(compilationCell(entry), checkboxCell(entry), name, path);
+        row.append(compilationCell(entry), checkboxCell(entry), checkboxCell(entry, true), name, path);
         row.addEventListener('click', () => select(entry.scriptId, row));
         for (const editable of [name, path]) editable.addEventListener('dblclick', event => {
             event.stopPropagation(); if (canMutate && !submitting) {
-                editingId = entry.scriptId; editDraft = { name: entry.name, path: entry.path, active: entry.active };
+                editingId = entry.scriptId; editDraft = { name: entry.name, path: entry.path, active: entry.active, useDebugSymbols: !!entry.useDebugSymbols };
                 closeMenu(); render();
             }
         });
@@ -122,13 +127,19 @@ import { matchesScriptName } from '../../../../out/webview/script-name-match.js'
     }
     function editorRow(entry) {
         const row = document.createElement('form'); row.className = `row${entry ? '' : ' draft'}`; row.setAttribute('role', 'row');
-        const values = entry ? editDraft ?? { name: entry.name, path: entry.path, active: entry.active } : draft;
+        const values = entry ? editDraft ?? { name: entry.name, path: entry.path, active: entry.active, useDebugSymbols: !!entry.useDebugSymbols } : draft;
         const activeCell = cell('', 'toggle');
         const active = document.createElement('input'); active.type = 'checkbox'; active.checked = values.active;
         active.setAttribute('aria-label', 'Activity'); activeCell.appendChild(active);
+        const symbolsCell = cell('', 'toggle');
+        const symbols = document.createElement('input'); symbols.type = 'checkbox'; symbols.checked = values.useDebugSymbols;
+        symbols.setAttribute('aria-label', 'Use ELF Symbols'); symbolsCell.appendChild(symbols);
         const name = textInput('Name', values.name); const path = textInput('Path', values.path);
-        for (const control of [active, name.input, path.input]) control.disabled = !canMutate || submitting;
-        row.append(cell(entry ? (entry.compilation.status === 'compiled' ? '✓' : '✕') : '—', 'compilation'), activeCell, name.cell, path.cell);
+        for (const control of [active, symbols, name.input, path.input]) control.disabled = !canMutate || submitting;
+        row.append(cell(entry ? (entry.compilation.status === 'compiled' ? '✓' : '✕') : '—', 'compilation'), activeCell, symbolsCell, name.cell, path.cell);
+        symbols.addEventListener('change', () => {
+            if (entry && editDraft) editDraft.useDebugSymbols = symbols.checked; else draft.useDebugSymbols = symbols.checked;
+        });
         for (const [key, input] of /** @type {Array<[string, HTMLInputElement]>} */ ([['name', name.input], ['path', path.input]])) input.addEventListener('input', () => {
             clearInvalid(input); if (entry && editDraft) editDraft[key] = input.value; else draft[key] = input.value;
         });
@@ -137,7 +148,7 @@ import { matchesScriptName } from '../../../../out/webview/script-name-match.js'
         });
         row.addEventListener('submit', event => {
             event.preventDefault(); if (submitting) return;
-            const input = inputValue(name.input, path.input, active.checked); if (!input) return;
+            const input = inputValue(name.input, path.input, active.checked, symbols.checked); if (!input) return;
             submitting = true; for (const control of row.querySelectorAll('input')) control.disabled = true;
             post(entry ? { type: 'edit', scriptId: entry.scriptId, input } : { type: 'add', input });
         });
@@ -152,7 +163,7 @@ import { matchesScriptName } from '../../../../out/webview/script-name-match.js'
     }
     function startAdd() {
         if (!canMutate) return;
-        if (!adding) { draft = { name: '', path: '', active: true }; focusDraft = true; }
+        if (!adding) { draft = { name: '', path: '', active: true, useDebugSymbols: false }; focusDraft = true; }
         adding = true; editingId = null; editDraft = null; closeMenu(); render();
     }
     function openMenu(event, id, field, source) {

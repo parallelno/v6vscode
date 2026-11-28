@@ -18,6 +18,7 @@ import {
 } from './script-codec';
 
 export class ScriptService extends EventEmitter {
+    private readonly configuration = new Map<number, { input: ScriptInput; wirePath: string }>();
     private entries: readonly ScriptSnapshot[] = Object.freeze([]);
     private revision: number | undefined;
     private queue: Promise<void> = Promise.resolve();
@@ -29,6 +30,7 @@ export class ScriptService extends EventEmitter {
         private readonly lifecycle: SessionCoordinator,
         private readonly client: IpcClient,
         private readonly saveSetup?: (projectPath: string, scripts: readonly ScriptInput[]) => Promise<void>,
+        private readonly prepare: (input: ScriptInput, limits: ScriptLimits) => Promise<ScriptInput> = async input => input,
     ) {
         super();
         this.stateListener = () => {
@@ -37,7 +39,10 @@ export class ScriptService extends EventEmitter {
         this.lifecycle.on('stateChange', this.stateListener);
     }
 
-    static async restoreSetup(client: Pick<IpcClient, 'send'> & { readonly connected: boolean }, info: GetServerInfoResponse, scripts: readonly ScriptInput[], report: (message: string) => void): Promise<void> {
+    static async restoreSetup(client: Pick<IpcClient, 'send'> & { readonly connected: boolean }, info: GetServerInfoResponse, scripts: readonly ScriptInput[], report: (message: string) => void,
+        prepare: (input: ScriptInput, limits: ScriptLimits) => Promise<ScriptInput> = async input => input,
+        restored: (script: ScriptSnapshot, input: ScriptInput) => void = () => {},
+    ): Promise<void> {
         if (!scripts.length) { return; }
         try { validateScriptServer(info); } catch {
             report('The emulator does not support restoring saved scripts.');
@@ -47,12 +52,21 @@ export class ScriptService extends EventEmitter {
         if (scripts.length > limits.maxRecords) { report(`Only the first ${limits.maxRecords} saved scripts can be restored.`); }
         for (const entry of scripts.slice(0, limits.maxRecords)) {
             if (!client.connected) { return; }
-            try { await addScript(client, { ...entry, path: entry.path.replace(/\\/g, '/') }, limits); }
+            try {
+                const input = { ...entry, path: entry.path.replace(/\\/g, '/') };
+                const request = await prepare(input, limits);
+                if (!client.connected) { return; }
+                const result = await addScript(client, wireInput(request), limits);
+                restored(result.script, input);
+            }
             catch (error) { report(`Could not restore ${entry.name}: ${error instanceof Error ? error.message : String(error)}`); }
         }
     }
 
     get snapshot(): readonly ScriptSnapshot[] { return this.entries; }
+    remember(script: ScriptSnapshot, input: ScriptInput): void {
+        this.configuration.set(script.scriptId, { input: { ...input }, wirePath: script.path });
+    }
     get sessionGeneration(): number { return this.generation; }
     get collectionRevision(): number | undefined { return this.revision; }
 
@@ -89,16 +103,24 @@ export class ScriptService extends EventEmitter {
 
     add(input: ScriptInput): Promise<ScriptSnapshot> {
         return this.mutate(false, async () => {
-            const result = await addScript(this.client, input, this.limits());
+            const generation = this.generation;
+            this.validateConfiguration(input);
+            const request = await this.prepare(input, this.limits());
+            if (generation !== this.generation) { throw new Error('The script session has changed'); }
+            const result = await addScript(this.client, wireInput(request), this.limits());
+            this.remember(result.script, input);
             this.applyMutation(result.script, result.updates);
-            return result.script;
+            return this.requireEntry(result.script.scriptId);
         }, true);
     }
 
     edit(scriptId: number, input: ScriptInput): Promise<ScriptSnapshot> {
         return this.mutate(false, async () => {
             const previous = this.requireEntry(scriptId);
-            const request = this.validate(input);
+            const generation = this.generation;
+            this.validateConfiguration(input);
+            const request = this.validate(wireInput(await this.prepare(input, this.limits())));
+            if (generation !== this.generation) { throw new Error('The script session has changed'); }
             const response = await this.client.send<unknown>(
                 IpcCommand.DEBUG_SCRIPT_EDIT, { scriptId, ...request }, 5000, 'high',
             );
@@ -108,9 +130,10 @@ export class ScriptService extends EventEmitter {
             if (result.script.scriptId !== scriptId || !matches(result.script, request)) {
                 throw new Error(`Edited script ${scriptId} does not match the acknowledged input`);
             }
+            this.remember(result.script, input);
             this.applyMutation(result.script, result.updates);
             if (previous.active && !result.script.active) { this.emit('overlayRemove', scriptId); }
-            return result.script;
+            return this.requireEntry(scriptId);
         }, true);
     }
 
@@ -133,13 +156,23 @@ export class ScriptService extends EventEmitter {
             }
             this.applyMutation(result.script, result.updates);
             this.emit('overlayRemove', scriptId);
-            return result.script;
+            return this.requireEntry(scriptId);
         }, true);
     }
 
     compile(scriptId: number): Promise<ScriptSnapshot> {
         return this.mutate(false, async () => {
-            this.requireEntry(scriptId);
+            const entry = this.requireEntry(scriptId);
+            if (entry.useDebugSymbols) {
+                const generation = this.generation;
+                const request = this.validate(wireInput(await this.prepare(inputFrom(entry, {}), this.limits())));
+                if (generation !== this.generation) { throw new Error('The script session has changed'); }
+                const response = await this.client.send<unknown>(IpcCommand.DEBUG_SCRIPT_EDIT, { scriptId, ...request }, 5000, 'high');
+                const result = decodeScriptMutationResponse(this.responseData(response, 'Unable to update script source'), this.limits());
+                if (result.script.scriptId !== scriptId || !matches(result.script, request)) { throw new Error('Compiled script input changed'); }
+                this.remember(result.script, inputFrom(entry, {}));
+                this.applyMutation(result.script, result.updates);
+            }
             const response = await this.client.send<unknown>(
                 IpcCommand.DEBUG_SCRIPT_COMPILE, { scriptId }, 5000, 'high',
             );
@@ -148,7 +181,7 @@ export class ScriptService extends EventEmitter {
             );
             if (result.script.scriptId !== scriptId) { throw new Error('Compiled script identity changed'); }
             this.applyMutation(result.script, result.updates);
-            return result.script;
+            return this.requireEntry(scriptId);
         });
     }
 
@@ -246,7 +279,7 @@ export class ScriptService extends EventEmitter {
             if (generation !== this.generation) { throw new Error('The script session has changed'); }
             if (persist && project && this.saveSetup) {
                 try {
-                    await this.saveSetup(project.projectPath, this.entries.map(({ name, path, active }) => ({ name, path, active })));
+                    await this.saveSetup(project.projectPath, this.entries.map(entry => inputFrom(entry, {})));
                 } catch (error) {
                     throw Object.assign(new Error(`Script change applied, but the project setup could not be saved: ${error instanceof Error ? error.message : String(error)}`), { cause: error });
                 }
@@ -269,13 +302,23 @@ export class ScriptService extends EventEmitter {
     }
 
     private publish(entries: readonly ScriptSnapshot[], revision: number): void {
+        for (const id of this.configuration.keys()) {
+            if (!entries.some(entry => entry.scriptId === id)) { this.configuration.delete(id); }
+        }
         this.entries = Object.freeze(entries.map(entry => Object.freeze({
             ...entry,
+            ...this.displayInput(entry),
             compilation: Object.freeze({ ...entry.compilation }),
             runtime: Object.freeze({ ...entry.runtime }),
         })));
         this.revision = revision;
         this.emit('change', this.entries);
+    }
+
+    private displayInput(entry: ScriptSnapshot): Partial<ScriptInput> {
+        const saved = this.configuration.get(entry.scriptId);
+        if (!saved || (entry.path !== saved.wirePath && entry.path !== saved.input.path)) { return {}; }
+        return { path: saved.input.path, ...(saved.input.useDebugSymbols !== undefined && { useDebugSymbols: saved.input.useDebugSymbols }) };
     }
 
     private async sendMutation(command: IpcCommand, data: unknown): Promise<void> {
@@ -290,6 +333,13 @@ export class ScriptService extends EventEmitter {
 
     private validate(input: unknown): ScriptInput {
         return validateScriptInput(input, this.limits());
+    }
+
+    private validateConfiguration(input: ScriptInput): void {
+        this.validate(wireInput(input));
+        if (input.useDebugSymbols !== undefined && typeof input.useDebugSymbols !== 'boolean') {
+            throw new Error('useDebugSymbols must be a boolean');
+        }
     }
 
     private limits(): ScriptLimits {
@@ -318,6 +368,7 @@ export class ScriptService extends EventEmitter {
 
     private reset(): void {
         this.generation++;
+        this.configuration.clear();
         this.entries = Object.freeze([]);
         this.revision = undefined;
         this.emit('sessionReset');
@@ -335,7 +386,12 @@ async function addScript(client: Pick<IpcClient, 'send'>, input: ScriptInput, li
 }
 
 function inputFrom(entry: ScriptSnapshot, changes: Partial<ScriptInput>): ScriptInput {
-    return { name: entry.name, path: entry.path, active: entry.active, ...changes };
+    return { name: entry.name, path: entry.path, active: entry.active,
+        ...(entry.useDebugSymbols !== undefined && { useDebugSymbols: entry.useDebugSymbols }), ...changes };
+}
+
+function wireInput(input: ScriptInput): ScriptInput {
+    return { name: input.name, path: input.path, active: input.active };
 }
 
 function matches(entry: ScriptSnapshot, input: ScriptInput): boolean {

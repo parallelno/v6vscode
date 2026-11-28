@@ -1,6 +1,6 @@
 :root {
     color-scheme: light dark;
-    --columns: minmax(82px, .55fr) minmax(58px, .42fr) minmax(120px, 1fr) minmax(240px, 2fr);
+    --columns: minmax(82px, .55fr) minmax(58px, .42fr) minmax(110px, .65fr) minmax(120px, 1fr) minmax(240px, 2fr);
 }
 #table { height: calc(100vh - 110px); min-width: 500px; border-top: 1px solid var(--vscode-panel-border); overflow: auto; }
 .row.error:not(.selected) { color: var(--vscode-errorForeground); }

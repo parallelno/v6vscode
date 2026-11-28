@@ -110,6 +110,13 @@ export class ScriptsPanel implements vscode.Disposable {
                 case 'compile': if (this.current(message) && validId(message.scriptId)) {
                     await this.runOperation('compile', () => this.service.compile(message.scriptId));
                 } break;
+                case 'setDebugSymbols': if (this.current(message) && validId(message.scriptId)
+                    && typeof message.enabled === 'boolean') {
+                    const entry = this.entry(message.scriptId);
+                    await this.runOperation('setDebugSymbols', () => this.service.edit(message.scriptId, {
+                        name: entry.name, path: entry.path, active: entry.active, useDebugSymbols: message.enabled,
+                    }));
+                } break;
                 case 'runOnce': if (this.current(message) && validId(message.scriptId)) {
                     await this.runOperation('runOnce', async () => {
                         const result = await this.service.runOnce(message.scriptId);
@@ -258,6 +265,7 @@ export class ScriptsPanel implements vscode.Disposable {
         const value = field === 'name' ? entry.name
             : field === 'path' ? entry.path
                 : field === 'activity' ? (entry.active ? 'Enabled' : 'Disabled')
+                    : field === 'useDebugSymbols' ? (entry.useDebugSymbols ? 'Enabled' : 'Disabled')
                     : errorText(entry) ?? 'Compiled Successfully';
         await vscode.env.clipboard.writeText(value);
         this.post({ type: 'operation', operation: 'copy', ok: true, message: 'Copied' });
@@ -269,7 +277,9 @@ export class ScriptsPanel implements vscode.Disposable {
         if (typeof input.name !== 'string') { throw new Error('Name must be a string'); }
         if (typeof input.path !== 'string') { throw new Error('Path must be a string'); }
         if (typeof input.active !== 'boolean') { throw new Error('Activity must be a boolean'); }
-        return { name: input.name, path: input.path.replace(/\\/g, '/'), active: input.active };
+        if (input.useDebugSymbols !== undefined && typeof input.useDebugSymbols !== 'boolean') { throw new Error('Use ELF Symbols must be a boolean'); }
+        return { name: input.name, path: input.path.replace(/\\/g, '/'), active: input.active,
+            ...(input.useDebugSymbols !== undefined && { useDebugSymbols: input.useDebugSymbols }) };
     }
 
     private current(message: { generation: number }): boolean {
@@ -354,7 +364,7 @@ export class ScriptsPanel implements vscode.Disposable {
 <input id="catalog-search" type="search" maxlength="256" aria-label="Search Lua help" placeholder="Search…">
 <div id="catalog-items"></div><div id="catalog-preview" aria-live="polite"></div>
 </div></div><div class="toolbar"><input id="query" type="search" maxlength="256" aria-label="Filter scripts by name" placeholder="Filter by name"><span id="count"></span></div>
-<div id="status" role="status">No active emulator session</div><div id="table" role="grid" aria-label="Scripts"><div class="header" role="row"><span role="columnheader">Compilation</span><span role="columnheader">Activity</span><span role="columnheader">Name</span><span role="columnheader">Path</span></div><div id="rows"></div></div><div id="empty" tabindex="0">No scripts</div><div id="live" class="sr-only" aria-live="polite"></div>
+<div id="status" role="status">No active emulator session</div><div id="table" role="grid" aria-label="Scripts"><div class="header" role="row"><span role="columnheader">Compilation</span><span role="columnheader">Activity</span><span role="columnheader">Use ELF Symbols</span><span role="columnheader">Name</span><span role="columnheader">Path</span></div><div id="rows"></div></div><div id="empty" tabindex="0">No scripts</div><div id="live" class="sr-only" aria-live="polite"></div>
 <div id="menu" role="menu" hidden><button role="menuitem" data-action="copy">Copy</button><button role="menuitem" data-action="add">Add</button><button role="menuitem" data-action="compile">Compile</button><button role="menuitem" data-action="runOnce">Run Once</button><button role="menuitem" data-action="disable">Disable</button><button role="menuitem" data-action="disableAll">Disable All</button><button role="menuitem" data-action="delete">Delete</button><button role="menuitem" data-action="deleteAll">Delete All</button></div>
 <script type="module" nonce="${nonce}" src="${jsUri}"></script></body></html>`;
     }

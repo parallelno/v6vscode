@@ -19,12 +19,12 @@ describe('ProjectRepository', () => {
         try {
             const repository = new ProjectRepository({ info: () => {} } as any);
             await Promise.all([
-                repository.updateRun(uri, { scripts: [{ name: 'Sample', path: source, active: false }] }),
+                repository.updateRun(uri, { scripts: [{ name: 'Sample', path: source, active: false, useDebugSymbols: true }] }),
                 repository.updateRun(uri, { speed: '200%' }),
             ]);
-            expect(JSON.parse(text).run.scripts).to.deep.equal([{ name: 'Sample', path: 'out/sample.lua', active: false }]);
+            expect(JSON.parse(text).run.scripts).to.deep.equal([{ name: 'Sample', path: 'out/sample.lua', active: false, useDebugSymbols: true }]);
             expect((await repository.load(uri)).run).to.include({ speed: '200%' });
-            expect((await repository.load(uri)).run.scripts).to.deep.equal([{ name: 'Sample', path: source, active: false }]);
+            expect((await repository.load(uri)).run.scripts).to.deep.equal([{ name: 'Sample', path: source, active: false, useDebugSymbols: true }]);
             await repository.updateRun(uri, { scripts: [] });
             expect((await repository.load(uri)).run.scripts).to.deep.equal([]);
         } finally { workspace.fs = originalFs; }

@@ -3,7 +3,7 @@ import type { ScriptHelpItem } from '../scripts/script-help';
 
 export type ScriptHelpPreview = Omit<ScriptHelpItem, 'code'>;
 
-export type ScriptField = 'compilation' | 'activity' | 'name' | 'path';
+export type ScriptField = 'compilation' | 'activity' | 'useDebugSymbols' | 'name' | 'path';
 
 export type ScriptsWebviewMessage =
     | { type: 'ready' }
@@ -13,6 +13,7 @@ export type ScriptsWebviewMessage =
     | { type: 'add'; generation: number; input: ScriptInput }
     | { type: 'edit'; generation: number; scriptId: number; input: ScriptInput }
     | { type: 'setActivity'; generation: number; scriptId: number; active: boolean }
+    | { type: 'setDebugSymbols'; generation: number; scriptId: number; enabled: boolean }
     | { type: 'compile'; generation: number; scriptId: number }
     | { type: 'runOnce'; generation: number; scriptId: number }
     | { type: 'disable'; generation: number; scriptId: number }

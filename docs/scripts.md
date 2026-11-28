@@ -31,7 +31,7 @@ The intrinsic set and its validation are implemented in `v6emul` (`libs/v6core/i
 - Script files are read by the emulator, not by VS Code. The path must be absolute and server-local. The normal case is the same machine, so use a normal absolute path such as `C:/work/demo/hud.lua` or `/home/me/demo/hud.lua`.
 - Automatic per-instruction execution requires the emulator debugger to be attached. v6vscode attaches it for **Run Project**, debug launches, and attach sessions, so enabled scripts run automatically in all normal VS Code sessions. An external client that connects without attaching the debugger can still use **Run Once**, but enabled scripts will not run automatically.
 
-In a project-owned session, the panel saves each script's name, path, and Activity setting to `run.scripts` in the launching `*.project.json`. A new session restores those entries, even if the Scripts panel is closed. Paths are stored relative to the project file when possible. Keep the `.lua` files: their source is not embedded. Emulator IDs, compilation/runtime state, Lua globals, and overlays are not saved. Borrowed attach sessions have no launching project and do not change project settings.
+In a project-owned session, the panel saves each script's name, path, Activity, and **Use ELF Symbols** setting (`useDebugSymbols`) to `run.scripts` in the launching `*.project.json`. A new session restores those entries, even if the Scripts panel is closed. Paths are stored relative to the project file when possible. Keep the `.lua` files: their source is not embedded. Emulator IDs, compilation/runtime state, Lua globals, and overlays are not saved. Borrowed attach sessions have no launching project and do not change project settings.
 
 ## Quick start
 
@@ -65,6 +65,7 @@ The panel uses the shared session connection. Without a session it shows `No act
 |---|---|
 | **Compilation** | `✓` when the file compiled. `✕` for a compilation error or a runtime error; hover the cell for the full message. The row uses the error foreground color. |
 | **Activity** | Requests automatic execution. This is the emulator-owned `active` flag, not a file property. Turning it off also removes that script's overlays. |
+| **Use ELF Symbols** | Replaces exact, case-sensitive symbol tokens with their numeric ELF values before sending the script to the emulator. Defaults to off. |
 | **Name** | User label for the script. Filtering uses this column. |
 | **Path** | Absolute emulator-local path. VS Code displays and sends generic `/` separators. |
 
@@ -83,6 +84,10 @@ The title menu and the row context menu provide:
 | **Refresh** | Re-fetches the complete ID-ordered collection. The visible panel also polls the lightweight update revision once per second. |
 
 Double-click **Name** or **Path** to edit inline. Enter submits; Escape cancels. The Activity checkbox toggles immediately.
+
+The **Use ELF Symbols** checkbox also applies immediately. With it enabled, a trusted extension host reads the original Lua file and substitutes symbol tokens using the launching project's `run.debugArtifact`. Strings (including long strings), comments, numeric literals, and unknown names are unchanged. For example, `GetByteGlobal(A_FRAME_COUNTER)` becomes `GetByteGlobal(0x...)`; diagnostic strings containing `A_FRAME_COUNTER` stay readable. Symbols denote their ELF values/addresses, not the contents of memory. Conflicting values for the same referenced name report an ambiguity error. This is lexical substitution, not Lua scope analysis: avoid using project symbol names as Lua locals, field names, or function names.
+
+The extension writes a generated copy in its global storage and sends that copy's path through the existing path-only emulator API. The original file is never modified, and the panel and project settings retain its original path. The emulator must be on the same host and able to read the generated copy. **Compile** regenerates the copy using the current source and ELF; adding, restoring, or editing a symbol-enabled entry also prepares its source. With no configured ELF (including borrowed attach sessions), no names are substituted. An unreadable or invalid configured ELF reports an error rather than silently using stale symbols. Generated copies are retained so emulator-owned records remain readable after the panel closes.
 
 While the emulator is running, mutations are gated independently from execution. Add, Edit, Compile, Activity changes, Disable, Disable All, Delete, and Delete All require the server's `scriptMutationsWhileRunning` capability; **Run Once** requires `scriptRunOnceWhileRunning`. Current `v6emul` advertises both. When a capability is absent, pause the emulator first. Automatic execution of already-enabled scripts is not affected by these gates.
 

@@ -77,8 +77,9 @@ export class ProjectRepository implements vscode.Disposable {
                 ...(project.run.fddReadOnly !== undefined && { fddReadOnly: project.run.fddReadOnly }),
                 ...(project.run.speed && { speed: project.run.speed }),
                 ...(project.run.viewMode && { viewMode: project.run.viewMode }),
-                ...(project.run.scripts && { scripts: project.run.scripts.map(({ name, path: source, active }) => ({
+                ...(project.run.scripts && { scripts: project.run.scripts.map(({ name, path: source, active, useDebugSymbols }) => ({
                     name, path: path.relative(projectDir, source).split(path.sep).join('/') || '.', active,
+                    ...(useDebugSymbols !== undefined && { useDebugSymbols }),
                 })) }),
             },
         };

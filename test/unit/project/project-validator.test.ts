@@ -2,6 +2,13 @@ import { expect } from 'chai';
 import { validate, ValidationResult } from '../../../src/project/validation/project-validator';
 
 describe('project-validator', () => {
+    it('accepts legacy scripts and boolean debug symbol options, but rejects invalid option types', () => {
+        const entry = { name: 'trace', path: 'trace.lua', active: false };
+        for (const script of [entry, { ...entry, useDebugSymbols: false }, { ...entry, useDebugSymbols: true }]) {
+            expect(validate({ name: 'test', run: { executable: 'a.rom', scripts: [script] } }).ok).to.equal(true);
+        }
+        expect(validate({ name: 'test', run: { executable: 'a.rom', scripts: [{ ...entry, useDebugSymbols: 'yes' }] } }).ok).to.equal(false);
+    });
     describe('accept cases', () => {
         it('should accept minimal valid project', () => {
             const result = validate({ name: 'test', run: { executable: 'a.rom' } });

@@ -151,6 +151,8 @@ export interface ScriptInput {
     name: string;
     path: string;
     active: boolean;
+    /** Extension-owned option; never sent over the emulator protocol. */
+    useDebugSymbols?: boolean;
 }
 
 export type ScriptCompilation =

@@ -4,6 +4,7 @@ export interface ProjectScript {
     name: string;
     path: string;
     active: boolean;
+    useDebugSymbols?: boolean;
 }
 
 export interface V6ProjectRun {

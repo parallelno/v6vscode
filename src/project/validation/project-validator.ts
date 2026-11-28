@@ -65,13 +65,15 @@ export function validate(data: unknown): ValidationResult {
                 for (const [index, value] of run.scripts.entries()) {
                     const entry = value as Partial<ProjectScript> | null;
                     if (!entry || typeof entry !== 'object' || Array.isArray(entry)
-                        || Object.keys(entry).some(key => !['name', 'path', 'active'].includes(key))
+                        || Object.keys(entry).some(key => !['name', 'path', 'active', 'useDebugSymbols'].includes(key))
                         || typeof entry.name !== 'string' || !entry.name || entry.name.includes('\0')
                         || typeof entry.path !== 'string' || !entry.path || entry.path.includes('\0')
-                        || typeof entry.active !== 'boolean') {
+                        || typeof entry.active !== 'boolean'
+                        || ('useDebugSymbols' in entry && typeof entry.useDebugSymbols !== 'boolean')) {
                         errors.push({ path: `run.scripts[${index}]`, message: 'Expected a non-empty name and path and a boolean active flag.' });
                     } else {
-                        scripts.push({ name: entry.name, path: entry.path, active: entry.active });
+                        scripts.push({ name: entry.name, path: entry.path, active: entry.active,
+                            ...(entry.useDebugSymbols !== undefined && { useDebugSymbols: entry.useDebugSymbols }) });
                     }
                 }
             }

@@ -40,6 +40,44 @@ function makeSnapshot(scriptId: number, name: string, active = true): ScriptSnap
 }
 
 describe('ScriptService', () => {
+    it('retains original paths and symbol options across restore, polling, compile and persistence without sending them on the wire', async () => {
+        const lifecycle = Object.assign(new FakeLifecycle(), { sessionProject: { projectPath: 'C:/demo/demo.project.json' } });
+        let wire: ScriptSnapshot | undefined;
+        let revision = 0;
+        let preparations = 0;
+        const saved: any[] = [];
+        const requests: any[] = [];
+        const prepare = async (input: any) => ({ name: input.name, active: input.active,
+            path: input.useDebugSymbols ? `C:/cache/generated-${++preparations}.lua` : input.path });
+        const client = { connected: true, send: async (command: IpcCommand, data: any) => {
+            requests.push({ command, data });
+            if (command === IpcCommand.DEBUG_SCRIPT_GET_ALL) return { ok: true, data: { updates: revision, scripts: wire ? [wire] : [] } };
+            if (command === IpcCommand.DEBUG_SCRIPT_ADD || command === IpcCommand.DEBUG_SCRIPT_EDIT) {
+                expect(data).not.to.have.property('useDebugSymbols');
+                wire = { ...makeSnapshot(7, data.name, data.active), path: data.path };
+            } else if (command !== IpcCommand.DEBUG_SCRIPT_COMPILE) { throw new Error(`Unexpected command ${command}`); }
+            return { ok: true, data: { script: wire, updates: ++revision } };
+        } };
+        const service = new ScriptService(lifecycle as any, client as any, async (_project, scripts) => { saved.push(scripts); }, prepare);
+        const input = { name: 'trace', path: 'C:/demo/trace.lua', active: false, useDebugSymbols: true };
+        await ScriptService.restoreSetup(client as any, lifecycle.serverInfo, [input], message => { throw new Error(message); }, prepare,
+            (script, entry) => service.remember(script, entry));
+        await service.refresh();
+        expect(service.snapshot[0]).to.include(input);
+        await service.compile(7);
+        expect(preparations).to.equal(2);
+        expect(requests.slice(-2).map(request => request.command)).to.deep.equal([IpcCommand.DEBUG_SCRIPT_EDIT, IpcCommand.DEBUG_SCRIPT_COMPILE]);
+        await service.refresh();
+        expect(service.snapshot[0]).to.include(input);
+        await service.setActivity(7, true);
+        expect(saved[0]).to.deep.equal([{ ...input, active: true }]);
+        await service.edit(7, { ...input, active: true, useDebugSymbols: false });
+        expect(wire!.path).to.equal(input.path);
+        await service.refresh();
+        expect(service.snapshot[0].useDebugSymbols).to.equal(false);
+        service.dispose();
+    });
+
     it('applies mutation revisions, Run Once runtime, and refreshes collection-only changes', async () => {
         const lifecycle = new FakeLifecycle();
         let revision = 0;
